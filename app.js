@@ -971,9 +971,12 @@ function monsterSheet(src) {
     // No recorded spawns means no map worth a tab, so the loot table stands alone.
     const areas = src.node ? [] : spawnsFor(SPAWN_ENEMY, src.id);
     if (!areas.length) st.tab = "loot";
+    // ...and no loot table means the reverse: the map is the whole sheet, with no tab row
+    // offering a second view that would open on an empty table.
+    if (!DROP.ready && areas.length) st.tab = "map";
 
     const filters = el("span", "sfilterrow");
-    if (areas.length) {
+    if (areas.length && DROP.ready) {
       const tabs = el("span", "tabstrip");
       for (const [key, label] of [["map", "Map"], ["loot", "Loot"]]) {
         const tab = el("button", "tab" + (st.tab === key ? " on" : ""), label);
@@ -996,22 +999,22 @@ function monsterSheet(src) {
     }
     // Only the loot table needs a count here: each area's map carries its own, so putting
     // one in the tab row as well said the same thing twice.
-    if (st.tab !== "map")
+    if (st.tab !== "map" && DROP.ready)
       filters.appendChild(el("span", "count", `${rows.length} of ${all.length} entries`));
 
     // Each tab carries only its own explanation. The loot note used to sit above both,
     // telling you how drop chances work while you were looking at a map.
-    /* What this person GIVES you, and nothing else. Quests they merely take in were in here
-       too, which meant a giver's list was padded with other people's errands and their map
-       lit up ground that had nothing to do with them. */
-    const errands = gives.map(quest => ({quest, role: "gives"}));
-
+    //
+    // A paragraph of the NPC sheet had been pasted in here - `const errands = gives.map(...)`
+    // against a `gives` that only exists over there - so every monster sheet threw on render
+    // and opened as a panel containing a Back button. Silent, because the throw happened
+    // inside the sheet builder and the shell had already drawn its chrome.
     const wrap = el("div");
     if (st.tab === "map") {
       const monster = asOf("monsters", D.monsters.find(m => m.id === src.id));
       for (const area of areas)
         wrap.appendChild(spawnMap(area, monster ? monster.aggro : 0));
-    } else {
+    } else if (DROP.ready) {
       wrap.appendChild(table);
       wrap.appendChild(el("p", "note", lootNote(src)));
     }
@@ -1404,10 +1407,15 @@ function itemSheet(itemId) {
       wrap.appendChild(questChips(wantedBy, "Asked for by " + (wantedBy.length === 1
         ? "a quest" : wantedBy.length + " quests")));
 
-    wrap.append(el("h4", "ssection", rows.length
-                  ? `Dropped by ${rows.length} source${rows.length > 1 ? "s" : ""}`
-                  : "Sources"),
-                table);
+    /* The drop table only when the build carries one. Without it the section still built
+       itself - a "Sources" heading over a Source/Level/Qty/Chance table with nothing in it -
+       which advertises the very thing the build set out to leave behind, and reads as a
+       page that failed to load rather than one that was never going to show it. */
+    if (DROP.ready)
+      wrap.append(el("h4", "ssection", rows.length
+                    ? `Dropped by ${rows.length} source${rows.length > 1 ? "s" : ""}`
+                    : "Sources"),
+                  table);
 
     const eq = it.equip;
     return {

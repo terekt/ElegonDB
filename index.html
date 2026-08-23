@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Elegon DB — Items</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=dd79f3df">
+<link rel="stylesheet" href="style.css?v=fcb666dc">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -75,8 +75,8 @@
   <p class="note" id="note"></p>
 </div>
 
-<script src="data.js?v=dd79f3df"></script>
-<script src="app.js?v=dd79f3df"></script>
+<script src="data.js?v=fcb666dc"></script>
+<script src="app.js?v=fcb666dc"></script>
 <script>
 const S = {q:"", slot:"", type:"", sub:"", hasStat:"", source:"", quality:1, tier:0,
            sort:{key:"vitality", desc:true}};
@@ -142,11 +142,15 @@ fill(document.getElementById("hasStat"), LIST_STATS.map(cap), "Any stat");
    kind of source. Monsters in the rift are still monsters. */
 const SOURCE_FILTERS = [
   {v:"", label:"Any source"},
-  {v:"drop", label:"Monster"},
+  // Offered only when there is a drop table to match against; otherwise it is a filter
+  // that always returns nothing, which reads as a broken page rather than an absent one.
+  ...(DROP.ready ? [{v:"drop", label:"Monster"}] : []),
   // Only offered once the shop export has actually found a merchant.
   ...(SOLD_BY.size ? [{v:"buy", label:"Sold by a merchant"}] : []),
   ...(QUEST_REWARDS.size ? [{v:"quest", label:"Quest reward"}] : []),
-  {v:"none", label:"Unknown"},
+  // Same reasoning as the Unknown badge: without drops it would select every item that
+  // happens to come from a monster, which is the opposite of what it says.
+  ...(DROP.ready ? [{v:"none", label:"Unknown"}] : []),
 ];
 const srcSel = document.getElementById("source");
 for (const o of SOURCE_FILTERS)
@@ -189,7 +193,16 @@ const OTHER_COLS = [
   {key:"drop", label:"Drop"},
   {key:"source", label:"From", left:true},
 ];
-const colsFor = () => S.type ? OTHER_COLS : EQUIP_COLS;
+/* Without drop data the Drop column has nothing to put in it, and an empty column is worse
+   than no column: it reads as "this item drops from nothing" rather than "this build does
+   not carry drops". DROP.ready is false exactly when data.js has no drop table.
+
+   "From" stays either way. It carries quests and merchants as well as monsters, and those
+   are not drops - with the drop table gone it simply stops showing the monster badge. */
+const colsFor = () => {
+  const cols = S.type ? OTHER_COLS : EQUIP_COLS;
+  return DROP.ready ? cols : cols.filter(c => c.key !== "drop");
+};
 
 function matchesSource(i) {
   if (!S.source) return true;
@@ -230,7 +243,11 @@ function sourceCell(i) {
       : `${vendors.length} merchants sell it, from ${fmtNum(cheapest.price)} copper`;
     box.appendChild(tag);
   }
-  if (!box.children.length) {
+  /* "Unknown" is a claim, and it is only ours to make when we have looked everywhere. With
+     no drop table in the build we have not: an item that drops from a monster and nothing
+     else would be labelled unobtainable, which is worse than saying nothing. So the claim
+     is made only when drops were actually consulted. */
+  if (!box.children.length && DROP.ready) {
     // Said outright rather than left as a dash: "we have not found one" is an answer, and
     // an empty cell reads as a gap in the page instead of a fact about the item.
     const tag = el("span", "srcflag srcnone", "Unknown");
@@ -310,12 +327,13 @@ function draw() {
     if (S.type) {
       tr.appendChild(el("td", r.stack > 1 ? "" : "z", r.stack > 1 ? r.stack : "·"));
       tr.appendChild(el("td", r.sell ? "" : "z", r.sell ? fmtNum(r.sell) : "·"));
-      tr.appendChild(dropCell(r.info, r.name));
+      // Cell by cell, so the Drop cell has to be skipped wherever its header is.
+      if (DROP.ready) tr.appendChild(dropCell(r.info, r.name));
       tr.appendChild(sourceCell(r));
     } else {
       tr.appendChild(el("td", "l", r.slot || "·"));
       tr.appendChild(el("td", null, r.lvl || "·"));
-      tr.appendChild(dropCell(r.info, r.name));
+      if (DROP.ready) tr.appendChild(dropCell(r.info, r.name));
       tr.appendChild(sourceCell(r));
       for (const s of LIST_STATS) tr.appendChild(statCell(r[s]));
     }

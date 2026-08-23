@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Elegon DB — Monsters</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=dd79f3df">
+<link rel="stylesheet" href="style.css?v=fcb666dc">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -59,8 +59,8 @@
   </div>
 </div>
 
-<script src="data.js?v=dd79f3df"></script>
-<script src="app.js?v=dd79f3df"></script>
+<script src="data.js?v=fcb666dc"></script>
+<script src="app.js?v=fcb666dc"></script>
 <script>
 const S = {q:"", lo:null, hi:null, aggressive:false, tier:0, sort:{key:"lvl", desc:false}};
 
@@ -91,6 +91,7 @@ const COLS = [
   {key:"dps", label:"DPS"},
   {key:"xp", label:"XP"},
   {key:"kills", label:"Kills/level"},
+  // Dropped from the header below when the build carries no drop table.
   {key:"drops", label:"Drops"},
   {key:"aggro", label:"Aggro range"},
   {key:"leash", label:"Gives up at"},
@@ -126,8 +127,9 @@ function draw() {
     });
 
   applySort(rows, S.sort);
-  const cols = COLS.map(c => c.key !== "xp" ? c
-    : {...c, label: LEVEL.value === null ? "XP" : "XP at " + LEVEL.value});
+  const cols = COLS.filter(c => c.key !== "drops" || DROP.ready)
+    .map(c => c.key !== "xp" ? c
+      : {...c, label: LEVEL.value === null ? "XP" : "XP at " + LEVEL.value});
   sortableTable(document.getElementById("head"), cols, S.sort, draw);
 
   const body = document.getElementById("rows");
@@ -154,12 +156,25 @@ function draw() {
     tr.appendChild(dpsCell);
     tr.appendChild(el("td", m.xp ? null : "z", m.xp ? fmt(m.xp) : "·"));
     tr.appendChild(el("td", m.kills ? null : "z", m.kills ? fmt(m.kills) : "·"));
-    tr.appendChild(m.drops ? el("td", null, m.drops) : el("td", "z", "·"));
+    // The header drops this column too - the body is built cell by cell, so skipping one
+    // without the other shifts every value one column to the left.
+    if (DROP.ready) tr.appendChild(m.drops ? el("td", null, m.drops) : el("td", "z", "·"));
     tr.appendChild(el("td", null, m.aggro + "m"));
     tr.appendChild(el("td", null, m.leash ? m.leash + "m" : "·"));
     tr.appendChild(el("td", null, m.respawn));
-    if (m.src) clickableRow(tr, "Loot table for " + m.name,
-                            () => openSheet(monsterSheet(m.src)));
+    /* The sheet used to be reachable only through a loot source, so a build without drop
+       tables made every row unclickable and took the spawn map down with it. The map is not
+       drop data and should not have gone: where a creature stands is worth a sheet on its
+       own, so one is synthesised from the creature when no source exists. */
+    const sheetSrc = m.src || {i: "m" + m.id, id: m.id, name: m.name, lvl: m.lvl,
+                               icon: m.icon, node: false, boss: !!m.boss};
+    // Clickable only when the sheet would have something on it. With no loot table, a
+    // creature nobody has ever recorded a sighting of opens a panel containing a Back
+    // button, which is worse than a row that simply does not respond.
+    const worthOpening = (DROP.ready && m.src) || spawnsFor(SPAWN_ENEMY, m.id).length > 0;
+    if (worthOpening)
+      clickableRow(tr, DROP.ready ? "Loot table for " + m.name : "Where " + m.name + " stands",
+                   () => openSheet(monsterSheet(sheetSrc)));
     body.appendChild(tr);
   }
 }
