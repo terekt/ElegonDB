@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Elegon DB — Character planner</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=01152046">
+<link rel="stylesheet" href="style.css?v=7d34b5bd">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -157,23 +157,6 @@
       <div id="spellRows"></div>
       <p class="note" id="spellNote" style="margin:10px 0 0"></p>
     </div>
-    <!-- What this build actually has to survive: the rift roster, with damage put through
-         your Fortitude and health scaled by the rift's instability. -->
-    <div class="attrs rift">
-      <div class="rifthead">
-        <h3 id="riftName">Rift</h3>
-        <div class="grpline">
-          <label for="riftInst">Instability</label>
-          <span id="riftInstBox"></span>
-        </div>
-      </div>
-      <div class="divider"></div>
-      <!-- The four numbers the game's own portal shows for the chosen tier, so the panel
-           answers "what does raising this cost me, and what does it buy" in one place. -->
-      <div id="riftPreview" class="riftprev" hidden></div>
-      <div id="riftRows"></div>
-      <p class="note" id="riftNote" style="margin:10px 0 0"></p>
-    </div>
 
   </div>
 </div>
@@ -250,9 +233,9 @@
   </div>
 </dialog>
 
-<script src="data.js?v=01152046"></script>
+<script src="data.js?v=7d34b5bd"></script>
 <!-- Written by the mod when you log in; absent until then. -->
-<script src="app.js?v=01152046"></script>
+<script src="app.js?v=7d34b5bd"></script>
 <script>
 /* The game's slot set and order, from InGameUi.EnumerateCharacterPanelSlots:
    main weapon, off hand, head, neck, shoulder, back, chest, waist, leg, foot, hands. */
@@ -720,6 +703,11 @@ function slotButton(s) {
   return btn;
 }
 
+/* The rift panel ships in staging only, so the page calls into it through a hook that does
+   nothing when the panel is not there. render() runs on every change and would otherwise
+   throw on a missing function, taking the whole planner down with it. */
+let drawRift = () => {};
+
 function render() {
   const byKey = Object.fromEntries(SLOTS.map(s => [s.k, s]));
   for (const [colId, keys] of Object.entries(COLUMNS)) {
@@ -895,121 +883,6 @@ function drawPicker() {
 
 /* The figure is exported from the game; until that has been run, say so plainly
    instead of leaving a broken image in the middle of the panel. */
-/* ---- rift panel ----------------------------------------------------------
-   What the build has to survive. Enemy health and damage scale with instability on
-   BreachInstability's soft-capped curve - full rate to tier 10, a much gentler one after -
-   and the hit you actually take is that damage after Fortitude mitigation:
-   min(0.60, F / (F + 500)).                                                    */
-const RIFT = D.rift || {name:"Rift", ids:[], bosses:[]};
-let riftTier = 0;
-
-document.getElementById("riftName").textContent = RIFT.name || "Rift";
-document.getElementById("riftInstBox").appendChild(
-  instabilityInput(0, v => { riftTier = v; render(); }));
-
-const mitigationFor = fortitude => GAME.mitigation(fortitude);
-
-/* What actually reaches you: Fortitude first, then the buff on what is left. Multiplied
-   rather than added, because they are two separate reductions applied in turn - adding them
-   would let 60% mitigation and an 80% Stonewall cancel damage entirely. */
-const takenFraction = fortitude =>
-  (1 - mitigationFor(fortitude)) * (1 - mitBonus()) * (1 - defenseReduction());
-
-/* Measured, not listed: the enemy catalogue has no attack-interval column and the client
-   never reads the server's next_attack_time_unix. See ATTACK_INTERVAL in build_site.py. */
-const ATTACK_INTERVAL = D.attackInterval || 3;
-
-function drawRift(fortitude, myHp) {
-  const box = document.getElementById("riftRows");
-  box.replaceChildren();
-
-  const mit = mitigationFor(fortitude);
-  const hpMul = enemyHealthMult(riftTier);
-  const dmgMul = enemyDamageMult(riftTier);
-
-  /* BreachPanel.BuildPreviewText, same four figures in the same order. Instability is a
-     trade, and the cost half was the only half the site showed: past tier 10 the monsters
-     grow slowly while loot power keeps climbing and Flawless goes from 1% to 10%, which is
-     the whole reason to push a tier at all. */
-  const prev = document.getElementById("riftPreview");
-  prev.hidden = !riftTier;
-  if (riftTier) {
-    prev.replaceChildren(...[
-      ["Enemy health", `×${big(hpMul)}`],
-      ["Enemy damage", `×${big(dmgMul)}`],
-      ["Loot power", `+${Math.round((instabilityMult(riftTier) - 1) * 100)}%`],
-      ["Flawless chance", `${flawlessChancePercent(riftTier).toFixed(1)}%`],
-    ].map(([lab, val]) => {
-      const cell = el("div", "prevcell");
-      cell.append(el("span", "lab", lab), el("b", null, val));
-      return cell;
-    }));
-  }
-
-  const roster = RIFT.ids
-    .map(id => D.monsters.find(m => m.id === id))
-    .filter(Boolean)
-    .sort((a, b) => a.lvl - b.lvl || a.hp - b.hp);
-
-  if (!roster.length) {
-    box.appendChild(el("p", "note", "Rift roster unavailable."));
-    return;
-  }
-
-  for (const m of roster) {
-    const boss = (RIFT.bosses || []).includes(m.id);
-    const hp = Math.round(m.hp * hpMul);
-    const raw = Math.round(m.dmg * dmgMul);
-    const taken = Math.round(raw * takenFraction(fortitude));
-
-    const row = el("div", "riftrow" + (boss ? " boss" : ""));
-    row.appendChild(icon("monsters", m.id, m.icon));   // sized by CSS
-
-    const mid = el("div", "rm");
-    mid.appendChild(el("div", "rn", m.name));
-    mid.appendChild(el("div", "rl", `Level ${m.lvl}${boss ? " · boss" : ""}`));
-    row.appendChild(mid);
-
-    /* Per hit AND per second. A 148 hit means nothing on its own - what decides whether you
-       can hold a pull is how fast it arrives, and every creature measured swings on the same
-       3s cycle. Health over DPS is then a time to live, which is the question actually
-       being asked. */
-    const dps = taken / ATTACK_INTERVAL;
-    const num = el("div", "rv");
-    num.appendChild(el("div", "rhp", fmtNum(hp)));
-    num.appendChild(el("div", "rdmg", fmtNum(taken) + " dmg"));
-    num.appendChild(el("div", "rdps", fmtNum(Math.round(dps)) + "/s"));
-    row.appendChild(num);
-
-    attachTip(row,
-      `<b>${m.name}</b><i>level ${m.lvl}${boss ? " · boss" : ""} · instability ${riftTier}</i>`
-      + `Health <b>${fmtNum(hp)}</b>`
-      + (riftTier ? ` (${fmtNum(m.hp)} × ${big(hpMul)})` : "")
-      + `<br>Its hit <b>${fmtNum(raw)}</b>`
-      + (riftTier ? ` (${fmtNum(m.dmg)} × ${big(dmgMul)})` : "")
-      + `<br>Swings every <b>${ATTACK_INTERVAL}s</b> for <b>${fmtNum(Math.round(taken / ATTACK_INTERVAL))}</b> a second`
-      + (myHp ? ` — ${fmtNum(Math.round(myHp / (taken / ATTACK_INTERVAL)))}s to kill you unhealed` : "")
-      + `<br>You take <b>${fmtNum(taken)}</b> after ${(mit * 100).toFixed(1)}% mitigation`
-      + ` from ${fortitude} Fortitude`
-      + (mitBonus() ? ` and a further ${Math.round(mitBonus() * 100)}% from your buff` : "")
-      + (defenseReduction() ? ` and ${(defenseReduction() * 100).toFixed(1)}% from Defense `
-                             + `${profLevel(DEFENSE_SKILL)}` : "")
-      + `.`);
-
-    box.appendChild(row);
-  }
-
-  const total = 1 - takenFraction(fortitude);
-  document.getElementById("riftNote").innerHTML =
-    `Damage shown is what reaches you: <b>${(total * 100).toFixed(1)}%</b> stopped — `
-    + `${(mit * 100).toFixed(1)}% from ${fortitude} Fortitude`
-    + (mit >= 0.5999 ? " (at the 60% cap)" : "")
-    + (mitBonus() ? `, then ${Math.round(mitBonus() * 100)}% of the remainder by your buff` : "")
-    + (defenseReduction()
-        ? `, then ${(defenseReduction() * 100).toFixed(1)}% of what is left by Defense `
-          + `${profLevel(DEFENSE_SKILL)}` : "")
-    + `.`;
-}
 
 /* ---- spell panel ---------------------------------------------------------
    Shows what this build's spells actually do. Damage scales on Strength, healing on
