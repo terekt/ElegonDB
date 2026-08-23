@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Elegon DB — Items</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css?v=01152046">
+<script>
+/* Resolve the theme before first paint: a stored choice if there is one, otherwise
+   whatever the operating system asks for. Kept inline and tiny on purpose — loading it
+   from app.js would paint the wrong theme first and then correct it. */
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem("elegon-theme"); } catch (e) { /* private mode */ }
+  var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.dataset.theme = saved || (dark ? "dark" : "light");
+})();
+</script>
+</head>
+<body>
+<header>
+  <div class="brand"><span>ELEGON</span> DB</div>
+  <nav>
+    <a href="index.html" class="on">Items</a>
+    <a href="monsters.html">Monsters</a>
+    <a href="quests.html">Quests</a>
+    <a href="maps.html">Maps</a>
+    <a href="planner.html"><span class="navlong">Character </span>Planner</a>
+    <a href="scaling.html">Scaling</a>
+    <a href="changelog.html">Changelog</a>
+  </nav>
+    <button type="button" id="themebtn" class="themebtn" aria-label="Switch theme">
+      <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.4"/><g><path d="M12 1.8v3M12 19.2v3M1.8 12h3M19.2 12h3M4.8 4.8l2.1 2.1M17.1 17.1l2.1 2.1M19.2 4.8l-2.1 2.1M6.9 17.1l-2.1 2.1"/></g></svg>
+      <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.6 13.6A8.6 8.6 0 0 1 10.4 3.4a8.6 8.6 0 1 0 10.2 10.2z"/></svg>
+    </button>
+</header>
+
+<div class="wrap">
+  <div class="hero">
+    <h1>Items</h1>
+  </div>
+
+  <!-- Row 1 picks WHAT you are looking at: search and the equipment slot, plus the weapon
+       type once Main Hand narrows things to weapons. Row 2 is how it is measured. -->
+  <div class="bar stacked">
+    <div class="barrow">
+      <input type="search" id="q" placeholder="Search items…">
+      <span id="slots" class="chipset"></span>
+      <span id="subWrap" class="grpline" hidden>
+        <label for="sub">Weapon type</label><select id="sub"></select>
+      </span>
+    </div>
+    <!-- Everything that only applies to equipment is grouped so it can step aside when a
+         material or quest item is being listed. -->
+    <div class="barrow">
+      <span id="statWrap" class="grpline">
+        <label for="hasStat">Has stat</label><select id="hasStat"></select>
+      </span>
+      <span class="grpline"><label for="source">Source</label><select id="source"></select></span>
+      <!-- No "Rarity" label: the four buttons name themselves. -->
+      <span id="rarWrap" class="grpline"><span id="rar"></span></span>
+      <span id="instWrap" class="grpline">
+        <label>Instability</label><span id="inst"></span>
+      </span>
+    </div>
+  </div>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr id="head"></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <p class="note" id="note"></p>
+</div>
+
+<script src="data.js?v=01152046"></script>
+<script src="app.js?v=01152046"></script>
+<script>
+const S = {q:"", slot:"", type:"", sub:"", hasStat:"", source:"", quality:1, tier:0,
+           sort:{key:"vitality", desc:true}};
+
+/* Accuracy is listed even though no equipment grants it: it is one of the character's
+   attributes, and seeing that no item provides it is itself the useful answer. */
+const LIST_STATS = [...D.stats, "accuracy"];
+
+/* filters ----------------------------------------------------------------
+   Slots are buttons rather than a dropdown: there are eleven of them, they are the
+   first thing you narrow by, and they read at a glance. The weapon-type select only
+   appears for Main Hand, where the slot alone still spans ten kinds of weapon.
+
+   The non-equipment kinds sit in the same row after a divider: this page lists every
+   item, and a material is picked the same way a helmet is. Slot and kind are mutually
+   exclusive, so one button is lit at a time. */
+const SLOT_ORDER = ["Head", "Neck", "Back", "Shoulder", "Chest", "Hands",
+                    "Waist", "Legs", "Feet", "Main Hand", "Off Hand"];
+const SLOTS_PRESENT = SLOT_ORDER.filter(s => D.slots.includes(s))
+  .concat(D.slots.filter(s => !SLOT_ORDER.includes(s)));
+const TYPES_PRESENT = D.types || [];
+
+const WEAPON_SLOT = "Main Hand";
+const weaponTypes = [...new Set(D.items.filter(i => i.slot === WEAPON_SLOT)
+                                       .map(i => i.sub).filter(Boolean))].sort();
+
+const slotBox = document.getElementById("slots");
+
+function addChip(label, slot, type) {
+  const b = el("span", "chip" + (!slot && !type ? " on" : ""), label);
+  b.onclick = () => {
+    S.slot = slot;
+    S.type = type;
+    S.sub = "";                       // a slot change invalidates the weapon-type filter
+    subSel.value = "";
+    subWrap.hidden = S.slot !== WEAPON_SLOT;
+    [...slotBox.children].forEach(x => x.classList.toggle("on", x === b));
+    draw();
+  };
+  slotBox.appendChild(b);
+}
+
+addChip("All", "", "");
+for (const s of SLOTS_PRESENT) addChip(s, s, "");
+if (TYPES_PRESENT.length) {
+  slotBox.appendChild(el("span", "chipsep"));
+  for (const t of TYPES_PRESENT) addChip(t, "", t);
+}
+
+function fill(sel, list, allLabel) {
+  sel.appendChild(Object.assign(el("option", null, allLabel), {value: ""}));
+  for (const v of list) sel.appendChild(Object.assign(el("option", null, v), {value: v}));
+}
+const subSel = document.getElementById("sub");
+const subWrap = document.getElementById("subWrap");
+fill(subSel, weaponTypes, "Any weapon");
+fill(document.getElementById("hasStat"), LIST_STATS.map(cap), "Any stat");
+
+/* Where an item comes from: a monster, a quest, a merchant, or nothing known. Nothing else
+   belongs in this list. Two things were tried here and removed — being asked for by a quest,
+   which says what an item is FOR rather than where it comes from and now lives on the item's
+   own sheet under "Asked for by"; and the rift's own drops, which is a place rather than a
+   kind of source. Monsters in the rift are still monsters. */
+const SOURCE_FILTERS = [
+  {v:"", label:"Any source"},
+  {v:"drop", label:"Monster"},
+  // Only offered once the shop export has actually found a merchant.
+  ...(SOLD_BY.size ? [{v:"buy", label:"Sold by a merchant"}] : []),
+  ...(QUEST_REWARDS.size ? [{v:"quest", label:"Quest reward"}] : []),
+  {v:"none", label:"Unknown"},
+];
+const srcSel = document.getElementById("source");
+for (const o of SOURCE_FILTERS)
+  srcSel.appendChild(Object.assign(el("option", null, o.label), {value: o.v}));
+
+/* Best source per item, computed once. */
+const DROP_INFO = new Map();
+for (const i of D.items) {
+  const list = sourcesOf(i.id);
+  if (!list.length) continue;
+  let best = list[0];
+  for (const e of list) if (e.chance > best.chance) best = e;
+  DROP_INFO.set(i.id, {best, count: list.length});
+}
+
+document.getElementById("q").oninput = e => { S.q = e.target.value.toLowerCase(); draw(); };
+subSel.onchange = e => { S.sub = e.target.value; draw(); };
+document.getElementById("hasStat").onchange = e => { S.hasStat = e.target.value.toLowerCase(); draw(); };
+srcSel.onchange = e => { S.source = e.target.value; draw(); };
+document.getElementById("rar").appendChild(rarityButtons(S.quality, v => { S.quality = v; draw(); }));
+document.getElementById("inst").appendChild(instabilityInput(S.tier, v => { S.tier = v; draw(); }));
+
+/* table ------------------------------------------------------------------
+   Two column sets. Stats, slot and level say nothing about a wolf pelt, so picking a
+   non-equipment kind swaps them for the two numbers that do mean something there. */
+const EQUIP_COLS = [
+  {key:"name", label:"Item", left:true},
+  {key:"kind", label:"Type", left:true},
+  {key:"slot", label:"Slot", left:true},
+  {key:"lvl", label:"Lvl"},
+  {key:"drop", label:"Drop"},
+  {key:"source", label:"From", left:true},
+  ...LIST_STATS.map(s => ({key:s, label:cap(s)})),
+];
+const OTHER_COLS = [
+  {key:"name", label:"Item", left:true},
+  {key:"kind", label:"Type", left:true},
+  {key:"stack", label:"Stack"},
+  {key:"sell", label:"Sells for"},
+  {key:"drop", label:"Drop"},
+  {key:"source", label:"From", left:true},
+];
+const colsFor = () => S.type ? OTHER_COLS : EQUIP_COLS;
+
+function matchesSource(i) {
+  if (!S.source) return true;
+  if (S.source === "buy") return SOLD_BY.has(i.id);
+  if (S.source === "quest") return QUEST_REWARDS.has(i.id);
+  if (S.source === "drop") return DROP_INFO.has(i.id);
+  // Unknown means no route at all, not merely "no loot table" — which used to lump in
+  // everything a merchant or a quest hands over.
+  return !DROP_INFO.has(i.id) && !SOLD_BY.has(i.id) && !QUEST_REWARDS.has(i.id);
+}
+
+/* Where an item comes from: a monster, a quest, a merchant, or nothing known. Drop chance
+   alone left a fifth of the catalogue reading as unobtainable when it is simply bought or
+   handed over. Badges rather than one word, because several can be true at once. */
+function sourceCell(i) {
+  const td = el("td", "l");
+  const box = el("span", "srcflags");
+  const vendors = vendorsOf(i.id);
+  const rewards = QUEST_REWARDS.get(i.id) || [];
+  const info = DROP_INFO.get(i.id);
+
+  if (info) {
+    const tag = el("span", "srcflag srcdrop", "Monster");
+    tag.title = `Best chance ${fmtPct(effChance(info.best))}, from ${info.best.src.name}`
+      + (info.count > 1 ? ` — ${info.count} sources in all` : "");
+    box.appendChild(tag);
+  }
+  if (rewards.length) {
+    const tag = el("span", "srcflag srcquest", "Quest");
+    tag.title = "Given by " + rewards.map(q => q.name).join(", ");
+    box.appendChild(tag);
+  }
+  if (vendors.length) {
+    const cheapest = vendors.reduce((a, b) => (a.price <= b.price ? a : b));
+    const tag = el("span", "srcflag srcbuy", "Merchant");
+    tag.title = vendors.length === 1
+      ? `${cheapest.shop.name} sells it for ${fmtNum(cheapest.price)} copper`
+      : `${vendors.length} merchants sell it, from ${fmtNum(cheapest.price)} copper`;
+    box.appendChild(tag);
+  }
+  if (!box.children.length) {
+    // Said outright rather than left as a dash: "we have not found one" is an answer, and
+    // an empty cell reads as a gap in the page instead of a fact about the item.
+    const tag = el("span", "srcflag srcnone", "Unknown");
+    tag.title = i.name + " is not dropped, sold or given by a quest.";
+    box.appendChild(tag);
+  }
+  td.appendChild(box);
+  return td;
+}
+
+/** Best chance across every source, with the rest of the detail in the tooltip. */
+function dropCell(info, name) {
+  if (!info) {
+    const td = el("td", "z", "·");
+    td.title = name + " is in no loot table.";
+    return td;
+  }
+  const td = chanceCell(info.best);
+  // Keeps the loot table's own figure within reach, the same as everywhere else the chance
+  // is shown — what the column prints is the measured rate, which is half of it.
+  td.title = `Best chance ${fmtPct(effChance(info.best))}, from ${info.best.src.name}`
+    + (info.count > 1 ? ` — ${info.count} sources in all` : "")
+    + ` (${info.best.chance}% listed`
+    + (info.best.rolls > 1 ? `, ${info.best.rolls} rolls)` : ")");
+  return td;
+}
+
+function draw() {
+  // Item sheets show their stats at whatever the page is currently showing.
+  SCALE.quality = S.quality;
+  SCALE.tier = S.tier;
+
+  const cols = colsFor();
+  // Switching column sets can strand the sort on a column that is no longer there.
+  if (!cols.some(c => c.key === S.sort.key)) S.sort = {key: "name", desc: false};
+
+  // Rarity, instability and "has stat" only mean something for equipment.
+  for (const id of ["statWrap", "rarWrap", "instWrap"])
+    document.getElementById(id).hidden = !!S.type;
+
+  const rows = D.items.filter(i =>
+      (!S.q || i.name.toLowerCase().includes(S.q)) &&
+      (!S.slot || i.slot === S.slot) &&
+      (!S.type || i.type === S.type) &&
+      (!S.sub || i.sub === S.sub) &&
+      (!S.hasStat || (i[S.hasStat] || 0) > 0) &&
+      matchesSource(i))
+    .map(i => {
+      const o = {...i, info: DROP_INFO.get(i.id) || null};
+      o.drop = o.info ? effChance(o.info.best) : 0;
+      // Sorting "From" groups by route rather than alphabetically: monster, then quest,
+      // then merchant, and the ones with nowhere to get them last.
+      o.source = (o.info ? 4 : 0) + (QUEST_REWARDS.has(i.id) ? 2 : 0)
+               + (SOLD_BY.has(i.id) ? 1 : 0);
+      for (const s of LIST_STATS) o[s] = scaled(i, s, S.quality, S.tier);
+      return o;
+    });
+
+  applySort(rows, S.sort);
+  sortableTable(document.getElementById("head"), cols, S.sort, draw);
+
+  const body = document.getElementById("rows");
+  body.replaceChildren();
+  if (!rows.length) emptyRow(body, cols.length, "No items match these filters.");
+  for (const r of rows) {
+    const tr = el("tr");
+    const equip = r.type === "Equipment";
+    // Everything sits in the character panel's slot frame, so the rows line up whatever
+    // the item is. Only the rarity differs: equipment takes the selected one, and a
+    // material has no rarity at all, so it takes the plain Normal frame.
+    const nameTd = nameCell("items", r.id, r.icon, r.name,
+                            equip ? "r" + S.quality : null, 0,
+                            equip ? S.quality : 1);
+    if (r.hand) nameTd.firstChild.appendChild(el("span", "tag", r.hand));
+    tr.appendChild(nameTd);
+    tr.appendChild(el("td", "l", r.kind || "·"));
+    if (S.type) {
+      tr.appendChild(el("td", r.stack > 1 ? "" : "z", r.stack > 1 ? r.stack : "·"));
+      tr.appendChild(el("td", r.sell ? "" : "z", r.sell ? fmtNum(r.sell) : "·"));
+      tr.appendChild(dropCell(r.info, r.name));
+      tr.appendChild(sourceCell(r));
+    } else {
+      tr.appendChild(el("td", "l", r.slot || "·"));
+      tr.appendChild(el("td", null, r.lvl || "·"));
+      tr.appendChild(dropCell(r.info, r.name));
+      tr.appendChild(sourceCell(r));
+      for (const s of LIST_STATS) tr.appendChild(statCell(r[s]));
+    }
+    clickableRow(tr, "Where " + r.name + " comes from", () => openSheet(itemSheet(r.id)));
+    body.appendChild(tr);
+  }
+}
+
+/* Redraw once the slot frames are known to exist, so icons pick them up. */
+document.addEventListener("slotframes", () => draw());
+
+document.getElementById("note").textContent = DROP.ready
+  ? "Drop is the best chance per kill across every monster that drops the item. "
+  + "Select a row to see all of its sources."
+  : "";
+draw();
+</script>
+</body>
+</html>

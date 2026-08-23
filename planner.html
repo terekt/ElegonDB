@@ -1,0 +1,1835 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Elegon DB — Character planner</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css?v=01152046">
+<script>
+/* Resolve the theme before first paint: a stored choice if there is one, otherwise
+   whatever the operating system asks for. Kept inline and tiny on purpose — loading it
+   from app.js would paint the wrong theme first and then correct it. */
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem("elegon-theme"); } catch (e) { /* private mode */ }
+  var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.dataset.theme = saved || (dark ? "dark" : "light");
+})();
+</script>
+</head>
+<body>
+<header>
+  <div class="brand"><span>ELEGON</span> DB</div>
+  <nav>
+    <a href="index.html">Items</a>
+    <a href="monsters.html">Monsters</a>
+    <a href="quests.html">Quests</a>
+    <a href="maps.html">Maps</a>
+    <a href="planner.html" class="on"><span class="navlong">Character </span>Planner</a>
+    <a href="scaling.html">Scaling</a>
+    <a href="changelog.html">Changelog</a>
+  </nav>
+    <button type="button" id="themebtn" class="themebtn" aria-label="Switch theme">
+      <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.4"/><g><path d="M12 1.8v3M12 19.2v3M1.8 12h3M19.2 12h3M4.8 4.8l2.1 2.1M17.1 17.1l2.1 2.1M19.2 4.8l-2.1 2.1M6.9 17.1l-2.1 2.1"/></g></svg>
+      <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.6 13.6A8.6 8.6 0 0 1 10.4 3.4a8.6 8.6 0 1 0 10.2 10.2z"/></svg>
+    </button>
+</header>
+
+<div class="wrap">
+  <div class="hero">
+    <h1>Character planner</h1>
+  </div>
+
+  <!-- Character-wide settings, then the two bulk actions that apply to every slot. -->
+  <div class="bar setup">
+
+    <div class="grp">
+      <label for="charClass">Class</label>
+      <select id="charClass"></select>
+    </div>
+
+    <div class="grp">
+      <label for="charLevel">Character level</label>
+      <input type="number" id="charLevel" min="1" max="80" step="1" value="80">
+    </div>
+
+    <div class="grp grow">
+      <label>Rarity, all slots</label>
+      <div class="grpline">
+        <span id="allRar"></span>
+        <button id="applyAllRar">Apply</button>
+      </div>
+    </div>
+
+    <div class="grp">
+      <label for="allInstInput">Instability, all slots</label>
+      <div class="grpline">
+        <span id="allInst"></span>
+        <button id="applyAll">Apply</button>
+      </div>
+    </div>
+
+    <div class="grp">
+      <label>&nbsp;</label>
+      <button id="clear">Clear all</button>
+    </div>
+  </div>
+
+  <div class="bar setup saves">
+    <div class="grp">
+      <label for="saveList">Saved builds</label>
+      <div class="grpline">
+        <select id="saveList"></select>
+        <button type="button" id="delBtn" class="iconbtn" title="Delete the selected build"
+                aria-label="Delete the selected build">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13M10 10.5v6M14 10.5v6"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="grp grow">
+      <label for="saveName">Save this build as</label>
+      <div class="grpline">
+        <input type="text" id="saveName" placeholder="Rift tank, levelling, …" maxlength="40">
+        <button type="button" id="saveBtn" class="gold">Save</button>
+      </div>
+    </div>
+
+    <div class="grp">
+      <label>Share</label>
+      <div class="grpline">
+        <button type="button" id="linkBtn" title="Copy a link that rebuilds this exactly">Copy link</button>
+      </div>
+    </div>
+
+    <span class="savenote" id="saveNote"></span>
+  </div>
+
+  <div class="plan">
+    <div class="doll">
+      <div class="dollcol" id="colL"></div>
+      <div class="dollmid">
+        <!-- Stands in for the panel's SubViewportContainer/SubViewport/CharacterPreview,
+             which renders the live character model. Exported from the game's own male
+             model so the figure matches. -->
+        <figure class="dollfig">
+          <img id="charFig" src="icons/ui/character_male.png" alt="Character" loading="lazy">
+          <div id="charFigMissing" class="figmissing" hidden>Character art unavailable.</div>
+          <button type="button" id="openAttrs" class="attrbtn">
+            Attribute points <span id="ptsLeft">39</span>
+          </button>
+          <!-- Proficiencies sit under the points because they are the same kind of thing:
+               a number you choose that moves every figure on the panel. -->
+          <button type="button" id="openProf" class="attrbtn">
+            Proficiencies <span id="profNow">0</span>
+          </button>
+        </figure>
+      </div>
+      <div class="dollcol" id="colR"></div>
+      <div class="dollweapons" id="colW"></div>
+    </div>
+    <div class="attrs">
+      <!-- Panel2/ItemLevelCard, then Divider, then AttributesHeading + StatsRows -->
+      <div class="ilvlcard" id="ilvlCard">
+        <span class="lab">Item Level</span>
+        <span class="val" id="ilvlValue">0</span>
+      </div>
+      <h3>Attributes</h3>
+      <div class="divider"></div>
+      <div id="attrs"></div>
+    </div>
+
+    <!-- What this build actually does. All three numbers are the game's own formulas,
+         measured by watching the server recompute them. -->
+    <div class="attrs spells">
+      <div class="rifthead">
+        <h3 id="spellClass">Spells</h3>
+        <div class="grpline">
+          <button type="button" id="openBuffs" class="buffbtn">
+            Buffs <span id="buffCount" class="buffn" hidden>0</span>
+          </button>
+          <label for="spellRank">Talent rank</label>
+          <input type="number" id="spellRank" min="0" max="5" step="1" value="1">
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div id="spellRows"></div>
+      <p class="note" id="spellNote" style="margin:10px 0 0"></p>
+    </div>
+    <!-- What this build actually has to survive: the rift roster, with damage put through
+         your Fortitude and health scaled by the rift's instability. -->
+    <div class="attrs rift">
+      <div class="rifthead">
+        <h3 id="riftName">Rift</h3>
+        <div class="grpline">
+          <label for="riftInst">Instability</label>
+          <span id="riftInstBox"></span>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <!-- The four numbers the game's own portal shows for the chosen tier, so the panel
+           answers "what does raising this cost me, and what does it buy" in one place. -->
+      <div id="riftPreview" class="riftprev" hidden></div>
+      <div id="riftRows"></div>
+      <p class="note" id="riftNote" style="margin:10px 0 0"></p>
+    </div>
+
+  </div>
+</div>
+
+<dialog id="attrDlg">
+  <div class="dhead">
+    <div class="dtop">
+      <b>Attribute points</b>
+      <span class="spacer"></span>
+      <button id="aReset">Reset</button>
+      <button id="aClose" class="gold">Close</button>
+    </div>
+    <div class="dfilters">
+      <label>Character level</label>
+      <input type="number" id="aLevel" min="1" max="80" step="1">
+      <span class="count" id="aSummary"></span>
+    </div>
+  </div>
+  <div class="dbody"><div id="aRows" class="allocrows"></div></div>
+</dialog>
+
+<dialog id="profDlg">
+  <div class="dhead">
+    <div class="dtop">
+      <b>Proficiencies</b>
+      <span class="spacer"></span>
+      <button id="pMax">Max all</button>
+      <button id="pReset">Reset</button>
+      <button id="pClose" class="gold">Close</button>
+    </div>
+    <div class="dfilters"><span class="count" id="pSummary"></span></div>
+  </div>
+  <div class="dbody"><div id="pRows" class="profrows"></div>
+    <p class="note" id="pNote"></p>
+  </div>
+</dialog>
+
+<dialog id="picker">
+  <div class="dhead">
+    <div class="dtop">
+      <b id="dTitle">Choose item</b>
+      <span class="spacer"></span>
+      <button id="dNone">Empty slot</button>
+      <button id="dClose" class="gold">Close</button>
+    </div>
+    <div class="dfilters">
+      <input type="search" id="dq" placeholder="Search…">
+      <label>Has stat</label><select id="dStat"></select>
+      <span id="dRar"></span>
+      <label>Instability</label><span id="dInst"></span>
+      <span class="count" id="dScope"></span>
+    </div>
+  </div>
+  <div class="dbody">
+    <table><thead><tr id="dHead"></tr></thead><tbody id="dRows"></tbody></table>
+  </div>
+</dialog>
+
+<dialog id="buffDlg">
+  <div class="dhead">
+    <div class="dtop">
+      <b>Self buffs</b>
+      <span class="spacer"></span>
+      <button type="button" id="buffNone">None active</button>
+      <button type="button" id="buffClose" class="gold">Close</button>
+    </div>
+    <div class="dfilters">
+      <span class="count" id="buffSummary"></span>
+    </div>
+  </div>
+  <div class="dbody">
+    <div id="buffRows" class="buffrows"></div>
+    <p class="note" id="buffNote"></p>
+  </div>
+</dialog>
+
+<script src="data.js?v=01152046"></script>
+<!-- Written by the mod when you log in; absent until then. -->
+<script src="app.js?v=01152046"></script>
+<script>
+/* The game's slot set and order, from InGameUi.EnumerateCharacterPanelSlots:
+   main weapon, off hand, head, neck, shoulder, back, chest, waist, leg, foot, hands. */
+const SLOTS = [
+  {k:"Head",     l:"Head"},      {k:"Neck",     l:"Neck"},      {k:"Back",  l:"Back"},
+  {k:"Shoulder", l:"Shoulder"},  {k:"Chest",    l:"Chest"},     {k:"Waist", l:"Waist"},
+  {k:"Legs",     l:"Legs"},      {k:"Feet",     l:"Feet"},      {k:"Hands", l:"Hands"},
+  {k:"Main Hand",l:"Main Hand"}, {k:"Off Hand", l:"Off Hand"},
+];
+
+/* Column layout as the in-game panel arranges it:
+     left  — head, neck, cloak (Back), pauldron (Shoulder)
+     right — chest, gloves (Hands), belt (Waist), legs, boots (Feet)
+   Weapons sit below, matching Wep1Slot / Wep2Slot in the panel scene. */
+const COLUMNS = {
+  colL: ["Head", "Neck", "Back", "Shoulder"],
+  colR: ["Chest", "Hands", "Waist", "Legs", "Feet"],
+  colW: ["Main Hand", "Off Hand"],
+};
+
+/* The game's own slot wording, from EquipmentSubTypes / the panel's slot names. */
+const SLOT_LABEL = {
+  "Head": "Head", "Neck": "Neck", "Back": "Cloak", "Shoulder": "Pauldron",
+  "Chest": "Chest Armor", "Hands": "Gloves", "Waist": "Belt",
+  "Legs": "Leg Armor", "Feet": "Boots",
+  "Main Hand": "Main Hand", "Off Hand": "Off Hand",
+};
+const WEAPON_SLOTS = new Set(["Main Hand", "Off Hand"]);
+
+/* The item's own sub type - Greatsword, Staff, Shield. Only for the two hand slots: on the
+   armour slots it repeats the slot label back ("Chest Armor · Chest Armor"), and the slot
+   label is already the game's word for it.
+
+   It earns its place on a weapon because the sub type is what picks the proficiency, and
+   nothing else on the panel says which weapon a build is actually holding. */
+function weaponTypeLabel(slotKey, item) {
+  if (!item || !WEAPON_SLOTS.has(slotKey) || !item.sub) return "";
+  const hand = item.hand === "Two-Handed" ? "two-handed " : "";
+  return hand + item.sub;
+}
+
+/* SLOT_FRAMES (app.js) says whether the in-engine slot captures exist. Without them the
+   slot composes the frame textures itself instead of showing an empty box. */
+document.addEventListener("slotframes", () => render());
+
+/* The panel's own empty-slot art, taken from each EquipmentSlot's MarginContainer2/TextureRect
+   in the exported dump. ("untitled-11" really is the cloak icon's file name.) */
+const SLOT_PLACEHOLDER = {
+  "Head":      "icon_dark_fantasy_inventory_helmets_01_stroke.png",
+  "Neck":      "icon_dark_fantasy_inventory_necklaces_01_stroke.png",
+  "Back":      "untitled-11.png",
+  "Shoulder":  "icon_dark_fantasy_inventory_shoulder_pads_01_stroke.png",
+  "Chest":     "icon_dark_fantasy_inventory_armor_01_stroke.png",
+  "Hands":     "ICON_DarkFantasy_Inventory_Gauntlets_01_Stroke.png",
+  "Waist":     "icon_dark_fantasy_inventory_belts_01_stroke.png",
+  "Legs":      "icon_dark_fantasy_inventory_leg_armor_01_stroke.png",
+  "Feet":      "icon_dark_fantasy_inventory_boots_01_stroke.png",
+  "Main Hand": "icon_dark_fantasy_inventory_daggers_01_stroke.png",
+  "Off Hand":  "icon_dark_fantasy_inventory_spellbooks_01_stroke.png",
+};
+
+/* EquippedItemLevelCalculator.CalculateItemLevel:
+     round(levelRequirement × 10 × qualityMult × instabilityMult)
+
+   Quality here had a gentle curve of its own until v3489988 - 1.05 / 1.1 / 1.15 - and is now
+   whatever the stats use, ItemQuality.StatMultiplier, which v3492098 then cut to
+   1.15 / 1.3 / 1.5. Two patches running, so an item level from before either is not
+   comparable to one from now. The whole product is float32 in the client and rounds away
+   from zero, and both are reproduced here. */
+function itemLevelOf(item, quality, tier) {
+  if (!item) return 0;
+  const base = Math.max(0, item.lvl || 0) * 10;
+  const q = (QUALITY[quality] || QUALITY[1]).m;
+  return round(f32(f32(f32(base) * f32(q)) * instabilityMult(tier)));
+}
+
+/** Average item level, weapons averaged together into a single normalised slot. */
+function equippedItemLevel() {
+  let total = 0, slots = 0;
+  const weapons = [];
+  for (const s of SLOTS) {
+    const st = build[s.k];
+    if (!st.item) continue;
+    if (s.k === "Off Hand" && two()) continue;
+    const lvl = itemLevelOf(st.item, st.quality, st.tier);
+    if (s.k === "Main Hand" || s.k === "Off Hand") weapons.push(lvl);
+    else { total += lvl; slots++; }
+  }
+  if (weapons.length) {
+    total += weapons.reduce((a, b) => a + b, 0) / weapons.length;
+    slots++;
+  }
+  return slots ? Math.round(total / slots) : 0;
+}
+
+/* slot -> {item, quality, tier} */
+const build = {};
+SLOTS.forEach(s => build[s.k] = {item:null, quality:1, tier:0});
+let openSlot = null;
+
+/* ---- attribute points ---------------------------------------------------
+   The seven attributes the character panel lists (CharacterStats /
+   GetCharacterPanelStats). Accuracy is allocation-only — no equipment grants it.
+   One point every two levels, so level 80 gives 39, and a single attribute
+   takes at most 25 - see pointsTotal.                                      */
+const ATTRS = ["vitality", "fortitude", "strength", "grace", "alacrity", "tempo", "accuracy"];
+
+/* Straight from the talent nodes: the seven attribute nodes (NodeType 1, StatType 0-6)
+   each have MaxRank 25 and StatAmountPerRank 2. So a point is a RANK, and it is worth two
+   points of the stat - 25 spent reads as +50. */
+const MAX_PER_ATTR = GAME.MAX_PER_ATTR;
+const STAT_PER_POINT = GAME.STAT_PER_POINT;
+
+let level = 80;
+const alloc = Object.fromEntries(ATTRS.map(k => [k, 0]));
+
+/* One point every two levels, so a level 80 character places 39.
+
+   Measured, not read: how many points a character is GIVEN is not in any client file. The
+   server hands the running total over in talent_points_state and the client only prints it,
+   so this is fitted to what the game shows - 39 at level 80, down from 79 before v3489988,
+   which halved it.
+
+   The rate is certain; the phase is not. floor((level-1)/2) and floor(level/2)-1 both give
+   39 at 80 and differ by one point at odd levels, and one reading cannot separate them.
+   This takes the first, which keeps the old formula's shape - nothing at level 1, then a
+   point every other level. CharacterExport now records earned and spent per character, so
+   the next export settles it. */
+const pointsTotal = () => GAME.attributePoints(level);
+const pointsSpent = () => ATTRS.reduce((a, k) => a + alloc[k], 0);
+const pointsLeft = () => pointsTotal() - pointsSpent();
+
+/* The build survives a reload. Only ids are stored, so a rebuilt data.js with
+   different items simply drops the ones that no longer exist. */
+const SAVE_KEY = "elegon.planner.v1";
+
+function saveBuild() {
+  const out = {slots: {}, alloc, level, prof, lens: {quality: P.quality, tier: P.tier}};
+  for (const s of SLOTS) {
+    const st = build[s.k];
+    out.slots[s.k] = {id: st.item ? st.item.id : null, quality: st.quality, tier: st.tier};
+  }
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(out)); } catch {}
+}
+
+function loadBuild() {
+  let saved;
+  try { saved = JSON.parse(localStorage.getItem(SAVE_KEY) || "null"); } catch { return; }
+  if (!saved) return;
+  // Older saves stored slots at the top level; read either shape.
+  const slots = saved.slots || saved;
+  for (const s of SLOTS) {
+    const v = slots[s.k];
+    if (!v) continue;
+    build[s.k].quality = v.quality || 1;
+    build[s.k].tier = v.tier || 0;
+    build[s.k].item = v.id ? (D.items.find(i => i.id === v.id) || null) : null;
+  }
+  if (typeof saved.level === "number") level = saved.level;
+  if (saved.lens) {
+    P.quality = saved.lens.quality || 1;
+    P.tier = saved.lens.tier || 0;
+  }
+  if (saved.alloc) for (const k of ATTRS)
+    alloc[k] = Math.min(MAX_PER_ATTR, Math.max(0, saved.alloc[k] | 0));
+  // Absent from anything saved before v3489988, which reads as zero and is correct.
+  PROF_SKILLS.forEach(sk =>
+    prof[sk.id] = Math.min(sk.max || 400, Math.max(0, ((saved.prof || {})[sk.id]) | 0)));
+  // This one sets level directly rather than through setLevel, so it has to trim itself -
+  // and every build saved before the points were halved needs it.
+  trimToPoints();
+}
+
+const two = () => {
+  const m = build["Main Hand"].item;
+  return m && m.hand === "Two-Handed";
+};
+
+/* ---- top bar ------------------------------------------------------------ */
+let allTier = 0, allRar = 1;
+document.getElementById("allInst").appendChild(instabilityInput(0, v => allTier = v));
+const allRarBtns = rarityButtons(1, v => allRar = v);
+document.getElementById("allRar").appendChild(allRarBtns);
+
+/* Character level lives in the setup bar. It drives the attribute-point budget and the
+   Tempo/Alacrity maths, so the allocation modal reads from the same value. */
+const charLevel = document.getElementById("charLevel");
+charLevel.oninput = () => { setLevel(Number(charLevel.value) || 1); };
+
+/* Spend more than the level allows and the excess comes off the bottom of the list rather
+   than the build being refused. Its own function because four things can now overspend: a
+   level change, a saved build, a shared link, and an imported character - and every build
+   saved before v3489988 halved the points overspends by definition. */
+function trimToPoints() {
+  let over = pointsSpent() - pointsTotal();
+  for (let i = ATTRS.length - 1; i >= 0 && over > 0; i--) {
+    const take = Math.min(alloc[ATTRS[i]], over);
+    alloc[ATTRS[i]] -= take;
+    over -= take;
+  }
+}
+
+function setLevel(v) {
+  level = Math.min(80, Math.max(1, v));
+  trimToPoints();
+  charLevel.value = String(level);
+  if (typeof aLevel !== "undefined") aLevel.value = String(level);
+  drawAlloc();
+  render();
+}
+document.getElementById("applyAll").onclick = () => {
+  SLOTS.forEach(s => build[s.k].tier = allTier); render();
+};
+document.getElementById("applyAllRar").onclick = () => {
+  SLOTS.forEach(s => build[s.k].quality = allRar); render();
+};
+document.getElementById("clear").onclick = () => {
+  SLOTS.forEach(s => { build[s.k].item = null; build[s.k].quality = 1; build[s.k].tier = 0; });
+  render();
+};
+
+/* ---- slot grid ---------------------------------------------------------- */
+/* ---- the game's own formulas --------------------------------------------
+   None of these are computed by the client: the server sends max health and the
+   calculated spell values, and the UI only prints them. Each was measured by
+   watching those values change against the inputs that produced them, then checked
+   against every recorded sample.
+
+     max_health = base + 8 × (level − 1) + 10 × Vitality      base is per class
+     damage     = base × lvlMul × (1 + 0.01 × Strength) × talentMul
+     healing    = base × lvlMul × (1 + 0.01 × Grace)    × talentMul
+     lvlMul     = 1 + 0.04 × (level − 1)
+     talentMul  = 1 + 0.2 × max(0, rank − 1)      rank 0 and 1 both multiply by 1
+     cast time  = base / (1 + 0.4 × Alacrity / (Alacrity + 20 + level))         */
+/* ---- proficiencies -------------------------------------------------------
+   v3489988 added thirteen weapon skills and Defense. What a level is worth is exact, and
+   comes from the catalogue rather than being written twice: +0.025% damage and healing per
+   point of the weapon proficiency, -0.02% damage taken per point of Defense, both linear
+   with no soft cap. Four hundred points is +10% and -8%.
+
+   WHERE the server applies the weapon bonus is the one thing the client does not say. Its
+   two constants appear in exactly one place - the tooltip string - so nothing in the
+   assembly shows the multiply. The reading taken here is the plain one: the tooltip says
+   "damage and healing" without qualification, and a skill trains on "damaging hits and
+   heals landed with" the weapon, so the bonus is treated as applying to everything you do
+   while that weapon is held. If it turns out to cover only weapon strikes and not spells,
+   one multiplier moves.
+
+   The main hand decides which proficiency is live. An off-hand weapon of a different type
+   is not counted twice - two proficiencies at once is a guess with nothing behind it. */
+const SKILL_BY_ID_P = new Map((D.skills || []).map(s => [s.id, s]));
+const PROF_SKILLS = (D.skills || []).filter(s => s.group === "Combat");
+const DEFENSE_SKILL = 2;
+const prof = {};
+PROF_SKILLS.forEach(s => { prof[s.id] = 0; });
+
+/** The weapon skill the equipped main hand trains, or null when unarmed. */
+function activeWeaponSkill() {
+  const mh = build["Main Hand"] && build["Main Hand"].item;
+  return mh ? PROF_SKILLS.find(s => s.sub && s.sub === mh.sub) || null : null;
+}
+const profLevel = id => Math.max(0, prof[id] || 0);
+/** Damage and healing multiplier from the weapon you are actually holding. */
+function weaponPower() {
+  const s = activeWeaponSkill();
+  return s ? profLevel(s.id) * (s.bonus || 0) : 0;
+}
+/** Fraction of incoming damage removed by Defense, before Fortitude and buffs. */
+function defenseReduction() {
+  const s = SKILL_BY_ID_P.get(DEFENSE_SKILL);
+  return s ? profLevel(DEFENSE_SKILL) * (s.bonus || 0) : 0;
+}
+
+const CLASSES = D.classes || {"1": {name: "Knight", health_base: 162}};
+const HEALTH_PER_LEVEL = GAME.HEALTH_PER_LEVEL;
+let charClass = "3";                                   // Cleric by default
+
+const healthBase = () => (CLASSES[charClass] || {}).health_base || 162;
+const className = () => (CLASSES[charClass] || {}).name || "";
+
+const maxHealth = vitality => GAME.maxHealth(healthBase(), level, vitality);
+
+const levelMul = () => GAME.levelMul(level);
+const talentMul = rank => GAME.talentMul(rank);
+/* SpellHandler.GetActiveCastSpeedBonus takes Mathf.Max of the Alacrity bonus and any live
+   type-5 effect — so a buff REPLACES the stat when it is bigger, never adds to it. */
+const speedBonus = alacrity => Math.max(GAME.castSpeed(alacrity, level), ampBonus());
+const castTimeOf = (base, alacrity) => base / (1 + speedBonus(alacrity));
+
+const DELIVERY = D.delivery || {};
+const TIMING = D.spellTiming || {};
+
+/* When the damage actually lands, which is not when the cast bar ends.
+   A spell's own impact_delay_s and projectile_speed are in the catalogue; where it carries
+   neither, SpellHandler applies a fixed delay per delivery kind - 0.38s for a melee hit,
+   0.20s for an arc, 0.10s for the instant-ranged flash. A projectile adds distance/speed on
+   top, so the same Fireball lands later the further away the target is. */
+/** The fixed delay between a cast finishing and the damage arriving, in seconds. */
+function landDelay(s) {
+  const fixed = s.impact || ({1: TIMING.meleeImpact, 2: TIMING.arcImpact,
+                              4: TIMING.rangedImpact})[s.dlv] || 0;
+  if (s.dlv === 3 && s.maxR) {
+    const speed = s.projSpeed || TIMING.projectileSpeed;
+    if (speed) return fixed + s.maxR / speed;
+  }
+  return fixed;
+}
+
+function timeToLand(s, totals) {
+  const cast = (s.instant || !s.cast) ? 0 : castTimeOf(s.cast, totals.alacrity);
+  const fixed = s.impact || ({1: TIMING.meleeImpact, 2: TIMING.arcImpact,
+                              4: TIMING.rangedImpact})[s.dlv] || 0;
+  const speed = s.projSpeed || TIMING.projectileSpeed;
+  if (s.dlv === 3 && speed && s.maxR) {
+    const flight = s.maxR / speed;
+    return `Lands <b>${(cast + fixed + flight).toFixed(2)}s</b> after you press it at `
+         + `maximum range — ${cast.toFixed(2)}s cast + ${flight.toFixed(2)}s flight `
+         + `(${s.maxR} units at ${speed}/s)${fixed ? ` + ${fixed}s impact` : ""}`;
+  }
+  if (!fixed) return `Lands as the cast ends.`;
+  return `Lands <b>${(cast + fixed).toFixed(2)}s</b> after you press it `
+       + `— ${cast.toFixed(2)}s cast + ${fixed}s impact delay`;
+}
+
+function healthTip(vitality) {
+  const lvlPart = HEALTH_PER_LEVEL * (level - 1);
+  return `<b>Health</b><i>base + 8 × (level − 1) + 10 × Vitality</i>`
+    + `${healthBase()} base (${className()}) + ${lvlPart.toLocaleString()} from level ${level} `
+    + `+ ${(10 * vitality).toLocaleString()} from ${vitality} Vitality `
+    + `= <b>${maxHealth(vitality).toLocaleString()}</b>.`;
+}
+
+/* ---- stat tooltips ------------------------------------------------------
+   Replaces the old static notes block: the formula and the numbers behind each
+   attribute, shown for the one you are pointing at. Values come from the mined
+   formulas; where a stat has no confirmed formula the tooltip says so rather than
+   inventing one.                                                              */
+function statTip(k, totals) {
+  const v = totals[k];
+  const ratingBonus = r => 0.4 * r / (r + 20 + level);
+  switch (k) {
+    case "vitality":
+      return `<b>Vitality</b><i>Increases maximum health</i>`
+        + `${v} Vitality → <b>+${(10 * v).toLocaleString()}</b> health, `
+        + `for ${maxHealth(v).toLocaleString()} total at level ${level}.`;
+    case "fortitude": {
+      const mit = GAME.mitigation(v);
+      const capped = mit >= 0.5999;
+      return `<b>Fortitude</b><i>mitigation = F / (F + 500), capped at 60%</i>`
+        + `At ${v} you take <b>${((1 - mit) * 100).toFixed(1)}%</b> of incoming damage `
+        + `(${(mit * 100).toFixed(1)}% mitigated${capped ? ", <b>at the cap</b>" : ""}). `
+        + (capped ? "Beyond ~746 Fortitude adds nothing."
+                  : `The 60% cap is reached at about 746.`);
+    }
+    case "tempo":
+      return `<b>Tempo</b><i>bonus = 0.4 × r / (r + 20 + level)</i>`
+        + `At ${v} and level ${level}: <b>+${(ratingBonus(v) * 100).toFixed(1)}%</b>. `
+        + `Global cooldown ${(1.5 / (1 + ratingBonus(v))).toFixed(2)}s (from 1.50s).`;
+    case "alacrity":
+      return `<b>Alacrity</b><i>bonus = 0.4 × r / (r + 20 + level)</i>`
+        + `At ${v} and level ${level}: <b>+${(ratingBonus(v) * 100).toFixed(1)}%</b> `
+        + `faster casting — a 2.00s cast finishes in `
+        + `${(2 / (1 + ratingBonus(v))).toFixed(2)}s.`;
+    case "strength":
+      return `<b>Strength</b><i>scales spell damage</i>`
+        + `Total <b>${v}</b>. The coefficient that turns Strength into damage is applied `
+        + `server-side, so the exact multiplier is not shown rather than guessed.`;
+    case "grace":
+      return `<b>Grace</b><i>scales spell healing</i>`
+        + `Total <b>${v}</b>. The coefficient that turns Grace into healing is applied `
+        + `server-side, so the exact multiplier is not shown rather than guessed.`;
+    case "accuracy":
+      return `<b>Accuracy</b><i>improves your chance to hit</i>`
+        + `Total <b>${v}</b>. No equipment grants Accuracy — it comes only from the `
+        + `attribute points you spend.`;
+    default:
+      return `<b>${cap(k)}</b>Total from gear: <b>${v}</b>.`;
+  }
+}
+
+/* One shared tooltip element, positioned near the cursor. */
+const tip = el("div", "tip");
+tip.hidden = true;
+document.body.appendChild(tip);
+
+function attachTip(node, html) {
+  node.classList.add("hastip");
+  const show = e => {
+    // Callers pass a string or a built node; the spell tooltip is structured, so it builds
+    // its own rather than concatenating markup.
+    if (html instanceof Node) tip.replaceChildren(html.cloneNode(true));
+    else tip.innerHTML = html;
+    tip.hidden = false;
+    place(e);
+  };
+  const place = e => {
+    const pad = 14, r = tip.getBoundingClientRect();
+    let x = e.clientX + pad, y = e.clientY + pad;
+    if (x + r.width > innerWidth - 8) x = e.clientX - r.width - pad;
+    if (y + r.height > innerHeight - 8) y = e.clientY - r.height - pad;
+    tip.style.left = Math.max(8, x) + "px";
+    tip.style.top = Math.max(8, y) + "px";
+  };
+  node.addEventListener("mouseenter", show);
+  node.addEventListener("mousemove", place);
+  node.addEventListener("mouseleave", () => { tip.hidden = true; });
+}
+
+/** One paperdoll slot: bordered square, quality backdrop, icon, caption. */
+function slotButton(s) {
+  const st = build[s.k];
+  // A two-hander occupies both hands, so the off-hand is not selectable.
+  const blocked = s.k === "Off Hand" && two();
+
+  const isWeapon = s.k === "Main Hand" || s.k === "Off Hand";
+  const btn = el("button", "eqslot" + (isWeapon ? " weapon" : ""));
+  btn.type = "button";
+  btn.disabled = blocked;
+  // No `title`: the browser's own tooltip would appear alongside the styled one.
+  // aria-label still carries the same information for screen readers.
+  btn.setAttribute("aria-label", s.l + (st.item ? ": " + st.item.name : ": empty"));
+
+  // Normal quality shows no backdrop, matching ItemQuality.GetBorderColor returning null.
+  const q = st.item ? st.quality : 1;
+  const box = el("div", "eqbox");
+
+  if (SLOT_FRAMES) {
+    // The game's own rendering of the slot at this quality, captured in-engine.
+    box.classList.add("state");
+    box.style.backgroundImage = `url("${slotFrameUrl(q)}")`;
+  } else if (st.item && q !== 1) {
+    // Fallback approximation until the slot states have been exported.
+    const glow = el("div", "glow");
+    glow.style.setProperty("--q", QUALITY_HEX[q]);
+    box.appendChild(glow);
+  }
+  if (st.item) {
+    box.appendChild(icon("items", st.item.id, !!st.item.icon));
+  } else {
+    // The panel's own empty-slot art rather than a generic placeholder.
+    const ph = el("img", "ph");
+    ph.src = "icons/ui/" + SLOT_PLACEHOLDER[s.k];
+    ph.alt = "";
+    ph.loading = "lazy";
+    box.appendChild(ph);
+  }
+  btn.appendChild(box);
+
+  // No caption under the slot: the game shows the icon alone and puts the detail in a
+  // hover tooltip, so the same information lives there.
+  attachTip(btn, blocked
+    ? `<b>${SLOT_LABEL[s.k]}</b><i>occupied</i>A two-handed weapon uses both hands.`
+    : st.item
+      ? `<b>${st.item.name}</b><i>${SLOT_LABEL[s.k]}`
+        + `${weaponTypeLabel(s.k, st.item) ? " · " + weaponTypeLabel(s.k, st.item) : ""}`
+        + ` · ${QUALITY[st.quality].n}`
+        + `${st.tier ? " · instability " + st.tier : ""}</i>`
+        + D.stats.filter(x => scaled(st.item, x, st.quality, st.tier))
+                 .map(x => `${cap(x)} <b>+${scaled(st.item, x, st.quality, st.tier)}</b>`)
+                 .join("<br>")
+        + `<br><span style="opacity:.7">Item level ${itemLevelOf(st.item, st.quality, st.tier)}</span>`
+      : `<b>${SLOT_LABEL[s.k]}</b><i>empty</i>Click to choose an item.`);
+
+  if (!blocked) btn.onclick = () => openPicker(s.k);
+  return btn;
+}
+
+function render() {
+  const byKey = Object.fromEntries(SLOTS.map(s => [s.k, s]));
+  for (const [colId, keys] of Object.entries(COLUMNS)) {
+    const col = document.getElementById(colId);
+    col.replaceChildren();
+    for (const k of keys) col.appendChild(slotButton(byKey[k]));
+  }
+
+  /* attributes: gear plus allocated points */
+  const gear = {};
+  ATTRS.forEach(k => gear[k] = 0);
+  for (const s of SLOTS) {
+    const st = build[s.k];
+    if (!st.item) continue;
+    if (s.k === "Off Hand" && two()) continue;
+    D.stats.forEach(k => gear[k] += scaled(st.item, k, st.quality, st.tier));
+  }
+  const totals = {};
+  ATTRS.forEach(k => totals[k] = gear[k] + alloc[k] * STAT_PER_POINT);
+
+  const box = document.getElementById("attrs");
+  box.replaceChildren();
+
+  // Health leads: it is the number the other attributes are judged against.
+  const hp = el("div", "attr");
+  hp.appendChild(el("span", null, "Health"));
+  hp.appendChild(el("b", null, maxHealth(totals.vitality).toLocaleString()));
+  attachTip(hp, healthTip(totals.vitality));
+  box.appendChild(hp);
+
+  for (const k of ATTRS) {
+    const row = el("div", "attr" + (totals[k] ? "" : " zero"));
+    row.appendChild(el("span", null, cap(k)));
+    // Value alone, exactly as the panel shows it. The gear/points split belongs in the
+    // tooltip rather than cluttering the row.
+    row.appendChild(el("b", null, totals[k] ? "+" + totals[k] : "0"));
+    attachTip(row, statTip(k, totals)
+      + `<br><span style="opacity:.75">${gear[k]} from gear`
+      + (alloc[k] ? ` · ${alloc[k]} point${alloc[k] === 1 ? "" : "s"} spent `
+                    + `= +${alloc[k] * STAT_PER_POINT}` : "")
+      + `</span>`);
+    box.appendChild(row);
+  }
+
+  document.getElementById("ptsLeft").textContent = pointsLeft();
+  document.getElementById("openAttrs").classList.toggle("hasleft", pointsLeft() > 0);
+  // Which proficiency is live follows the main hand, so the badge is re-read on every
+  // render rather than only when the modal is open.
+  syncProfBtn();
+
+  const itemLevel = equippedItemLevel();
+  document.getElementById("ilvlValue").textContent = itemLevel.toLocaleString();
+
+  drawRift(totals.fortitude, maxHealth(totals.vitality));
+  /* Before the spells, because drawSpells needs the buff list to know what to leave out -
+     and the badge has to track class and level, not only the last time the modal opened. */
+  drawBuffs();
+  drawSpells(totals);
+  saveBuild();
+}
+
+/* ---- picker modal ------------------------------------------------------- */
+const dlg = document.getElementById("picker");
+/* Columns are sorted by clicking their header, like every other table on the site, so the
+   picker no longer needs a "sort by" dropdown. */
+const P = {q:"", stat:"", quality:1, tier:0, sort:{key:"vitality", desc:true}};
+
+/* Accuracy is listed even though no equipment grants it: the column is part of the
+   character's attribute set, and its absence on gear is itself worth seeing. */
+const PICK_STATS = [...D.stats, "accuracy"];
+const PICK_COLS = [
+  {key:"name", label:"Item", left:true},
+  {key:"sub",  label:"Type", left:true},
+  {key:"lvl",  label:"Lvl"},
+  ...PICK_STATS.map(s => ({key:s, label:cap(s)})),
+];
+
+const dStat = document.getElementById("dStat");
+dStat.appendChild(Object.assign(el("option", null, "Any stat"), {value:""}));
+for (const s of PICK_STATS) {
+  dStat.appendChild(Object.assign(el("option", null, cap(s)), {value:s}));
+}
+dStat.onchange = e => { P.stat = e.target.value; drawPicker(); };
+document.getElementById("dq").oninput = e => { P.q = e.target.value.toLowerCase(); drawPicker(); };
+/* Kept as references: these controls are built once but must be re-synced every time the
+   picker opens, otherwise they keep showing the previous slot's rarity while P.quality has
+   already moved on — the widget and the state disagree, and picking the value that is
+   *already displayed* fires no change event, so it looks like you have to toggle away and
+   back for it to take. */
+const dRarSel = rarityButtons(1, v => { P.quality = v; drawPicker(); });
+const dInstInp = instabilityInput(0, v => { P.tier = v; drawPicker(); });
+document.getElementById("dRar").appendChild(dRarSel);
+document.getElementById("dInst").appendChild(dInstInp);
+document.getElementById("dClose").onclick = () => dlg.close();
+document.getElementById("dNone").onclick = () => {
+  build[openSlot].item = null; dlg.close(); render();
+};
+
+/* Rarity and instability carry from one slot's picker to the next.
+   They used to be re-seeded from whatever the slot already held, which meant planning a set
+   at Flawless and instability 8 was eleven trips through the same two controls - and the
+   one time they should reset, an empty slot, is exactly when the slot has nothing to seed
+   them from. They are a lens you are browsing through, not a property of the slot, so the
+   last choice stands until it is changed. Kept in the saved build, so a reload keeps it. */
+function openPicker(slot) {
+  openSlot = slot;
+  // P.quality / P.tier persist across opens; only the widgets need re-syncing, since a
+  // control showing a stale value fires no change event when you pick what it already shows.
+  dRarSel.setValue(P.quality);
+  dInstInp.value = String(P.tier);
+  document.getElementById("dTitle").textContent = "Choose " + slot;
+  drawPicker();
+  dlg.showModal();
+}
+
+/* Only rift gear can carry instability, so as soon as a tier is set the picker narrows to
+   the items that actually drop there - anything else could never exist at that tier. */
+const RIFT_ITEMS = new Set(D.riftItems || []);
+
+/** Items that can go in a slot. Main Hand accepts two-handers and one-handers alike. */
+function candidates(slot) {
+  let list = D.items.filter(i => i.slot === slot);
+  if (P.tier > 0 && RIFT_ITEMS.size) list = list.filter(i => RIFT_ITEMS.has(i.id));
+  return list;
+}
+
+function drawPicker() {
+  const rows = candidates(openSlot)
+    .filter(i => (!P.q || i.name.toLowerCase().includes(P.q))
+              && (!P.stat || (i[P.stat] || 0) > 0))
+    .map(i => {
+      const o = {...i};
+      for (const s of PICK_STATS) o[s] = scaled(i, s, P.quality, P.tier);
+      return o;
+    });
+
+  applySort(rows, P.sort);
+  sortableTable(document.getElementById("dHead"), PICK_COLS, P.sort, drawPicker);
+
+  const body = document.getElementById("dRows");
+  body.replaceChildren();
+  if (!rows.length)
+    emptyRow(body, PICK_COLS.length,
+      P.tier > 0 && RIFT_ITEMS.size
+        ? `No ${openSlot} items from ${(D.rift || {}).name || "the rift"} match this filter. `
+          + `Only rift gear can carry instability.`
+        : `No ${openSlot} items match this filter.`);
+
+  const scope = document.getElementById("dScope");
+  scope.textContent = (P.tier > 0 && RIFT_ITEMS.size)
+    ? `instability ${P.tier} — ${(D.rift || {}).name || "rift"} drops only`
+    : "";
+  for (const r of rows) {
+    const tr = el("tr");
+    const td = nameCell("items", r.id, r.icon, r.name, "r" + P.quality, 0, P.quality);
+    if (r.hand) td.firstChild.appendChild(el("span", "tag", r.hand));
+    tr.appendChild(td);
+    tr.appendChild(el("td", "l", r.sub));
+    tr.appendChild(el("td", null, r.lvl || "·"));
+    for (const s of PICK_STATS) tr.appendChild(statCell(r[s]));
+    tr.onclick = () => {
+      const base = D.items.find(i => i.id === r.id);
+      build[openSlot] = {item: base, quality: P.quality, tier: P.tier};
+      // Equipping a two-hander clears whatever was in the off-hand.
+      if (openSlot === "Main Hand" && base.hand === "Two-Handed")
+        build["Off Hand"].item = null;
+      dlg.close();
+      render();
+    };
+    body.appendChild(tr);
+  }
+}
+
+/* The figure is exported from the game; until that has been run, say so plainly
+   instead of leaving a broken image in the middle of the panel. */
+/* ---- rift panel ----------------------------------------------------------
+   What the build has to survive. Enemy health and damage scale with instability on
+   BreachInstability's soft-capped curve - full rate to tier 10, a much gentler one after -
+   and the hit you actually take is that damage after Fortitude mitigation:
+   min(0.60, F / (F + 500)).                                                    */
+const RIFT = D.rift || {name:"Rift", ids:[], bosses:[]};
+let riftTier = 0;
+
+document.getElementById("riftName").textContent = RIFT.name || "Rift";
+document.getElementById("riftInstBox").appendChild(
+  instabilityInput(0, v => { riftTier = v; render(); }));
+
+const mitigationFor = fortitude => GAME.mitigation(fortitude);
+
+/* What actually reaches you: Fortitude first, then the buff on what is left. Multiplied
+   rather than added, because they are two separate reductions applied in turn - adding them
+   would let 60% mitigation and an 80% Stonewall cancel damage entirely. */
+const takenFraction = fortitude =>
+  (1 - mitigationFor(fortitude)) * (1 - mitBonus()) * (1 - defenseReduction());
+
+/* Measured, not listed: the enemy catalogue has no attack-interval column and the client
+   never reads the server's next_attack_time_unix. See ATTACK_INTERVAL in build_site.py. */
+const ATTACK_INTERVAL = D.attackInterval || 3;
+
+function drawRift(fortitude, myHp) {
+  const box = document.getElementById("riftRows");
+  box.replaceChildren();
+
+  const mit = mitigationFor(fortitude);
+  const hpMul = enemyHealthMult(riftTier);
+  const dmgMul = enemyDamageMult(riftTier);
+
+  /* BreachPanel.BuildPreviewText, same four figures in the same order. Instability is a
+     trade, and the cost half was the only half the site showed: past tier 10 the monsters
+     grow slowly while loot power keeps climbing and Flawless goes from 1% to 10%, which is
+     the whole reason to push a tier at all. */
+  const prev = document.getElementById("riftPreview");
+  prev.hidden = !riftTier;
+  if (riftTier) {
+    prev.replaceChildren(...[
+      ["Enemy health", `×${big(hpMul)}`],
+      ["Enemy damage", `×${big(dmgMul)}`],
+      ["Loot power", `+${Math.round((instabilityMult(riftTier) - 1) * 100)}%`],
+      ["Flawless chance", `${flawlessChancePercent(riftTier).toFixed(1)}%`],
+    ].map(([lab, val]) => {
+      const cell = el("div", "prevcell");
+      cell.append(el("span", "lab", lab), el("b", null, val));
+      return cell;
+    }));
+  }
+
+  const roster = RIFT.ids
+    .map(id => D.monsters.find(m => m.id === id))
+    .filter(Boolean)
+    .sort((a, b) => a.lvl - b.lvl || a.hp - b.hp);
+
+  if (!roster.length) {
+    box.appendChild(el("p", "note", "Rift roster unavailable."));
+    return;
+  }
+
+  for (const m of roster) {
+    const boss = (RIFT.bosses || []).includes(m.id);
+    const hp = Math.round(m.hp * hpMul);
+    const raw = Math.round(m.dmg * dmgMul);
+    const taken = Math.round(raw * takenFraction(fortitude));
+
+    const row = el("div", "riftrow" + (boss ? " boss" : ""));
+    row.appendChild(icon("monsters", m.id, m.icon));   // sized by CSS
+
+    const mid = el("div", "rm");
+    mid.appendChild(el("div", "rn", m.name));
+    mid.appendChild(el("div", "rl", `Level ${m.lvl}${boss ? " · boss" : ""}`));
+    row.appendChild(mid);
+
+    /* Per hit AND per second. A 148 hit means nothing on its own - what decides whether you
+       can hold a pull is how fast it arrives, and every creature measured swings on the same
+       3s cycle. Health over DPS is then a time to live, which is the question actually
+       being asked. */
+    const dps = taken / ATTACK_INTERVAL;
+    const num = el("div", "rv");
+    num.appendChild(el("div", "rhp", fmtNum(hp)));
+    num.appendChild(el("div", "rdmg", fmtNum(taken) + " dmg"));
+    num.appendChild(el("div", "rdps", fmtNum(Math.round(dps)) + "/s"));
+    row.appendChild(num);
+
+    attachTip(row,
+      `<b>${m.name}</b><i>level ${m.lvl}${boss ? " · boss" : ""} · instability ${riftTier}</i>`
+      + `Health <b>${fmtNum(hp)}</b>`
+      + (riftTier ? ` (${fmtNum(m.hp)} × ${big(hpMul)})` : "")
+      + `<br>Its hit <b>${fmtNum(raw)}</b>`
+      + (riftTier ? ` (${fmtNum(m.dmg)} × ${big(dmgMul)})` : "")
+      + `<br>Swings every <b>${ATTACK_INTERVAL}s</b> for <b>${fmtNum(Math.round(taken / ATTACK_INTERVAL))}</b> a second`
+      + (myHp ? ` — ${fmtNum(Math.round(myHp / (taken / ATTACK_INTERVAL)))}s to kill you unhealed` : "")
+      + `<br>You take <b>${fmtNum(taken)}</b> after ${(mit * 100).toFixed(1)}% mitigation`
+      + ` from ${fortitude} Fortitude`
+      + (mitBonus() ? ` and a further ${Math.round(mitBonus() * 100)}% from your buff` : "")
+      + (defenseReduction() ? ` and ${(defenseReduction() * 100).toFixed(1)}% from Defense `
+                             + `${profLevel(DEFENSE_SKILL)}` : "")
+      + `.`);
+
+    box.appendChild(row);
+  }
+
+  const total = 1 - takenFraction(fortitude);
+  document.getElementById("riftNote").innerHTML =
+    `Damage shown is what reaches you: <b>${(total * 100).toFixed(1)}%</b> stopped — `
+    + `${(mit * 100).toFixed(1)}% from ${fortitude} Fortitude`
+    + (mit >= 0.5999 ? " (at the 60% cap)" : "")
+    + (mitBonus() ? `, then ${Math.round(mitBonus() * 100)}% of the remainder by your buff` : "")
+    + (defenseReduction()
+        ? `, then ${(defenseReduction() * 100).toFixed(1)}% of what is left by Defense `
+          + `${profLevel(DEFENSE_SKILL)}` : "")
+    + `.`;
+}
+
+/* ---- spell panel ---------------------------------------------------------
+   Shows what this build's spells actually do. Damage scales on Strength, healing on
+   Grace, both on level and talent rank; cast time is reduced by Alacrity. */
+let spellRank = 1;
+/* Per-spell ranks from an imported character; null means "use the single rank selector". */
+let spellRanksByIdx = null;
+/* Auto Attack is the weapon swing every class has and sits outside the talent trees, so
+   nothing can rank it up: it stays at 1 whatever the selector says. */
+const rankFor = s => !s.talent ? 1
+  : (spellRanksByIdx && spellRanksByIdx[s.id] != null) ? spellRanksByIdx[s.id] : spellRank;
+
+/* Utility with no bearing on a build. */
+const HIDDEN_SPELLS = new Set(["Recall"]);
+
+/* The one "spell" that is really the weapon in your hand. */
+const WEAPON_SPELL = "Auto Attack";
+
+/** The equipped main hand, or the slot's own empty art when there is nothing in it. */
+const WEAPON_ART_PX = 38;
+
+/* Auto Attack borrows the main hand's art, so the empty case has to be the same SHAPE as the
+   equipped one, not just the same picture at whatever size it lands on. It used to be a bare
+   <img class="ico">, which took .riftrow .ico - a rule meant for the rift panel's 76px
+   monster portraits - while the equipped weapon was an explicit 38px frame. Twice the size,
+   and only ever when you had nothing equipped.
+
+   Now it is the same framed box the paperdoll draws an empty slot with, so equipping a
+   weapon changes the picture and nothing else. */
+function weaponArt() {
+  const st = build["Main Hand"];
+  if (st && st.item) return framedIcon(st.item.id, !!st.item.icon, st.quality, WEAPON_ART_PX);
+
+  const ph = el("img", "slotart");
+  ph.src = "icons/ui/" + SLOT_PLACEHOLDER["Main Hand"];
+  ph.alt = "";
+  ph.loading = "lazy";
+
+  if (!SLOT_FRAMES) {
+    ph.classList.add("ico");
+    ph.style.width = ph.style.height = WEAPON_ART_PX + "px";
+    return ph;
+  }
+  const box = el("span", "framed");
+  box.style.backgroundImage = `url("${slotFrameUrl(1)}")`;
+  box.style.width = box.style.height = WEAPON_ART_PX + "px";
+  box.appendChild(ph);
+  return box;
+}
+
+/* Active effect types, from SpellTooltipFormatter.FormatActiveEffectText.
+   1 stun · 2 damage over time · 3 heal over time · 4 damage reduction ·
+   5 cast speed and spell damage. Types 4 and 5 are percentages and are NOT scaled -
+   every observed sample came back at its base value. Types 2 and 3 scale like direct
+   damage and healing: on level, on Strength or Grace, and on talent rank. */
+const FX_DOT = 2, FX_HOT = 3, FX_REDUCE = 4, FX_POWER = 5, FX_STUN = 1;
+
+/* Over-time effects use the same +20%-per-rank talent factor and the same 0.01-per-point
+   stat factor as direct values, but a DIFFERENT level curve: 0.024 per level rather than
+   0.04. At level 80 that is x2.896 against x4.16, which is why a periodic tick is about
+   30% lower than the direct formula would suggest.
+
+   Measured, not assumed: it reproduces all 76 recorded effect samples exactly, across
+   Cleric levels 1-6 and level-80 Knight and Cleric builds. */
+const talentMulEffect = talentMul;
+const EFFECT_PER_LEVEL = GAME.EFFECT_PER_LEVEL;
+const levelMulEffect = () => GAME.effectLevelMul(level);
+
+/* An effect type the client has no wording for (only Living Scripture, type 8). It has an
+   amount and a tick, so it behaves like a periodic effect; the buff flag decides whether it
+   is treated as healing or damage. Marked as inferred wherever it is shown. */
+const isPeriodic = s => s.fx === FX_DOT || s.fx === FX_HOT
+                     || (s.fxAmt > 0 && s.fxTick > 0 && !KNOWN_FX.has(s.fx));
+const KNOWN_FX = new Set([FX_STUN, FX_DOT, FX_HOT, FX_REDUCE, FX_POWER]);
+const healsOverTime = s => s.fx === FX_HOT || (!KNOWN_FX.has(s.fx) && s.fxBuff);
+
+/** The scaled per-tick amount, or the raw fraction for percentage effects. */
+function effectAmount(s, totals) {
+  if (!isPeriodic(s)) return s.fxAmt;
+  const stat = healsOverTime(s) ? totals.grace : totals.strength;
+  return Math.round(s.fxAmt * levelMulEffect() * (1 + 0.01 * stat)
+                    * talentMulEffect(rankFor(s)) * (1 + ampBonus()) * (1 + weaponPower()));
+}
+
+/** The game's own phrasing for an active effect. */
+function effectText(s, amount) {
+  const dur = s.fxForever ? "while active" : `for ${s.fxDur}s`;
+  const pct = v => +(v * 100).toFixed(1) + "%";
+  switch (s.fx) {
+    case FX_STUN:   return `Stuns ${dur}`;
+    case FX_DOT:    return `${fmtNum(amount)} damage every ${s.fxTick}s ${dur}`;
+    case FX_HOT:    return `${fmtNum(amount)} healing every ${s.fxTick}s ${dur}`;
+    case FX_REDUCE: return `Reduces damage taken by ${pct(amount)} ${dur}`;
+    case FX_POWER:  return `Cast speed and spell damage +${pct(amount)} ${dur}`;
+    default:
+      // The client prints only "Effect lasts Ns" here, so the amount is ours, not its.
+      return isPeriodic(s)
+        ? `${fmtNum(amount)} ${healsOverTime(s) ? "healing" : "damage"} every ${s.fxTick}s ${dur}*`
+        : (s.fxDur ? `Effect lasts ${s.fxDur}s` : "");
+  }
+}
+
+/* ---- self buffs ----------------------------------------------------------
+   Two of the eight effect types change what the rest of the panel is worth, and until now
+   the panel showed only the unbuffed numbers - so a Stonewall Knight and a naked one read
+   identically against the rift.
+
+     type 4  damage reduction        Guard, Encase, Stonewall, Spellward, Lightward
+     type 5  cast speed AND spell damage    Warcry, Catalyze, Communion
+
+   Only the selected class's own buffs are offered: these are all self-cast, so a build can
+   never have another class's.
+
+   Stacking is the client's rule, not a guess. GetActiveCastSpeedBonus walks every live
+   type-5 effect and takes Mathf.Max of them against the Alacrity bonus - it does not add or
+   multiply them. Type 4 is applied server-side and has no client arithmetic to read, so the
+   same max rule is used and the modal says so rather than inventing a stacking model. */
+const FX_AMP = FX_POWER, FX_MIT = FX_REDUCE;
+const buffsOn = new Set();
+
+const buffSpells = () => (D.spells || [])
+  .filter(s => (s.fx === FX_AMP || s.fx === FX_MIT)
+            && (s.cls === 0 || String(s.cls) === charClass)
+            && s.lvl <= level);
+
+/** The strongest active buff of a kind, as a fraction. Max, never a product. */
+function buffBonus(kind) {
+  let best = 0;
+  for (const s of buffSpells())
+    if (s.fx === kind && buffsOn.has(s.id)) best = Math.max(best, s.fxAmt || 0);
+  return best;
+}
+const ampBonus = () => buffBonus(FX_AMP);
+const mitBonus = () => buffBonus(FX_MIT);
+
+const buffDlg = document.getElementById("buffDlg");
+const buffCount = document.getElementById("buffCount");
+
+function drawBuffs() {
+  const list = buffSpells();
+  const rows = document.getElementById("buffRows");
+  rows.replaceChildren();
+
+  if (!list.length) {
+    rows.appendChild(el("p", "note",
+      `${className()} has no self buffs available at level ${level}.`));
+  }
+
+  for (const group of [
+    {fx: FX_AMP, title: "Damage and healing",
+     hint: "Raises what your spells do, and your cast speed with it."},
+    {fx: FX_MIT, title: "Damage taken",
+     hint: "Reduces every hit that reaches you, on top of Fortitude."}]) {
+    const mine = list.filter(s => s.fx === group.fx);
+    if (!mine.length) continue;
+
+    const head = el("h4", "buffsection");
+    head.append(el("span", null, group.title), el("span", "buffhint", group.hint));
+    rows.appendChild(head);
+
+    for (const s of mine.sort((a, b) => b.fxAmt - a.fxAmt)) {
+      const on = buffsOn.has(s.id);
+      const row = el("button", "buffrow" + (on ? " on" : ""));
+      row.type = "button";
+      row.appendChild(s.icon ? icon("spells", s.id, true, 34) : el("span", "ico ph", "▢"));
+
+      const mid = el("div", "bm");
+      mid.appendChild(el("div", "bn", s.name));
+      mid.appendChild(el("div", "bl",
+        s.fxForever ? "While active" : `${s.fxDur}s · ${s.cd ? s.cd + "s cooldown" : "no cooldown"}`));
+      row.appendChild(mid);
+
+      const val = el("div", "bv" + (group.fx === FX_AMP ? " amp" : " mit"));
+      val.appendChild(el("b", null, "+" + Math.round(s.fxAmt * 100) + "%"));
+      val.appendChild(el("span", null, group.fx === FX_AMP ? "power" : "reduction"));
+      row.appendChild(val);
+
+      row.onclick = () => {
+        if (buffsOn.has(s.id)) buffsOn.delete(s.id); else buffsOn.add(s.id);
+        drawBuffs();
+        render();
+      };
+      rows.appendChild(row);
+    }
+  }
+
+  const amp = ampBonus(), mit = mitBonus();
+  document.getElementById("buffSummary").textContent = (amp || mit)
+    ? [amp ? `+${Math.round(amp * 100)}% power` : null,
+       mit ? `${Math.round(mit * 100)}% less damage taken` : null].filter(Boolean).join(" · ")
+    : "Nothing active — the panel shows your unbuffed numbers.";
+
+  document.getElementById("buffNote").textContent =
+    "Two buffs of the same kind do not add up: the game takes the stronger of the two, "
+    + "which is what the client does for cast speed and what is assumed for damage "
+    + "reduction. A cast-speed buff also does not stack with Alacrity — whichever is "
+    + "larger wins.";
+
+  /* The badge carries the available count when nothing is on, and the active count when
+     something is. Without the first, hiding buffs from the spell list would simply lose
+     eight spells with nothing on screen to say where they went. */
+  const n = [...buffsOn].filter(id => list.some(s => s.id === id)).length;
+  buffCount.textContent = String(n || list.length);
+  buffCount.hidden = !list.length;
+  buffCount.classList.toggle("idle", !n);
+  buffCount.title = n ? `${n} active` : `${list.length} available`;
+  document.getElementById("openBuffs").classList.toggle("on", n > 0);
+}
+
+document.getElementById("openBuffs").onclick = () => { drawBuffs(); buffDlg.showModal(); };
+document.getElementById("buffClose").onclick = () => buffDlg.close();
+document.getElementById("buffNone").onclick = () => { buffsOn.clear(); drawBuffs(); render(); };
+
+const classSel = document.getElementById("charClass");
+for (const [id, c] of Object.entries(CLASSES)) {
+  classSel.appendChild(Object.assign(el("option", null, c.name), {value: id}));
+}
+classSel.value = charClass;
+classSel.onchange = () => { charClass = classSel.value; render(); };
+
+const rankInput = document.getElementById("spellRank");
+rankInput.oninput = () => {
+  spellRank = Math.min(5, Math.max(0, Number(rankInput.value) || 0));
+  spellRanksByIdx = null;          // an explicit choice overrides the imported ranks
+  render();
+};
+
+function drawSpells(totals) {
+  const box = document.getElementById("spellRows");
+  box.replaceChildren();
+  document.getElementById("spellClass").textContent = className() + " spells";
+
+  const all = D.spells || [];
+  /* Shared spells (class 0) plus the selected class's own.
+
+     Self buffs are left out: they have no damage or healing of their own - all eight are
+     pure effect - so in a list of what a build hits for they were eight rows of dashes.
+     They live behind the Buffs button instead, where switching one on changes every number
+     below, which is the only thing they do. */
+  const buffIds = new Set(buffSpells().map(s => s.id));
+  const mine = all.filter(s => s.cls === 0 || String(s.cls) === charClass)
+                  .filter(s => s.lvl <= level)
+                  .filter(s => !HIDDEN_SPELLS.has(s.name))
+                  .filter(s => !buffIds.has(s.id));
+
+  if (!mine.length) {
+    box.appendChild(el("p", "note", all.length
+      ? `No spells for ${className()}.`
+      : "No spells."));
+    document.getElementById("spellNote").textContent = "";
+    return;
+  }
+
+  const lm = levelMul();
+  for (const s of mine) {
+    // Auto Attack has no art of its own because it is not really a spell - it is whatever
+    // you are holding. So it borrows the weapon's icon, or the empty main-hand slot's.
+    const art = s.name === WEAPON_SPELL ? weaponArt() : (s.icon ? icon("spells", s.id, true, 38) : null);
+    const row = el("div", "riftrow" + (art ? "" : " spellrow"));
+    if (art) row.appendChild(art);
+
+    const mid = el("div", "rm");
+    mid.appendChild(el("div", "rn", s.name));
+    /* Three facts, three shapes, rather than four phrases joined by dots. Delivery is a
+       category, so it is a tag; timing and cooldown are numbers, so they read as numbers.
+       "Instant" is the ABSENCE of a cast time and is shown as such - a spell that costs you
+       nothing but the global cooldown should not need a word to say so. */
+    const meta = el("div", "rl spellmeta");
+    if (DELIVERY[s.dlv]) meta.appendChild(el("span", "dtag d" + s.dlv, DELIVERY[s.dlv]));
+    const cast = (s.instant || !s.cast) ? 0 : castTimeOf(s.cast, totals.alacrity);
+    if (cast) meta.appendChild(el("span", "mnum", cast.toFixed(2) + "s"));
+    else meta.appendChild(el("span", "mnum instant", "instant"));
+    if (s.cd) meta.appendChild(el("span", "mnum cd", fmtCd(s.cd)));
+    mid.appendChild(meta);
+    row.appendChild(mid);
+
+    // A spell's base number becomes healing or damage depending on the spell.
+    const tm = talentMul(rankFor(s));
+    // Buff and proficiency are separate multipliers: one is a spell you cast, the other a
+    // property of the weapon in your hand, and nothing suggests the server merges them.
+    const amp = (1 + ampBonus()) * (1 + weaponPower());
+    const dmg = s.heals ? 0 : Math.round(s.base * lm * (1 + 0.01 * totals.strength) * tm * amp);
+    const heal = (s.heals || s.hybrid)
+      ? Math.round(s.base * lm * (1 + 0.01 * totals.grace) * tm * amp) : 0;
+
+    // A spell with no direct damage may still be its class's main output, carried by an
+    // active effect - the AoE damage-over-time spells especially.
+    const fxAmt = s.fx ? effectAmount(s, totals) : 0;
+    const ticks = isPeriodic(s) && s.fxTick > 0 && s.fxDur > 0
+      ? Math.floor(s.fxDur / s.fxTick) : 0;
+    const overTime = ticks ? fxAmt * ticks : 0;
+
+    const num = el("div", "rv");
+    if (dmg) num.appendChild(el("div", "rhp", fmtNum(dmg)));
+    if (heal) num.appendChild(el("div", "rheal", fmtNum(heal) + " heal"));
+    if (!dmg && isPeriodic(s) && !healsOverTime(s))
+      num.appendChild(el("div", "rhp", fmtNum(fxAmt)));
+    if (!heal && isPeriodic(s) && healsOverTime(s))
+      num.appendChild(el("div", "rheal", fmtNum(fxAmt) + " heal"));
+    if (overTime) num.appendChild(el("div", "rl", `${fmtNum(overTime)} over ${s.fxDur}s`));
+    if (s.fx === FX_REDUCE || s.fx === FX_POWER)
+      num.appendChild(el("div", "rl", "+" + (+(fxAmt * 100).toFixed(1)) + "%"));
+    if (!num.children.length) num.appendChild(el("div", "rl", "—"));
+    row.appendChild(num);
+
+    // The effect line reads under the name, as it does in the game's own tooltip.
+    if (s.fx) {
+      const txt = effectText(s, fxAmt);
+      if (txt) mid.appendChild(el("div", "rfx", txt));
+    }
+
+    attachTip(row, spellTip(s, totals, dmg, heal, lm, tm, fxAmt, overTime));
+    box.appendChild(row);
+  }
+
+  document.getElementById("spellNote").innerHTML =
+    `Level ×${lm.toFixed(2)} (×${levelMulEffect().toFixed(2)} over time), `
+    + (spellRanksByIdx ? "ranks from the imported character, " : `talent rank ${spellRank}, `)
+    + `Strength +${(totals.strength / 100).toFixed(1)}× and Grace +${(totals.grace / 100).toFixed(1)}×`
+    + (ampBonus() ? `, with a +${Math.round(ampBonus() * 100)}% buff applied.` : ".");
+}
+
+/** A cooldown as a reader thinks of it: 300s is five minutes. */
+const fmtCd = s => s >= 120 ? Math.round(s / 60) + "m" : s + "s";
+
+/* The tooltip was a stack of sentences joined by <br>, every line weighted the same - the
+   damage, the arithmetic behind it, the range, the resource cost. Which meant the one thing
+   you open a tooltip for was the same size as the footnote explaining it.
+
+   Now it is three bands. What it does, in the largest type. What it costs you in time, as a
+   row of figures. Then the arithmetic, small, for anyone checking our working - because the
+   whole point of the site is that the formulas are shown, but they are not the headline. */
+function tipStat(label, value, cls) {
+  const box = el("div", "tstat" + (cls ? " " + cls : ""));
+  box.appendChild(el("b", null, value));
+  box.appendChild(el("span", null, label));
+  return box;
+}
+
+function spellTip(s, totals, dmg, heal, lm, tm, fxAmt, overTime) {
+  const wrap = el("div", "sptip");
+
+  const head = el("div", "sphead");
+  head.appendChild(el("b", null, s.name));
+  const sub = el("i");
+  if (DELIVERY[s.dlv]) sub.appendChild(el("span", "dtag d" + s.dlv, DELIVERY[s.dlv]));
+  sub.appendChild(document.createTextNode(" Level " + s.lvl));
+  head.appendChild(sub);
+  wrap.appendChild(head);
+
+  if (s.desc) wrap.appendChild(el("p", "spdesc", s.desc));
+
+  /* The headline: what the spell is FOR. A spell with no direct number still has one -
+     carried by its effect - so the over-time total stands in rather than leaving a blank. */
+  const lead = el("div", "splead");
+  if (dmg) lead.appendChild(tipStat("damage", fmtNum(dmg), "dmg"));
+  if (heal) lead.appendChild(tipStat("healing", fmtNum(heal), "heal"));
+  if (!dmg && !heal && overTime)
+    lead.appendChild(tipStat(`over ${s.fxDur}s`, fmtNum(overTime),
+                             healsOverTime(s) ? "heal" : "dmg"));
+  if (s.fx === FX_REDUCE || s.fx === FX_POWER)
+    lead.appendChild(tipStat(s.fx === FX_REDUCE ? "less damage taken" : "cast speed and damage",
+                             "+" + (+(fxAmt * 100).toFixed(1)) + "%", "buff"));
+  if (lead.children.length) wrap.appendChild(lead);
+
+  if (s.fx) {
+    const txt = effectText(s, fxAmt);
+    if (txt) wrap.appendChild(el("p", "speffect", txt));
+    if (overTime && (dmg || heal))
+      wrap.appendChild(el("p", "speffect",
+        `${fmtNum(overTime)} in total over its full duration`));
+  }
+
+  /* What it costs you in time and reach - the row that decides whether a spell is worth
+     pressing, and the one the old tooltip buried between two formulas. */
+  const cost = el("div", "spcost");
+  const cast = (s.instant || !s.cast) ? 0 : castTimeOf(s.cast, totals.alacrity);
+  cost.appendChild(tipStat("cast", cast ? cast.toFixed(2) + "s" : "instant"));
+  const land = landDelay(s);
+  if (land) cost.appendChild(tipStat("then lands", "+" + land.toFixed(2) + "s"));
+  if (s.cd) cost.appendChild(tipStat("cooldown", fmtCd(s.cd)));
+  if (s.maxR) cost.appendChild(tipStat("range", (s.minR ? s.minR + "–" : "") + s.maxR));
+  if (s.cost) cost.appendChild(tipStat("costs", String(s.cost)));
+  if (s.gen) cost.appendChild(tipStat("generates", String(s.gen)));
+  wrap.appendChild(cost);
+
+  // The working, kept and demoted.
+  const notes = [];
+  if (dmg) notes.push(`${s.base} × ${lm.toFixed(2)} (level) × `
+    + `${(1 + 0.01 * totals.strength).toFixed(2)} (Strength) × ${tm.toFixed(1)} (rank)`);
+  if (heal) notes.push(`${s.base} × ${lm.toFixed(2)} (level) × `
+    + `${(1 + 0.01 * totals.grace).toFixed(2)} (Grace) × ${tm.toFixed(1)} (rank)`);
+  if (cast) notes.push(`${s.cast}s base, −${((1 - cast / s.cast) * 100).toFixed(0)}% `
+    + `from ${totals.alacrity} Alacrity`);
+  if (s.dlv === 3 && s.maxR)
+    notes.push(`flight time is range ÷ ${s.projSpeed || TIMING.projectileSpeed} per second, `
+      + `so it lands sooner up close`);
+  if (isPeriodic(s))
+    notes.push(`periodic effects scale ×${levelMulEffect().toFixed(3)} on level `
+      + `(0.024/level), not the ×${levelMul().toFixed(2)} direct values use`);
+  if (s.fx && !KNOWN_FX.has(s.fx))
+    notes.push(`effect type ${s.fx} has no wording in the client — the amount here is `
+      + `inferred from its own value and its buff flag`);
+  if (notes.length) {
+    const foot = el("div", "spnote");
+    for (const n of notes) foot.appendChild(el("p", null, n));
+    wrap.appendChild(foot);
+  }
+  return wrap;
+}
+
+/* ---- attribute point modal ---------------------------------------------- */
+/* ---- the proficiency modal ----------------------------------------------
+   Split into what is affecting the panel right now and what is not, because with fourteen
+   rows the useful question is "which of these is doing anything" - and the answer depends
+   entirely on the weapon in the main hand. A weapon you are not holding still keeps its
+   level, so switching back does not lose it. */
+const pDlg = document.getElementById("profDlg");
+
+function drawProf() {
+  const rows = document.getElementById("pRows");
+  rows.replaceChildren();
+  const live = activeWeaponSkill();
+  const mh = build["Main Hand"] && build["Main Hand"].item;
+
+  const section = (title, hint, list) => {
+    if (!list.length) return;
+    const head = el("h4", "buffsection");
+    head.append(el("span", null, title), el("span", "buffhint", hint));
+    rows.appendChild(head);
+    for (const sk of list) rows.appendChild(profRow(sk, live && sk.id === live.id));
+  };
+
+  section("In use", mh ? `Main hand: ${mh.name}` : "Nothing equipped in the main hand",
+          [SKILL_BY_ID_P.get(DEFENSE_SKILL), live].filter(Boolean));
+  section("Other weapons", "Kept, but doing nothing until you equip one",
+          PROF_SKILLS.filter(sk => sk.id !== DEFENSE_SKILL && (!live || sk.id !== live.id)));
+
+  document.getElementById("pSummary").textContent = summaryText();
+  document.getElementById("pNote").textContent =
+    "A level is worth +0.025% damage and healing on a weapon proficiency, and -0.02% damage "
+    + "taken on Defense, so 400 is +10% and -8%. The client states those two numbers and "
+    + "nothing else: it never applies them itself, so the weapon bonus is taken to cover "
+    + "everything you do while that weapon is held. Levelling cost is known exactly — "
+    + `ceil(3 + level × 0.12) per level, ${fmtNum(totalProfXp())} to reach 400 — but the xp `
+    + "a hit awards is the server's and has not been measured yet.";
+}
+
+/** Total xp to take a proficiency from 0 to its cap, straight off SkillCatalog. */
+function totalProfXp() {
+  const c = D.skillXp || {base: 3, per: 0.12};
+  const max = (PROF_SKILLS[0] || {}).max || 400;
+  let t = 0;
+  for (let L = 0; L < max; L++) t += Math.ceil(c.base + L * c.per);
+  return t;
+}
+
+function summaryText() {
+  const w = weaponPower(), d = defenseReduction();
+  if (!w && !d) return "Nothing set — the panel shows your numbers without proficiencies.";
+  return [w ? `+${(w * 100).toFixed(1)}% damage and healing` : null,
+          d ? `${(d * 100).toFixed(1)}% less damage taken` : null].filter(Boolean).join(" · ");
+}
+
+function profRow(sk, isLive) {
+  const row = el("div", "profrow" + (isLive ? " on" : "") + (sk.armed === false ? " none" : ""));
+  const mid = el("div", "pm");
+  mid.appendChild(el("div", "pn", sk.name));
+  mid.appendChild(el("div", "pl",
+    sk.armed === false ? "No weapon of this type exists yet"
+    : sk.id === DEFENSE_SKILL ? "Always active — rises from damage taken"
+    : isLive ? "Active — your main hand trains this"
+    : `Weapons: ${sk.sub}`));
+  row.appendChild(mid);
+
+  const inp = el("input");
+  inp.type = "number"; inp.min = 0; inp.max = sk.max || 400; inp.step = 1;
+  inp.value = profLevel(sk.id);
+  inp.oninput = () => {
+    prof[sk.id] = Math.max(0, Math.min(sk.max || 400, Number(inp.value) || 0));
+    bonus.textContent = bonusText(sk);
+    document.getElementById("pSummary").textContent = summaryText();
+    syncProfBtn();
+    render();
+  };
+  row.appendChild(inp);
+
+  const bonus = el("div", "pb", bonusText(sk));
+  row.appendChild(bonus);
+  enhanceNumberInputs(row);
+  return row;
+}
+
+const bonusText = sk => {
+  const v = profLevel(sk.id) * (sk.bonus || 0) * 100;
+  if (!v) return "—";
+  return sk.bonusKind === "mitigation" ? `-${v.toFixed(1)}% taken` : `+${v.toFixed(1)}% power`;
+};
+
+/** The figure on the button: what the build is actually getting, not a level. */
+function syncProfBtn() {
+  const w = weaponPower(), d = defenseReduction();
+  const badge = document.getElementById("profNow");
+  badge.textContent = (w || d)
+    ? [w ? `+${(w * 100).toFixed(1)}%` : null, d ? `-${(d * 100).toFixed(1)}%` : null]
+        .filter(Boolean).join(" / ")
+    : "0";
+  document.getElementById("openProf").classList.toggle("hasleft", !!(w || d));
+}
+
+document.getElementById("openProf").onclick = () => { drawProf(); pDlg.showModal(); };
+document.getElementById("pClose").onclick = () => pDlg.close();
+document.getElementById("pReset").onclick = () => {
+  PROF_SKILLS.forEach(sk => prof[sk.id] = 0);
+  drawProf(); syncProfBtn(); render();
+};
+document.getElementById("pMax").onclick = () => {
+  PROF_SKILLS.forEach(sk => prof[sk.id] = sk.max || 400);
+  drawProf(); syncProfBtn(); render();
+};
+
+const aDlg = document.getElementById("attrDlg");
+const aLevel = document.getElementById("aLevel");
+
+document.getElementById("openAttrs").onclick = () => { drawAlloc(); aDlg.showModal(); };
+document.getElementById("aClose").onclick = () => aDlg.close();
+document.getElementById("aReset").onclick = () => {
+  ATTRS.forEach(k => alloc[k] = 0);
+  drawAlloc(); render();
+};
+aLevel.oninput = () => setLevel(Number(aLevel.value) || 1);
+
+/* Shift moves ten at a time. A single attribute takes 25 and a level 80 character has 39 to
+   place, so filling a build out was dozens of clicks. */
+const BULK_STEP = 10;
+
+/* Clamped rather than refused: shift-clicking + with 3 points left should spend the 3, not
+   nothing, and the same going down. So the step is whatever is actually available, and the
+   button only disables when there is truly nowhere left to go. */
+function step(attr, by) {
+  const room = by > 0
+    ? Math.min(by, MAX_PER_ATTR - alloc[attr], pointsLeft())
+    : Math.max(by, -alloc[attr]);
+  if (!room) return;
+  alloc[attr] += room;
+  drawAlloc();
+  render();
+}
+
+function drawAlloc() {
+  aLevel.value = String(level);
+  const rows = document.getElementById("aRows");
+  rows.replaceChildren();
+
+  for (const k of ATTRS) {
+    const row = el("div", "allocrow");
+    row.appendChild(el("span", "an", cap(k)));
+
+    const minus = el("button", null, "−");
+    minus.type = "button";
+    minus.disabled = alloc[k] <= 0;
+    minus.title = `Remove a point — hold Shift for ${BULK_STEP}`;
+    minus.onclick = e => step(k, -(e.shiftKey ? BULK_STEP : 1));
+
+    const val = el("span", "av", String(alloc[k]));
+    if (alloc[k] >= MAX_PER_ATTR) val.classList.add("maxed");
+    val.title = `${alloc[k]} point${alloc[k] === 1 ? "" : "s"} = `
+              + `+${alloc[k] * STAT_PER_POINT} ${cap(k)}`;
+
+    const plus = el("button", null, "+");
+    plus.type = "button";
+    plus.disabled = alloc[k] >= MAX_PER_ATTR || pointsLeft() <= 0;
+    plus.title = `Add a point — hold Shift for ${BULK_STEP}`;
+    plus.onclick = e => step(k, e.shiftKey ? BULK_STEP : 1);
+
+    row.append(minus, val, plus);
+    row.appendChild(el("span", "amax",
+      (alloc[k] >= MAX_PER_ATTR ? "max" : `/ ${MAX_PER_ATTR}`)
+      + (alloc[k] ? `  +${alloc[k] * STAT_PER_POINT}` : "")));
+    rows.appendChild(row);
+  }
+
+  document.getElementById("aSummary").textContent =
+    `${pointsSpent()} spent · ${pointsLeft()} left of ${pointsTotal()} `
+    + `· each point is worth ${STAT_PER_POINT} · hold Shift to move ${BULK_STEP}`;
+}
+
+/* The item-level card carries the game's own explanation of the stat. */
+attachTip(document.getElementById("ilvlCard"),
+  `<b>Item Level</b><i>level × 10 × quality × instability, averaged</i>`
+  + `The average item level of your equipped gear. It summarises an item's overall power, `
+  + `but has no effect of its own. Quality multiplies by 1.0 / 1.15 / 1.3 / 1.5 — the same `
+  + `multiplier the stats use — and the two weapon slots average together into a single slot.`);
+
+const charFig = document.getElementById("charFig");
+charFig.addEventListener("error", () => {
+  charFig.hidden = true;
+  document.getElementById("charFigMissing").hidden = false;
+});
+
+
+function importCharacter(c) {
+  SLOTS.forEach(s => build[s.k] = {item: null, quality: 1, tier: 0});
+  let missing = 0;
+  for (const [slot, g] of Object.entries(c.slots || {})) {
+    if (!build[slot]) continue;
+    const item = D.items.find(i => i.id === g.id);
+    if (!item) { missing++; continue; }
+    build[slot] = {item, quality: g.q || 1, tier: g.t || 0};
+  }
+
+  ATTRS.forEach(k => alloc[k] = Math.min(MAX_PER_ATTR, Math.max(0, (c.alloc || {})[k] | 0)));
+  // Real per-spell ranks, read from the character's talent nodes.
+  spellRanksByIdx = c.spellRanks || null;
+  if (c.cls && CLASSES[String(c.cls)]) {
+    charClass = String(c.cls);
+    document.getElementById("charClass").value = charClass;
+  }
+  // Measured before setLevel, which trims the excess away - reading it afterwards always
+  // found nothing and the warning could never fire.
+  const wanted = pointsSpent();
+  setLevel(c.level || 80);
+
+  // The imported allocation is derived, so it can exceed what the level actually grants.
+  const over = wanted - pointsTotal();
+  const note = [];
+  if (missing) note.push(`${missing} item(s) not in the catalogue`);
+  if (over > 0) note.push(`${over} more attribute points than level ${c.level} grants`);
+  if (note.length)
+    Log(`Imported ${c.name}, but ${note.join(" and ")}.`);
+}
+
+/* Small, non-blocking notice under the setup bar. */
+function Log(msg) {
+  let box = document.getElementById("importNote");
+  if (!box) {
+    box = el("p", "note");
+    box.id = "importNote";
+    box.style.margin = "-8px 2px 14px";
+    document.querySelector(".bar.setup").after(box);
+  }
+  box.textContent = msg;
+}
+
+
+/* ---- saving, and sharing -------------------------------------------------
+   Two ways to keep a build, because they answer different questions. A named save is
+   "mine, on this machine"; a link is "look at this". Both describe the same thing, so both
+   go through one encoder.
+
+   The link has to survive being pasted into chat, so it is packed rather than JSON'd:
+
+     1  level                    1..80
+     1  class                    the class id
+     1  spell rank               0..5
+     7  attribute points         one byte each, 0..25
+    33  eleven slots x 3 bytes   item id (16 bits, 0 = empty) then quality<<6 | tier
+
+    ..  set proficiencies      two bytes each: skillId<<2 | level>>8, then level&255
+
+   43 bytes plus two per proficiency actually set, base64url with the padding stripped - a
+   58-character fragment for a build with none, and it rides in the hash so it never reaches
+   a server. Item ids are the game's own, so a link keeps
+   working across rebuilds unless the item itself is gone - and one that IS gone simply
+   leaves its slot empty rather than failing the whole build. */
+const SLOT_ORDER = SLOTS.map(s => s.k);
+const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+function encodeBuild() {
+  const b = [level & 255, Number(charClass) & 255, spellRank & 255];
+  for (const k of ATTRS) b.push(Math.min(63, alloc[k]) & 255);
+  for (const k of SLOT_ORDER) {
+    const st = build[k];
+    const id = st.item ? st.item.id : 0;
+    // quality is 1..4, so it is stored as 0..3 - masking it raw turned Flawless into Normal
+    b.push((id >> 8) & 255, id & 255, (((st.quality - 1) & 3) << 6) | (st.tier & 63));
+  }
+  /* Proficiencies ride on the end, and only the ones that are set. Fourteen fixed slots
+     would have cost 28 bytes on every link to carry mostly zeros; a pair per non-zero skill
+     costs two. Six bits of skill id and ten of level fit one 16-bit word exactly - ids stop
+     at 22 and levels at 400 - and because the block is appended, a link made before
+     proficiencies existed still decodes, it simply has none. */
+  for (const sk of PROF_SKILLS) {
+    const lvl = Math.min(1023, profLevel(sk.id));
+    if (lvl) b.push(((sk.id & 63) << 2) | (lvl >> 8), lvl & 255);
+  }
+
+  let out = "";
+  for (let i = 0; i < b.length; i += 3) {
+    const n = (b[i] << 16) | ((b[i + 1] || 0) << 8) | (b[i + 2] || 0);
+    const take = Math.min(4, Math.ceil((b.length - i) * 8 / 6));
+    for (let j = 0; j < take; j++) out += B64[(n >> (18 - j * 6)) & 63];
+  }
+  return out;
+}
+
+function decodeBuild(code) {
+  const b = [];
+  for (let i = 0; i < code.length; i += 4) {
+    let n = 0, got = 0;
+    for (let j = 0; j < 4; j++) {
+      const v = B64.indexOf(code[i + j]);
+      if (v < 0) break;
+      n = (n << 6) | v; got++;
+    }
+    n <<= 6 * (4 - got);
+    const bytes = Math.floor(got * 6 / 8);
+    for (let j = 0; j < bytes; j++) b.push((n >> (16 - j * 8)) & 255);
+  }
+  if (b.length < 10) return false;
+
+  let p = 0;
+  const lvl = b[p++], cls = b[p++], rank = b[p++];
+  for (const k of ATTRS) alloc[k] = Math.min(MAX_PER_ATTR, b[p++] || 0);
+  SLOT_ORDER.forEach(k => build[k] = {item: null, quality: 1, tier: 0});
+  for (const k of SLOT_ORDER) {
+    if (p + 2 >= b.length + 1) break;
+    const id = ((b[p++] || 0) << 8) | (b[p++] || 0);
+    const packed = b[p++] || 0;
+    if (!id) continue;
+    const item = D.items.find(i => i.id === id);
+    if (item) build[k] = {item, quality: ((packed >> 6) & 3) + 1, tier: packed & 63};
+  }
+
+  PROF_SKILLS.forEach(sk => { prof[sk.id] = 0; });
+  while (p + 1 < b.length) {
+    const hi = b[p++], lo = b[p++];
+    const sk = SKILL_BY_ID_P.get(hi >> 2);
+    if (sk && sk.group === "Combat") prof[sk.id] = Math.min(sk.max || 400, ((hi & 3) << 8) | lo);
+  }
+  if (CLASSES[String(cls)]) {
+    charClass = String(cls);
+    document.getElementById("charClass").value = charClass;
+  }
+  spellRank = Math.min(5, Math.max(0, rank));
+  document.getElementById("spellRank").value = String(spellRank);
+  spellRanksByIdx = null;
+  setLevel(lvl || 80);
+  return true;
+}
+
+const SAVES_KEY = "elegon.planner.saves.v1";
+const readSaves = () => {
+  try { return JSON.parse(localStorage.getItem(SAVES_KEY) || "{}"); } catch { return {}; }
+};
+const writeSaves = m => {
+  try { localStorage.setItem(SAVES_KEY, JSON.stringify(m)); } catch {}
+};
+
+const saveList = document.getElementById("saveList");
+const saveName = document.getElementById("saveName");
+const saveNote = document.getElementById("saveNote");
+const note = (msg, ok) => {
+  saveNote.textContent = msg;
+  saveNote.classList.toggle("ok", !!ok);
+  clearTimeout(note.t);
+  note.t = setTimeout(() => { saveNote.textContent = ""; }, 4000);
+};
+
+function drawSaves(selected) {
+  const m = readSaves();
+  const names = Object.keys(m).sort((a, b) => a.localeCompare(b));
+  saveList.replaceChildren();
+  saveList.appendChild(Object.assign(el("option", null,
+    names.length ? "Load a build…" : "No saved builds"), {value: ""}));
+  for (const n of names)
+    saveList.appendChild(Object.assign(el("option", null, n), {value: n}));
+  if (selected) saveList.value = selected;
+  document.getElementById("delBtn").disabled = !saveList.value;
+}
+
+document.getElementById("saveBtn").onclick = () => {
+  const name = (saveName.value || "").trim() || saveList.value;
+  if (!name) { note("Give the build a name first."); saveName.focus(); return; }
+  const m = readSaves();
+  m[name] = encodeBuild();
+  writeSaves(m);
+  saveName.value = "";
+  drawSaves(name);
+  note(`Saved “${name}”.`, true);
+};
+
+saveList.onchange = () => {
+  document.getElementById("delBtn").disabled = !saveList.value;
+  if (!saveList.value) return;
+  const code = readSaves()[saveList.value];
+  if (code && decodeBuild(code)) note(`Loaded “${saveList.value}”.`, true);
+};
+
+document.getElementById("delBtn").onclick = () => {
+  const name = saveList.value;
+  if (!name) return;
+  const m = readSaves();
+  delete m[name];
+  writeSaves(m);
+  drawSaves();
+  note(`Deleted “${name}”.`);
+};
+
+document.getElementById("linkBtn").onclick = async () => {
+  const url = location.origin + location.pathname + "#b=" + encodeBuild();
+  history.replaceState(null, "", "#b=" + encodeBuild());
+  try {
+    await navigator.clipboard.writeText(url);
+    note(`Link copied — ${url.length} characters.`, true);
+  } catch {
+    // Clipboard needs a secure context, which a file:// page is not. The link is in the
+    // address bar either way, so say that rather than failing silently.
+    note("Copied to the address bar — clipboard needs https.");
+  }
+};
+
+loadBuild();
+/* A link wins over the last local state: following one should show what it describes. */
+const shared = (location.hash.match(/[#&]b=([A-Za-z0-9\-_]+)/) || [])[1];
+drawSaves();
+if (shared && decodeBuild(shared)) note("Loaded from the shared link.", true);
+
+drawAlloc();
+render();
+</script>
+</body>
+</html>

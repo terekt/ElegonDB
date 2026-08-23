@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Elegon DB — Changelog</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css?v=01152046">
+<script>
+/* Resolve the theme before first paint: a stored choice if there is one, otherwise
+   whatever the operating system asks for. Kept inline and tiny on purpose — loading it
+   from app.js would paint the wrong theme first and then correct it. */
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem("elegon-theme"); } catch (e) { /* private mode */ }
+  var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.dataset.theme = saved || (dark ? "dark" : "light");
+})();
+</script>
+</head>
+<body>
+<header>
+  <div class="brand"><span>ELEGON</span> DB</div>
+  <nav>
+    <a href="index.html">Items</a>
+    <a href="monsters.html">Monsters</a>
+    <a href="quests.html">Quests</a>
+    <a href="maps.html">Maps</a>
+    <a href="planner.html"><span class="navlong">Character </span>Planner</a>
+    <a href="scaling.html">Scaling</a>
+    <a href="changelog.html" class="on">Changelog</a>
+  </nav>
+    <button type="button" id="themebtn" class="themebtn" aria-label="Switch theme">
+      <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.4"/><g><path d="M12 1.8v3M12 19.2v3M1.8 12h3M19.2 12h3M4.8 4.8l2.1 2.1M17.1 17.1l2.1 2.1M19.2 4.8l-2.1 2.1M6.9 17.1l-2.1 2.1"/></g></svg>
+      <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.6 13.6A8.6 8.6 0 0 1 10.4 3.4a8.6 8.6 0 1 0 10.2 10.2z"/></svg>
+    </button>
+</header>
+
+<div class="wrap">
+  <div class="hero herorow">
+    <h1>Changelog</h1>
+  </div>
+
+  <div id="log"></div>
+</div>
+
+<script src="data.js?v=01152046"></script>
+<script src="app.js?v=01152046"></script>
+<script>
+/* What each patch did to the game's own data.
+
+   Built by diffing the catalogue snapshots the mod archives per client build, so this is
+   what actually moved in the tables rather than what a patch note claims.
+
+   One panel per build rather than a grid of counts. A patch is an event — it happened, it
+   had a size and a shape — and a spreadsheet of numbers made every one of them look like
+   every other. The bar under each heading carries that shape: how much was new, how much
+   vanished, how much was retuned, at a glance and before any reading. */
+
+let LOG = D.changelog || [];
+const LABELS = D.changeLabels || {};
+
+const KINDS = [
+  {key: "added",   verb: "added",   sign: "+", cls: "k-add"},
+  {key: "removed", verb: "removed", sign: "−", cls: "k-del"},
+  {key: "changed", verb: "changed", sign: "·", cls: "k-mod"},
+];
+
+/* A glyph per category, keyed on the file the category came from. Line art at one weight
+   rather than emoji, which land at whatever size and colour the platform feels like — the
+   opposite of what a legend needs.
+
+   Categories are discovered from whatever the archives hold, so this map is allowed to be
+   incomplete: anything it does not name gets the plain table mark rather than another
+   category's icon. */
+const GLYPHS = {
+  enemies:  "M4 15c0-4 3.6-7 8-7s8 3 8 7c0 2.5-2 4-4 4H8c-2 0-4-1.5-4-4z M8.5 13h.01 M15.5 13h.01 M7 8 5.5 4.5 9 6 M17 8l1.5-3.5L15 6",
+  items:    "M14.5 3.5 20.5 9.5 9 21 3.5 21 3.5 15.5z M12.5 5.5 18.5 11.5",
+  quests:   "M6 3h9l4 4v14H6z M15 3v4h4 M9 12h7 M9 16h7 M9 8h3",
+  npcs:     "M12 4a3.6 3.6 0 1 1 0 7.2A3.6 3.6 0 0 1 12 4z M4.5 20.5c0-4 3.4-6.4 7.5-6.4s7.5 2.4 7.5 6.4",
+  spells:   "M12 2.5 14 9l6.5 2-6.5 2-2 6.5-2-6.5L3.5 11 10 9z",
+  talents:  "M12 2.6v4.2 M12 10.4v3.2 M12 17.2v4.2 M7.4 6.8h9.2 M8.6 13.6h6.8 M9.8 17.2h4.4 M12 6.8a1.8 1.8 0 1 1 0 3.6 1.8 1.8 0 0 1 0-3.6 M12 13.6a1.8 1.8 0 1 1 0 3.6 1.8 1.8 0 0 1 0-3.6",
+  shops:    "M12 3.2c4.8 0 8.2 1.5 8.2 3.4S16.8 10 12 10 3.8 8.5 3.8 6.6 7.2 3.2 12 3.2z M3.8 6.6v10.8c0 1.9 3.4 3.4 8.2 3.4s8.2-1.5 8.2-3.4V6.6 M3.8 12c0 1.9 3.4 3.4 8.2 3.4s8.2-1.5 8.2-3.4",
+  loot_tables: "M3.5 9.5h17v10h-17z M3.5 9.5 5.5 4.5h13l2 5 M12 4.5v15 M9.5 13.5h5",
+  world_objects: "M12 21c0-6 3.5-10 8-11-1 5.5-4 9-8 11z M12 21c0-5-3-8.5-7.5-9.5C5.5 16 8.5 19.5 12 21z M12 21v-4",
+};
+
+/* Anything the map does not name: a plain table, which says "a set of rows" and nothing
+   more — better than borrowing an icon that means something else. */
+const GLYPH_FALLBACK = "M3.5 5.5h17v13h-17z M3.5 10h17 M3.5 14.5h17 M9.5 5.5v13";
+
+function glyph(key) {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("class", "catglyph");
+  const path = document.createElementNS(NS, "path");
+  path.setAttribute("d", GLYPHS[key] || GLYPH_FALLBACK);
+  svg.appendChild(path);
+  return svg;
+}
+
+const countOf = (cat, key) => (cat && cat[key] ? cat[key].length : 0);
+const totalOf = cat => KINDS.reduce((s, k) => s + countOf(cat, k.key), 0);
+
+/* Columns a patch put on a table or took off it. Not a row change — every row has one, and
+   counting it as one would have read the mining patch's four new gathering fields as all six
+   nodes changing at once — so it is carried and shown apart from the row counts. */
+const colsOf = cat => (cat && cat.cols) || null;
+const colCount = cat => {
+  const c = colsOf(cat);
+  return c ? (c.gained || []).length + (c.lost || []).length : 0;
+};
+
+/** Field names as the catalogues spell them, tidied for a reader. */
+const fieldName = f => f.replace(/_/g, " ").replace(/^is /, "").replace(/percent$/, "%");
+
+/* Longer than this and a value is prose, not a figure — it gets its own line. */
+const LONG_VALUE = 38;
+
+const nameOf = key => LABELS[key] || key.replace(/_/g, " ").replace(/^./, c => c.toUpperCase());
+
+/* ---- the drill-down ------------------------------------------------------- */
+
+/** The value a field used to hold, and the way to go and look at it: clicking it opens the
+    thing as the older build had it, rather than as it is now. */
+function oldValue(entry, catKey, kind, e, f) {
+  const was = el("s", null, f.from || "—");
+  if (!f.from || kind.key !== "changed") return was;
+
+  was.classList.add("chgwas");
+  was.setAttribute("role", "button");
+  was.tabIndex = 0;
+  was.title = `See ${e.name || "this row"} as it was in v${entry.from}`;
+  const open = ev => {
+    ev.stopPropagation();                       // the row opens the current build
+    openChange(entry, catKey, kind.key, e, true);
+  };
+  was.onclick = open;
+  was.onkeydown = ev => {
+    if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); open(ev); }
+  };
+  return was;
+}
+
+/* The thing a row is about, where the site has a picture of it. A changelog of names is a
+   list of strings; the same list with the item's own icon beside it is a list of things. */
+const CHANGE_ICON = {
+  items:    id => (ITEM_BY_ID.get(id) || {}).icon,
+  monsters: id => (MONSTER_BY_ID_Q.get(id) || {}).icon,
+  npcs:     id => (NPC_BY_ID.get(id) || {}).icon,
+  objects:  id => (OBJECT_BY_ID.get(id) || {}).icon,
+};
+
+function rowIcon(catKey, e) {
+  const kind = (D.changeKinds || {})[catKey];
+  const known = CHANGE_ICON[kind];
+  if (!known || e.id === undefined || e.id === null) return null;
+
+  // The same components the rest of the site uses, not a box of their own. An item goes in
+  // the character panel's own slot frame — the capture taken out of the running game — and a
+  // portrait keeps the backdrop the sheets give it. Anything else is a dark rounded square,
+  // which is what this page had and what the site stopped doing everywhere else.
+  if (kind === "items") {
+    const it = ITEM_BY_ID.get(e.id);
+    const art = framedIcon(e.id, !!known(e.id),
+                           it && it.type === "Equipment" ? SCALE.quality : 1, 34);
+    art.classList.add("chgart");
+    return art;
+  }
+  const art = portraitIcon(kind, e.id, !!known(e.id), 34);
+  art.classList.add("chgart");
+  return art;
+}
+
+/** Equipment carries its quality colour into the list, the same as everywhere else. */
+function rowNameClass(catKey, e) {
+  if ((D.changeKinds || {})[catKey] !== "items") return "";
+  const it = ITEM_BY_ID.get(e.id);
+  return it && it.type === "Equipment" ? " r" + SCALE.quality : "";
+}
+
+function changeSheet(entry, catKey) {
+  return () => {
+    const cat = entry.cats[catKey] || {};
+    const wrap = el("div");
+
+    /* What the table itself gained or lost, said once at the top. Every row has the new
+       field, so this belongs to the table rather than to any row in it. */
+    const cols = colsOf(cat);
+    if (cols && ((cols.gained || []).length || (cols.lost || []).length)) {
+      const head = el("h4", "chgsection");
+      head.append(el("span", "mark k-mod", "◇"),
+                  el("span", null, "table"),
+                  el("span", "chgn", String(colCount(cat))));
+      wrap.appendChild(head);
+
+      const box = el("div", "chglist");
+      for (const [fields, verb, cls] of [[cols.gained || [], "new field", "k-add"],
+                                         [cols.lost || [], "field dropped", "k-del"]]) {
+        for (const f of fields) {
+          const row = el("div", "chgrow");
+          row.append(el("span", "chgitem", fieldName(f)),
+                     el("span", "chgnote " + cls, verb));
+          box.appendChild(row);
+        }
+      }
+      wrap.appendChild(box);
+    }
+
+    for (const kind of KINDS) {
+      const list = cat[kind.key] || [];
+      if (!list.length) continue;
+
+      const head = el("h4", "chgsection");
+      head.append(el("span", "mark " + kind.cls, kind.sign),
+                  el("span", null, kind.verb),
+                  el("span", "chgn", String(list.length)));
+      wrap.appendChild(head);
+
+      const box = el("div", "chglist");
+      for (const e of list) {
+        const row = el("div", "chgrow open");
+        const art = rowIcon(catKey, e);
+        if (art) row.appendChild(art);
+        // A table with no name column of its own still has rows, and a row with nothing to
+        // call it would otherwise be an empty space with values floating beside it.
+        row.appendChild(e.name
+          ? el("span", "chgitem" + rowNameClass(catKey, e), e.name)
+          : el("span", "chgitem none", "(unnamed)"));
+
+        if (e.fields && e.fields.length) {
+          const bits = el("span", "chgfields");
+          for (const f of e.fields) {
+            const b = el("span", "chgfield");
+            // Prose does not fit the "was → now" shape a number does. Anything long takes
+            // the full width and stacks, rather than being squeezed onto one line.
+            if (Math.max((f.from || "").length, (f.to || "").length) > LONG_VALUE)
+              b.classList.add("long");
+            b.append(el("i", null, fieldName(f.field)), oldValue(entry, catKey, kind, e, f),
+                     el("b", null, f.to || "—"));
+            bits.appendChild(b);
+          }
+          row.appendChild(bits);
+        }
+        row.appendChild(el("span", "chgopen", "›"));
+
+        // The whole row opens the thing itself — the creature, the item, the quest — with
+        // what the patch did to it marked on the sheet.
+        const open = () => openChange(entry, catKey, kind.key, e);
+        row.setAttribute("role", "button");
+        row.tabIndex = 0;
+        row.title = "Open " + (e.name || "this row");
+        row.onclick = open;
+        row.onkeydown = ev => {
+          if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); open(); }
+        };
+        box.appendChild(row);
+      }
+      wrap.appendChild(box);
+    }
+
+    // A summary that stays put while the list scrolls, so the shape of the change is still
+    // on screen at the bottom of two hundred rows.
+    const hero = el("div", "chghero");
+    hero.appendChild(glyph(catKey));
+    for (const kind of KINDS) {
+      const n = countOf(cat, kind.key);
+      if (!n) continue;
+      const chip = el("span", "chgtally " + kind.cls);
+      chip.append(el("b", null, String(n)), el("span", null, kind.verb));
+      hero.appendChild(chip);
+    }
+    if (colCount(cat)) {
+      const chip = el("span", "chgtally");
+      chip.append(el("b", null, String(colCount(cat))),
+                  el("span", null, colCount(cat) === 1 ? "field" : "fields"));
+      hero.appendChild(chip);
+    }
+
+    return {key: "chg" + entry.version + catKey,
+            title: nameOf(catKey),
+            sub: `v${entry.from} → v${entry.version}`,
+            hero, filters: null, body: wrap};
+  };
+}
+
+/* ---- one build ------------------------------------------------------------ */
+
+/** The shape of a patch, as a thin rule under its heading. */
+function shapeBar(totals) {
+  const bar = el("div", "chgbar");
+  bar.setAttribute("role", "img");
+  bar.setAttribute("aria-label", KINDS.map(k => `${totals[k.key]} ${k.verb}`).join(", "));
+  for (const k of KINDS) {
+    if (!totals[k.key]) continue;
+    const seg = el("span", "chgseg " + k.cls);
+    seg.style.flexGrow = totals[k.key];
+    seg.title = `${totals[k.key]} ${k.verb}`;
+    bar.appendChild(seg);
+  }
+  return bar;
+}
+
+/** A number in its column, or a dash. Zero is absence, and absence should be quiet. */
+function figure(n, cls) {
+  return n ? el("span", "fig " + cls, String(n)) : el("span", "fig nil", "—");
+}
+
+/* A readable name for a category, however it got here. LABELS carries what the build worked
+   out; anything else is named after itself rather than dropped, so a table that appears in
+   the data but not in the label map still shows up. */
+
+function versionPanel(entry) {
+  // Driven by what the entry holds, not by the label map: a category the build discovered
+  // but did not name would otherwise vanish from the page entirely.
+  const cats = Object.keys(entry.cats)
+    .filter(k => totalOf(entry.cats[k]) || colCount(entry.cats[k]))
+    .sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
+  const totals = {};
+  let total = 0;
+  for (const k of KINDS) {
+    totals[k.key] = cats.reduce((s, c) => s + countOf(entry.cats[c], k.key), 0);
+    total += totals[k.key];
+  }
+
+  const panel = el("section", "chgpanel");
+
+  const head = el("div", "chghead");
+  const title = el("div", "chgtitle");
+  title.append(el("h2", null, "v" + entry.version),
+               el("span", "chgfrom", "from v" + entry.from));
+  head.append(title);
+
+  const count = el("div", "chgcount");
+  count.append(el("b", null, String(total)),
+               el("span", null, total === 1 ? "change" : "changes"));
+  head.append(count);
+  panel.appendChild(head);
+
+  if (total) panel.appendChild(shapeBar(totals));
+
+  if (!cats.length) {
+    panel.appendChild(el("p", "chgnone", "No differences in any catalogue."));
+    return panel;
+  }
+
+  /* A grid rather than a chip per number. The labels are said once, at the top, and every
+     figure below sits in its own column - which is what makes two versions comparable at a
+     glance and what a row of "2 new" "1 gone" badges could never do. */
+  const list = el("div", "chgcats");
+
+  const cols = el("div", "chgcolhead");
+  cols.appendChild(el("span", null, ""));
+  for (const k of KINDS) cols.appendChild(el("span", null, k.verb));
+  cols.appendChild(el("span", null, "all"));
+  cols.appendChild(el("span", null, ""));
+  list.appendChild(cols);
+
+  for (const key of cats) {
+    const cat = entry.cats[key];
+    const row = el("button", "chgcat");
+    row.type = "button";
+
+    const name = el("span", "chgname");
+    name.append(glyph(key), el("span", null, nameOf(key)));
+    const nCols = colCount(cat);
+    if (nCols) name.appendChild(el("span", "chgcols", nCols === 1
+      ? "1 field" : nCols + " fields"));
+    row.appendChild(name);
+
+    for (const k of KINDS) row.appendChild(figure(countOf(cat, k.key), k.cls));
+    row.appendChild(el("span", "fig all", String(totalOf(cat))));
+    row.appendChild(el("span", "chgopen", "›"));
+
+    row.onclick = () => openSheet(changeSheet(entry, key));
+    list.appendChild(row);
+  }
+
+  panel.appendChild(list);
+  return panel;
+}
+
+/* ---- page ----------------------------------------------------------------- */
+
+function draw() {
+  const log = document.getElementById("log");
+  log.replaceChildren();
+
+  if (!LOG.length) {
+    const empty = el("div", "chgempty");
+    empty.appendChild(el("h2", null, "Nothing to compare yet"));
+    empty.appendChild(el("p", null,
+      "A changelog needs two builds of the game. The catalogues are snapshotted every time "
+      + "you play, so the first entry appears after the next patch."));
+    log.appendChild(empty);
+    return;
+  }
+
+  for (const entry of LOG) log.appendChild(versionPanel(entry));
+}
+
+/* ---- DEBUG: a fabricated patch ---------------------------------------------
+   Every shape this page can be handed, so the layout can be judged without waiting for the
+   game to be patched. Categories are discovered from whatever the archives hold now, so the
+   fixture covers the awkward ones as well as the ordinary: a category nothing has ever heard
+   of, one whose rows have no names, one big enough to scroll, one holding a single row.
+
+   Hung on real data wherever there is any, so a row opens the creature's or the item's own
+   sheet and the marked fields land on numbers actually on screen. The invented rows are the
+   removals and the edge cases - a removal IS something the current build lacks.
+
+   Self-contained on purpose. Deleting this block and the button in the hero removes the
+   feature; nothing else refers to it.                                                    */
+
+const LOREM = "Rewritten so it reads less like a rules footnote and more like something a "
+  + "person would say out loud, which is the whole of the change and also long enough to "
+  + "find out what a row does when a value will not fit beside its label.";
+
+
+const REAL_LOG = LOG;
+
+draw();
+</script>
+</body>
+</html>

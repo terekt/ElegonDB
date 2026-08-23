@@ -1,0 +1,801 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Elegon DB — Maps</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css?v=01152046">
+<script>
+/* Resolve the theme before first paint: a stored choice if there is one, otherwise
+   whatever the operating system asks for. Kept inline and tiny on purpose — loading it
+   from app.js would paint the wrong theme first and then correct it. */
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem("elegon-theme"); } catch (e) { /* private mode */ }
+  var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.dataset.theme = saved || (dark ? "dark" : "light");
+})();
+</script>
+</head>
+<body>
+<header>
+  <div class="brand"><span>ELEGON</span> DB</div>
+  <nav>
+    <a href="index.html">Items</a>
+    <a href="monsters.html">Monsters</a>
+    <a href="quests.html">Quests</a>
+    <a href="maps.html" class="on">Maps</a>
+    <a href="planner.html"><span class="navlong">Character </span>Planner</a>
+    <a href="scaling.html">Scaling</a>
+    <a href="changelog.html">Changelog</a>
+  </nav>
+    <button type="button" id="themebtn" class="themebtn" aria-label="Switch theme">
+      <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.4"/><g><path d="M12 1.8v3M12 19.2v3M1.8 12h3M19.2 12h3M4.8 4.8l2.1 2.1M17.1 17.1l2.1 2.1M19.2 4.8l-2.1 2.1M6.9 17.1l-2.1 2.1"/></g></svg>
+      <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.6 13.6A8.6 8.6 0 0 1 10.4 3.4a8.6 8.6 0 1 0 10.2 10.2z"/></svg>
+    </button>
+</header>
+
+<div class="wrap">
+  <div class="hero">
+    <h1>Maps</h1>
+  </div>
+
+  <!-- Which map. The only thing above the map, because it is the only choice that changes
+       everything below it. -->
+  <div class="bar">
+    <span id="mapsel" class="chipset"></span>
+  </div>
+
+  <div class="maplayout">
+    <!-- Legend and filters are the same panel. They were two before — coloured chips in the
+         bar and a matching key floating over the map — which meant the thing that told you
+         what a colour meant was somewhere other than the thing that let you switch it off. -->
+    <aside class="mappanel" id="panel">
+      <input type="search" id="q" placeholder="Search by name…">
+
+      <div class="panelhead">Show</div>
+      <div id="kinds" class="kindlist"></div>
+
+      <div class="panelhead" id="lvlHead">Monster level</div>
+      <div class="grpline" id="lvlWrap">
+        <input type="number" id="lo" placeholder="min">
+        <input type="number" id="hi" placeholder="max">
+      </div>
+
+      <!-- What an area is worth depends entirely on who is asking, so the reader says.
+           A slider because the question here is "where should I be at level 20", and
+           dragging answers that faster than typing does — the number beside it takes an
+           exact level when that is what you want. -->
+      <div class="panelhead" id="youHead">Your level</div>
+      <div class="grpline" id="youWrap"></div>
+
+      <div class="panelhead" id="speciesHead">Creatures here</div>
+      <div id="species" class="legspecies"></div>
+    </aside>
+
+    <div class="mapview" id="view">
+      <div class="mapstage" id="stage"></div>
+      <div class="mapmarkers" id="markers"></div>
+      <!-- Your own position lives in its own layer: draw() empties the marker layer on
+           every rebuild, and the map's controls sit above it. Neither should be able to
+           hide where you are standing. -->
+      <div class="maplive" id="live"></div>
+      <div class="mapempty" id="empty" hidden></div>
+
+      <!-- View controls stay on the map: they change how you are looking at it, not what
+           is on it, which is what the panel decides. -->
+      <div class="mapctl">
+        <button id="zin" title="Zoom in">+</button>
+        <button id="zout" title="Zoom out">−</button>
+        <button id="reset" title="Fit the whole map">Fit</button>
+      </div>
+
+      <div class="mapscale" id="scalebar"><span></span><b></b></div>
+      <div class="mapcoords" id="coords" hidden></div>
+    </div>
+  </div>
+
+  <p class="note" id="note"></p>
+</div>
+
+<script src="data.js?v=01152046"></script>
+<script src="app.js?v=01152046"></script>
+<script>
+/* The interactive map.
+   Markers live inside a stage sized to the capture in image pixels, so a marker's position
+   is just the projection's output. The stage is then translated and scaled as one, which
+   keeps pan and zoom to a single transform however many markers are on it. Markers carry a
+   counter-scale from a CSS variable so they stay the same size on screen as you zoom. */
+
+/* Gathering is two jobs wearing one label. A vein is a skill you level and a route you plan;
+   a wood pile is a quest step you do once and never look at again. Splitting them off the
+   node's own gathering_skill_id rather than a hand-kept list, so a second skill lands here
+   on its own — which is also why the mining row is named after the skill instead of "Mining"
+   being hardcoded. */
+const MINE_KINDS = [...new Set((D.objects ? Object.values(D.objects) : [])
+  .map(o => o.skill).filter(Boolean))];
+const SKILL_BY_ID = new Map((D.skills || []).map(s => [s.id, s]));
+const gatherKind = o => (o && o.skill) ? "mine" : "quest";
+
+const KINDS = [
+  {key: "mob", label: "Monsters"},
+  {key: "npc", label: "NPCs"},
+  {key: "mine", label: MINE_KINDS.length === 1 && SKILL_BY_ID.get(MINE_KINDS[0])
+                       ? SKILL_BY_ID.get(MINE_KINDS[0]).name : "Mining"},
+  {key: "quest", label: "Quest objects"},
+  {key: "portal", label: "Rift entrances"},
+  {key: "respawn", label: "Respawn points"},
+];
+
+const S = {map: null, q: "", lo: null, hi: null, merchants: false, coverage: false,
+           on: {mob: true, npc: true, mine: true, quest: true, portal: true, respawn: true}};
+
+let drawCoverage = () => {};
+let liveSpawns = null;
+let liveMarker = null;
+let startLive = () => {};
+let stopLive = () => {};
+let setCoverLabel = () => {};
+
+const view = document.getElementById("view");
+const stage = document.getElementById("stage");
+const markers = document.getElementById("markers");
+const liveLayer = document.getElementById("live");
+const empty = document.getElementById("empty");
+
+/* ---- what each marker is ------------------------------------------------- */
+
+document.getElementById("youWrap").appendChild(levelPicker({slider: true}));
+
+const SOURCE_BY_ENEMY = new Map(DROP.sources.filter(s => !s.node).map(s => [s.id, s]));
+const MONSTER_BY_ID = new Map(D.monsters.map(m => [m.id, m]));
+const OBJECTS = D.objects || {};
+
+/* Colour says what family it belongs to. The number on the marker says what level it is.
+
+   Colour used to try to carry both, shading the family hue by level, and it could not: Snow
+   Wolf and Frostfang Wolf are five levels apart in the same snowfield, and no two shades of
+   one blue tell them apart at 25px. Nor can the portrait — those two share a model, so their
+   markers are identical whatever sits behind. A written level is exact, needs no legend, and
+   answers to the level rather than to the band. */
+const FALLBACK_COLOURS = {tint: "oklch(0.72 0.02 250)", disc: "oklch(0.64 0.02 250)",
+                          badge: "oklch(0.30 0.02 250)"};
+const creatureColour = (id, key) =>
+  (MONSTER_BY_ID.get(id) || {})[key] || FALLBACK_COLOURS[key];
+
+/* People and props are not level-scaled, so their disc is simply a light backdrop in their
+   own colour — the same treatment, so every marker on the map reads the same way. */
+const NPC_DISC = "oklch(0.76 0.03 250)", MERCHANT_DISC = "oklch(0.80 0.07 85)";
+const OBJ_DISC = "oklch(0.79 0.05 150)";
+/* A vein's ring is the game's OWN tint_hex — the colour the ore is painted in the world, so
+   the marker and the thing you are walking towards match. The four are far enough apart
+   (copper, ice, violet, ember) that they need no help from us. The disc stays neutral so a
+   pale ring like Frostsilver's still reads against it. */
+const MINE_DISC = "oklch(0.30 0.02 60)", MINE_RING = "#c98f3b";
+
+/* People are not colour-coded. Their portraits already differ, and thirty hues among the
+   creatures' thirty-seven was noise standing in for information. The one distinction worth
+   drawing is who will trade with you, so a merchant is gold and everyone else is slate. */
+const NPC_PLAIN = "#7d8aa0", NPC_MERCHANT = "#d9a53c";
+const npcColour = shop => (shop ? NPC_MERCHANT : NPC_PLAIN);
+
+/** Name, level and what clicking it should open, for one spawn point. */
+function describe(code, id) {
+  if (code === 0) {
+    const m = MONSTER_BY_ID.get(id);
+    const src = SOURCE_BY_ENEMY.get(id);
+    return {kind: "mob", name: m ? m.name : "Enemy " + id, lvl: m ? m.lvl : 0,
+            note: m && m.aggressive ? "aggressive" : "", colour: creatureColour(id, "tint"),
+            disc: creatureColour(id, "disc"), badge: creatureColour(id, "badge"),
+            art: {kind: "monsters", id, has: !!(m && m.icon)}, monster: m,
+            drops: src ? dropsOf(src).length : 0,
+            open: src ? () => openSheet(monsterSheet(src)) : null};
+  }
+  if (code === 2) {
+    const n = NPC_BY_ID.get(id);
+    const shop = SHOP_BY_NPC.get(id);
+    // No level: every NPC is level 1 and none of them fight, so the number said nothing.
+    return {kind: "npc", name: n ? n.name : "NPC " + id, lvl: 0, colour: npcColour(shop),
+            disc: shop ? MERCHANT_DISC : NPC_DISC,
+            quests: (QUESTS_BY_GIVER.get(id) || []).length,
+            note: n && n.role ? n.role : "", npc: n, shop,
+            art: {kind: "npcs", id, has: !!(n && n.icon)},
+            open: () => openSheet(npcSheet(id))};
+  }
+  const obj = OBJECTS[id] || {};
+  const name = obj.name || "Object " + id;
+  const mining = !!obj.skill;
+  // The skill it needs is the one thing worth knowing before walking to a vein, so it is on
+  // the marker rather than a click away.
+  const skill = mining ? SKILL_BY_ID.get(obj.skill) : null;
+  const note = mining
+    ? (obj.req ? `${skill ? skill.name : "Mining"} ${obj.req}` : (skill ? skill.name : "Mining"))
+    : "quest object";
+  return {kind: gatherKind(obj), name, lvl: 0, note,
+          disc: mining ? MINE_DISC : OBJ_DISC,
+          colour: mining ? (obj.tint || MINE_RING) : undefined,
+          art: {kind: "objects", id, has: !!obj.icon},
+          // Every place it stands, not the one-row loot table — the same sheet the quest
+          // page opens, so a node is one thing however you reach it.
+          open: () => openSheet(gatherSheet(id))};
+}
+
+/* ---- map selector -------------------------------------------------------- */
+
+/** Switches to a map by id, which is also how a portal marker travels. */
+function showMap(mapId) {
+  const m = D.maps.find(x => x.id === mapId);
+  if (!m || m === S.map) return;
+  S.map = m;
+  // The readout names a position on the map being left behind, so it goes with it.
+  document.getElementById("coords").hidden = true;
+  build();
+  fit();
+}
+
+const mapsel = document.getElementById("mapsel");
+for (const m of D.maps) {
+  const chip = el("span", "chip", m.name + (m.img ? "" : " ·"));
+  if (!m.img) chip.title = m.name + " has no terrain to draw — shown as a grid";
+  chip.onclick = () => showMap(m.id);
+  chip.dataset.map = m.id;
+  mapsel.appendChild(chip);
+}
+
+const kinds = document.getElementById("kinds");
+const kindRows = {};
+for (const k of KINDS) {
+  const row = el("button", "panelrow on");
+  row.type = "button";
+  const dot = el("i", "mk mk-" + k.key);
+  row.append(dot, el("span", "panelname", k.label), el("span", "paneln", ""));
+  row.onclick = () => {
+    S.on[k.key] = !S.on[k.key];
+    row.classList.toggle("on", S.on[k.key]);
+    draw();
+  };
+  kindRows[k.key] = row;
+  kinds.appendChild(row);
+
+  // Narrowing NPCs to the ones who sell something belongs under NPCs rather than beside it:
+  // it is not a fifth kind of marker, it is less of the fourth. Hidden on maps with no
+  // merchants at all, which is every breach.
+  if (k.key === "npc") {
+    const sub = el("button", "panelsub");
+    sub.type = "button";
+    sub.append(el("span", "panelname", "Merchants only"), el("span", "paneln", ""));
+    sub.onclick = () => {
+      S.merchants = !S.merchants;
+      sub.classList.toggle("on", S.merchants);
+      draw();
+    };
+    kindRows.merchants = sub;
+    kinds.appendChild(sub);
+  }
+}
+
+document.getElementById("q").oninput = e => { S.q = e.target.value.toLowerCase(); draw(); };
+document.getElementById("lo").oninput = e => { S.lo = e.target.value === "" ? null : +e.target.value; draw(); };
+document.getElementById("hi").oninput = e => { S.hi = e.target.value === "" ? null : +e.target.value; draw(); };
+document.getElementById("reset").onclick = () => fit();
+
+/** Zooms about the centre of the frame, which is what a button press should do. */
+function zoomBy(factor) {
+  const r = viewSize();
+  const cx = r.width / 2, cy = r.height / 2;
+  const next = clamp(V.scale * factor, fitScale(), MAX_SCALE);
+  const f = next / V.scale;
+  V.x = cx - (cx - V.x) * f;
+  V.y = cy - (cy - V.y) * f;
+  V.scale = next;
+  clampPan();
+  apply();
+}
+document.getElementById("zin").onclick = () => zoomBy(1.6);
+document.getElementById("zout").onclick = () => zoomBy(1 / 1.6);
+
+/* The legend used to show one orange dot for "Monsters" while every creature had its own
+   colour, which said nothing true. It is now a key to what is actually on this map: the
+   fixed kinds, then each species present with its colour, level and count. Selecting a
+   species isolates it; hovering one lights its spawns, the same as hovering a marker. */
+
+const speciesBox = document.getElementById("species");
+const speciesRows = {};
+
+/* The creatures on this map, in the same panel as the switches that hide them. Each row is
+   the key to a colour and the control for it at once: hovering lights that species' spawns,
+   selecting isolates it through the search box so the two can never disagree. */
+function buildLegend() {
+  speciesBox.replaceChildren();
+  for (const k of Object.keys(speciesRows)) delete speciesRows[k];
+
+  for (const k of KINDS)
+    kindRows[k.key].hidden = !points.some(p => p.kind === k.key);
+
+  // A merchant toggle on a map with no merchants would be a control that does nothing, and
+  // one left switched on from another map would silently hide every NPC here.
+  const merchants = points.filter(p => p.kind === "npc" && p.shop).length;
+  kindRows.merchants.hidden = !merchants;
+  kindRows.merchants.querySelector(".paneln").textContent = merchants || "";
+  if (!merchants && S.merchants) {
+    S.merchants = false;
+    kindRows.merchants.classList.remove("on");
+  }
+
+  const species = new Map();
+  for (const p of points) {
+    if (p.kind !== "mob" || worthless(p)) continue;
+    const found = species.get(p.key);
+    if (found) found.n++;
+    else species.set(p.key, {n: 1, name: p.name, lvl: p.lvl, colour: p.colour,
+                             disc: p.disc, art: p.art, key: p.key, monster: p.monster});
+  }
+
+  const head = document.getElementById("speciesHead");
+  head.hidden = !species.size;
+  speciesBox.hidden = !species.size;
+  if (!species.size) return;
+  head.textContent = `${species.size} creatures here`;
+
+  for (const sp of [...species.values()].sort((a, b) => a.lvl - b.lvl || a.name.localeCompare(b.name))) {
+    const row = el("button", "panelrow sp on");
+    row.type = "button";
+    // The same face the markers wear, so the list and the map name the creature the same way.
+    const dot = el("i", "mk mk-mob");
+    dot.style.setProperty("--c", sp.colour);
+    if (sp.disc) dot.style.setProperty("--d", sp.disc);
+    if (sp.art && sp.art.has) {
+      dot.classList.add("mkart");
+      dot.style.setProperty("--art", `url("icons/${sp.art.kind}/${sp.art.id}.png")`);
+    }
+    row.append(dot, el("span", "panelname", sp.name),
+               el("span", "panellvl", "L" + sp.lvl), el("span", "paneln", String(sp.n)));
+    if (sp.monster && LEVEL.value !== null) {
+      const reward = xpAt(sp.monster);
+      /* Abbreviated, because the floor a creature far above you pays is a twentieth of your
+         own level's requirement — eleven digits by level 79 — and beside it what that is
+         actually worth, spent down the curve rather than against this level alone. */
+      const xp = el("span", "panelxp" + (reward ? "" : " nil"));
+      if (reward) {
+        xp.append(el("b", null, abbrevNum(reward)),
+                  el("i", null, levelShare(reward, LEVEL.value)));
+        xp.title = `${fmtNum(reward)} XP each at level ${LEVEL.value}`
+                 + ` — ${levelShare(reward, LEVEL.value)} of a level`;
+      } else {
+        xp.textContent = "none";
+        xp.title = `Nothing at level ${LEVEL.value} — you are too far above it`;
+      }
+      row.appendChild(xp);
+    }
+    row.onmouseenter = () => highlight(sp.key);
+    row.onmouseleave = () => highlight(null);
+    row.onclick = () => {
+      const box = document.getElementById("q");
+      box.value = S.q === sp.name.toLowerCase() ? "" : sp.name;
+      box.dispatchEvent(new Event("input"));
+    };
+    speciesRows[sp.key] = row;
+    speciesBox.appendChild(row);
+  }
+}
+
+/** Keeps the panel honest about what the map is currently showing. */
+function syncPanel() {
+  const shownBy = new Map();
+  for (const p of shownPoints) shownBy.set(p.key, (shownBy.get(p.key) || 0) + 1);
+
+  for (const k of KINDS) {
+    const total = points.filter(p => p.kind === k.key).length;
+    const now = shownPoints.filter(p => p.kind === k.key).length;
+    kindRows[k.key].querySelector(".paneln").textContent =
+      S.on[k.key] && now !== total ? `${now}/${total}` : String(total);
+  }
+  // A species hidden by the level filter or the search is dimmed rather than removed, so
+  // the list stays a stable picture of the map.
+  for (const [key, row] of Object.entries(speciesRows))
+    row.classList.toggle("off", !shownBy.has(key));
+}
+
+/* ---- building the stage -------------------------------------------------- */
+
+let points = [];          // every spawn on the current map, already projected
+let shownPoints = [];     // the subset currently passing the filters
+
+function build() {
+  const m = S.map;
+  [...mapsel.children].forEach(c => c.classList.toggle("on", c.dataset.map === m.id));
+
+  // Give the frame the map's own proportions, so fitting it leaves no dead letterbox
+  // bands. Clamped, so an unusually tall or wide capture cannot produce an absurd box.
+  view.style.aspectRatio = clamp(m.w / m.h, 1.15, 2.4).toFixed(3);
+
+  stage.replaceChildren();
+  stage.style.width = m.w + "px";
+  stage.style.height = m.h + "px";
+  stage.classList.toggle("schematic", !m.img);
+
+  if (m.img) {
+    const img = el("img", "mapimg");
+    img.src = "maps/" + m.img;
+    img.alt = m.name;
+    img.draggable = false;
+    stage.appendChild(img);
+    stage.style.backgroundSize = "";
+  } else {
+    // Same ruling as the monster sheets, at a round number of world units.
+    const perUnit = Math.hypot(m.pz[0], m.pz[1]) || 1;
+    const step = gridSpacing(m.w / perUnit / 8) * perUnit;
+    stage.style.backgroundSize = `${step}px ${step}px`;
+  }
+
+  // The live feed carries the whole spawn list for the map the character is in, which is
+  // how a marker can appear the moment you walk past something new: build_site cannot run
+  // while the game is open, so the built data is frozen for the length of a session.
+  const spawnSource = (liveSpawns && S.map === m) ? liveSpawns : (D.spawns[m.id] || []);
+
+  points = spawnSource.map(([code, id, x, z]) => {
+    const [px, py] = worldToPixel(m, x, z);
+    // Everything of the same kind and id shares a key, which is what lets hovering one
+    // marker light up the rest of that creature's spawns.
+    return {...describe(code, id), px, py, x, z, key: code + ":" + id};
+  });
+
+  for (const p of (D.portals || {})[m.id] || []) {
+    const [px, py] = worldToPixel(m, p.x, p.z);
+    points.push({kind: "portal", name: p.name, lvl: 0, note: p.to ? "leads to " + p.to : "portal",
+                 px, py, x: p.x, z: p.z, key: "portal:" + p.id,
+                 open: p.mapId ? () => showMap(p.mapId) : null});
+  }
+
+  // Respawn points come from the map scene, so unlike the spawn points around them these
+  // are all of them, not the ones that happened to be walked past.
+  for (const p of (D.respawns || {})[m.id] || []) {
+    const [px, py] = worldToPixel(m, p.x, p.z);
+    points.push({kind: "respawn", name: "Respawn point", lvl: 0,
+                 note: "where you return after dying",
+                 px, py, x: p.x, z: p.z, key: "respawn:" + p.x + "," + p.z});
+  }
+
+  drawCoverage(m);
+  buildLegend();
+  draw();
+}
+
+/** Image pixel back to world XZ, by solving the projection's 2x2 system. Used by the
+    coordinate readout under the cursor and by the coverage grid. */
+function pixelToWorld(m, ix, iy) {
+  const det = m.px[0] * m.pz[1] - m.px[1] * m.pz[0];
+  if (!det) return [0, 0];
+  const dx = ix - m.o[0], dy = iy - m.o[1];
+  return [(dx * m.pz[1] - dy * m.pz[0]) / det, (m.px[0] * dy - m.px[1] * dx) / det];
+}
+
+/* A level decides three things at once: what each creature is worth, which of them are worth
+   drawing at all, and what the list beneath the map says. So the legend is rebuilt and the
+   markers redrawn — syncPanel alone only re-counts what is already there, which left the map
+   showing the old level's spawns under the new level's list. */
+let levelRepaint = 0;
+document.addEventListener("levelchange", () => {
+  if (!S.map) return;
+  hideTip();
+  // Dragging the slider fires on every level it passes through, and each redraw rebuilds a
+  // thousand markers. Coalesced to one per frame, so the drag stays smooth and the map is
+  // never more than a frame behind the thumb.
+  cancelAnimationFrame(levelRepaint);
+  levelRepaint = requestAnimationFrame(() => { buildLegend(); draw(); });
+});
+
+function passes(p) {
+  if (!S.on[p.kind]) return false;
+  if (p.kind === "npc" && S.merchants && !p.shop) return false;
+  if (S.q && !p.name.toLowerCase().includes(S.q)) return false;
+  // The level filter only means something for monsters, so it never hides an NPC or a node.
+  if (p.kind === "mob") {
+    if (S.lo !== null && p.lvl < S.lo) return false;
+    if (S.hi !== null && p.lvl > S.hi) return false;
+    // Once you have said what level you are, anything that would give you nothing is not
+    // worth drawing: it is the map answering "where can I still earn something".
+    if (worthless(p)) return false;
+  }
+  return true;
+}
+
+/** Gives the reader no XP at their stated level. Never true while no level is stated. */
+const worthless = p =>
+  LEVEL.value !== null && p.kind === "mob" && !!p.monster && xpAt(p.monster) === 0;
+
+function draw() {
+  markers.replaceChildren();
+  shownPoints = points.filter(passes);
+
+  for (const p of shownPoints) {
+    const mk = el("i", "mk mk-" + p.kind);
+    mk.style.left = p.px + "px";
+    mk.style.top = p.py + "px";
+    if (p.colour) mk.style.setProperty("--c", p.colour);
+    if (p.disc) mk.style.setProperty("--d", p.disc);
+    // The level, written on the marker rather than implied by its shade.
+    if (p.kind === "mob" && p.lvl) {
+      mk.dataset.lvl = p.lvl;
+      mk.style.setProperty("--b", p.badge);
+    }
+    // The creature itself, cropped into the circle. Without a portrait the marker falls
+    // back to the plain tinted disc, which is what the colour was doing on its own before.
+    if (p.art && p.art.has) {
+      mk.classList.add("mkart");
+      mk.style.setProperty("--art", `url("icons/${p.art.kind}/${p.art.id}.png")`);
+    }
+    mk.dataset.key = p.key;
+    mk.tabIndex = 0;
+    mk.setAttribute("role", "button");
+    if (p.open) mk.onclick = p.open;
+    if (p.open) mk.onkeydown = e => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); p.open(); }
+    };
+    const kin = HIGHLIGHTS.has(p.kind) ? p.key : null;
+    mk.onmouseenter = () => { showTip(mk, p); highlight(kin); };
+    mk.onmouseleave = () => { hideTip(); highlight(null); };
+    mk.onfocus = () => { showTip(mk, p); highlight(kin); };
+    mk.onblur = () => { hideTip(); highlight(null); };
+    p.node = mk;
+    markers.appendChild(mk);
+  }
+  placeMarkers();
+
+  syncPanel();
+
+  const total = points.length;
+  empty.hidden = total > 0;
+  if (!total)
+    empty.textContent = "Nothing marked on this map.";
+}
+
+/* Lights up every other spawn of whatever is being pointed at, which is the quickest way
+   to see a creature's whole range without filtering down to it.
+
+   It only means anything for something there are several of. A rift entrance and a respawn
+   point are each one place in the world, so pointing at one used to dim the entire map to
+   highlight the single marker under the cursor — and ring it in gold, which on a shape that
+   is not a circle came out as a rectangle around the gravestone. */
+const HIGHLIGHTS = new Set(["mob", "npc", "quest", "mine"]);
+
+function highlight(key) {
+  for (const mk of markers.querySelectorAll(".mk"))
+    mk.classList.toggle("kin", key !== null && mk.dataset.key === key);
+  markers.classList.toggle("dimmed", key !== null);
+}
+
+/** Screen position for every visible marker, from the stage's current transform. */
+function placeMarkers() {
+  if (liveMarker) {
+    liveMarker.style.left = (V.x + (+liveMarker.dataset.px) * V.scale) + "px";
+    liveMarker.style.top = (V.y + (+liveMarker.dataset.py) * V.scale) + "px";
+  }
+  for (const p of shownPoints) {
+    if (!p.node) continue;
+    p.node.style.left = (V.x + p.px * V.scale) + "px";
+    p.node.style.top = (V.y + p.py * V.scale) + "px";
+  }
+}
+
+/* ---- tooltip ------------------------------------------------------------- */
+
+const tip = el("div", "tip");
+tip.hidden = true;
+document.body.appendChild(tip);
+
+function showTip(anchor, p) {
+  tip.replaceChildren();
+
+  // A card rather than a line of text: the portrait is the fastest way to know what you are
+  // pointing at, and the numbers answer "should I bother" without opening anything.
+  const head = el("div", "tipcard");
+  if (p.art) {
+    const art = icon(p.art.kind, p.art.id, p.art.has, 68);
+    art.classList.add("tipart");
+    head.appendChild(art);
+  }
+  const text = el("div", "tiptext");
+  const name = el("b", null, p.name);
+  if (p.colour) name.style.color = p.colour;
+  text.appendChild(name);
+
+  const bits = [];
+  if (p.lvl) bits.push("Level " + p.lvl);
+  if (p.note) bits.push(p.note);
+  if (bits.length) text.appendChild(el("i", null, bits.join(" · ")));
+
+  const facts = el("div", "tipfacts");
+  if (p.monster) {
+    const reward = xpAt(p.monster);
+    const kills = killsPerLevel(p.monster);
+    facts.append(tipStat("Health", fmtNum(p.monster.hp)),
+                 tipStat("Attack", fmtNum(p.monster.dmg)),
+                 tipStat(LEVEL.value === null ? "XP" : "XP at " + LEVEL.value,
+                         reward ? fmtNum(reward) : "none"));
+    if (kills) facts.appendChild(tipStat("Kills/level", fmtNum(kills)));
+    if (p.drops) facts.appendChild(tipStat("Drops", String(p.drops)));
+  } else if (p.kind === "npc") {
+    // What they are FOR, which for most of them is work rather than trade.
+    if (p.quests) facts.appendChild(tipStat("Gives", countLabel(p.quests, "quest")));
+    if (p.shop) facts.appendChild(tipStat("Sells", countLabel(p.shop.items.length, "item")));
+  }
+  if (facts.children.length) text.appendChild(facts);
+  head.appendChild(text);
+  tip.appendChild(head);
+
+  const kin = points.filter(o => o.key === p.key).length;
+  const hint = kin > 1 ? `${kin} locations on this map` : "";
+  if (hint) tip.appendChild(el("p", "tiphint", hint));
+  tip.hidden = false;
+
+  const z = pageZoom();
+  const r = anchor.getBoundingClientRect();
+  const t = tip.getBoundingClientRect();
+  // Both rects are painted pixels; left/top below are CSS lengths, which the root zoom
+  // scales again. Divide once at the end rather than sprinkling it through the arithmetic.
+  const left = Math.min(window.innerWidth - t.width - 12,
+                        Math.max(8, r.left + r.width / 2 - t.width / 2));
+  const top = r.top - t.height - 10 < 8 ? r.bottom + 10 : r.top - t.height - 10;
+  tip.style.left = (left / z) + "px";
+  tip.style.top = (top / z) + "px";
+}
+const hideTip = () => { tip.hidden = true; };
+
+const tipStat = (label, value) => {
+  const chip = el("span", "tipstat");
+  chip.append(el("span", null, label), el("b", null, value));
+  return chip;
+};
+
+/* ---- pan and zoom -------------------------------------------------------- */
+
+const V = {scale: 1, x: 0, y: 0};
+const MAX_SCALE = 6;
+
+/* Two coordinate spaces, and they only agree below 1500px.
+
+   getBoundingClientRect and pointer events speak PAINTED pixels. The stage's transform, the
+   map's own pixels and every CSS length are LAYOUT pixels. The wide-screen rule puts `zoom`
+   on the root, and from that point the two differ by exactly that factor — which is why the
+   map came out cropped on the right and bottom by 15% on a 1440p screen and was fine on a
+   1080p one. Everything below works in layout pixels. */
+const viewSize = () => ({width: view.clientWidth, height: view.clientHeight});
+const pointerAt = e => {
+  const r = view.getBoundingClientRect(), z = pageZoom();
+  return [(e.clientX - r.left) / z, (e.clientY - r.top) / z];
+};
+
+const fitScale = () => {
+  const r = viewSize();
+  return Math.min(r.width / S.map.w, r.height / S.map.h);
+};
+
+function apply() {
+  stage.style.transform = `translate(${V.x}px, ${V.y}px) scale(${V.scale})`;
+  placeMarkers();
+  const perUnit = Math.hypot(S.map.pz[0], S.map.pz[1]) || 1;
+  const bar = document.getElementById("scalebar");
+  // A round number of world units, drawn at whatever width that currently occupies.
+  const units = gridSpacing(120 / (V.scale * perUnit));
+  bar.querySelector("span").style.width = (units * perUnit * V.scale) + "px";
+  bar.querySelector("b").textContent = units + " units";
+}
+
+/** Keeps the map inside the frame, and centres it when it is smaller than the frame. */
+function clampPan() {
+  const r = viewSize();
+  const w = S.map.w * V.scale, h = S.map.h * V.scale;
+  V.x = w <= r.width ? (r.width - w) / 2 : clamp(V.x, r.width - w, 0);
+  V.y = h <= r.height ? (r.height - h) / 2 : clamp(V.y, r.height - h, 0);
+}
+
+/* The panel is capped to the map's height so the two read as one block. The map's height
+   comes from its own aspect and the column width, so it can only be known after layout —
+   hence setting it here rather than in CSS. Cleared when the layout stacks on a narrow
+   screen, where matching heights would mean a needlessly short list. */
+function matchPanelHeight() {
+  const panel = document.getElementById("panel");
+  const stacked = getComputedStyle(document.querySelector(".maplayout"))
+    .gridTemplateColumns.split(" ").length < 2;
+  // clientHeight, not the painted rect: this becomes a CSS length, which is layout px.
+  panel.style.maxHeight = stacked ? "" : view.clientHeight + "px";
+}
+
+function fit() {
+  // Centre explicitly rather than leaning on clampPan: a pan left over from the previous
+  // map (or from before the reset) would otherwise survive and push the fitted view off
+  // to one edge.
+  const r = viewSize();
+  V.scale = fitScale();
+  V.x = (r.width - S.map.w * V.scale) / 2;
+  V.y = (r.height - S.map.h * V.scale) / 2;
+  clampPan();
+  apply();
+  matchPanelHeight();
+}
+
+view.addEventListener("wheel", e => {
+  e.preventDefault();
+  const [cx, cy] = pointerAt(e);
+  const next = clamp(V.scale * Math.exp(-e.deltaY * 0.0015), fitScale(), MAX_SCALE);
+  const f = next / V.scale;
+  // Zoom about the cursor: the world point under it must not move.
+  V.x = cx - (cx - V.x) * f;
+  V.y = cy - (cy - V.y) * f;
+  V.scale = next;
+  clampPan();
+  apply();
+}, {passive: false});
+
+/* World position under the cursor, the same readout the game's own map shows. Y is terrain
+   height and cannot be known from a top-down image, so only the two axes the rest of this
+   project uses are reported. */
+const coordsBox = document.getElementById("coords");
+
+view.addEventListener("pointermove", e => {
+  const [px, py] = pointerAt(e);
+  const ix = (px - V.x) / V.scale;
+  const iy = (py - V.y) / V.scale;
+  if (ix < 0 || iy < 0 || ix > S.map.w || iy > S.map.h) { coordsBox.hidden = true; return; }
+  const [wx, wz] = pixelToWorld(S.map, ix, iy);
+  coordsBox.replaceChildren(
+    el("span", null, "X"), el("b", null, Math.round(wx).toString()),
+    el("span", null, "Z"), el("b", null, Math.round(wz).toString()));
+  coordsBox.hidden = false;
+});
+view.addEventListener("pointerleave", () => { coordsBox.hidden = true; });
+
+let dragging = null;
+view.addEventListener("pointerdown", e => {
+  // Everything that sits on the map and handles its own click — markers, the key, the view
+  // buttons — must be left alone here. Starting a drag calls setPointerCapture, which
+  // retargets the rest of the pointer sequence to the map, so the button never sees its
+  // pointerup and no click event is ever produced. It looks exactly like a dead button.
+  if (e.target.closest(".mk, .mapctl, .mapscale")) return;
+  // Layout pixels, like the transform it drives: read straight off the event, a drag on a
+  // zoomed page moved the map further than the pointer went.
+  const z = pageZoom();
+  dragging = {x: e.clientX / z - V.x, y: e.clientY / z - V.y, id: e.pointerId};
+  view.setPointerCapture(e.pointerId);
+  view.classList.add("grabbing");
+});
+view.addEventListener("pointermove", e => {
+  if (!dragging || dragging.id !== e.pointerId) return;
+  const z = pageZoom();
+  V.x = e.clientX / z - dragging.x;
+  V.y = e.clientY / z - dragging.y;
+  clampPan();
+  apply();
+});
+for (const ev of ["pointerup", "pointercancel"])
+  view.addEventListener(ev, e => {
+    if (!dragging || dragging.id !== e.pointerId) return;
+    dragging = null;
+    view.classList.remove("grabbing");
+    view.releasePointerCapture(e.pointerId);
+  });
+
+// A resized window changes what "fit" means, so the clamp has to be redone.
+addEventListener("resize", () => {
+  V.scale = Math.max(V.scale, fitScale());
+  clampPan();
+  apply();
+  matchPanelHeight();
+});
+
+/* ---- go ------------------------------------------------------------------ */
+
+if (!D.maps.length) {
+  document.getElementById("filters").hidden = true;
+  view.hidden = true;
+  document.getElementById("note").textContent = "No maps available.";
+} else {
+  S.map = D.maps[0];
+  build();
+  fit();
+}
+</script>
+</body>
+</html>

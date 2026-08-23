@@ -1,0 +1,725 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Elegon DB — Scaling</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css?v=01152046">
+<script>
+/* Resolve the theme before first paint: a stored choice if there is one, otherwise
+   whatever the operating system asks for. Kept inline and tiny on purpose — loading it
+   from app.js would paint the wrong theme first and then correct it. */
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem("elegon-theme"); } catch (e) { /* private mode */ }
+  var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.dataset.theme = saved || (dark ? "dark" : "light");
+})();
+</script>
+</head>
+<body>
+<header>
+  <div class="brand"><span>ELEGON</span> DB</div>
+  <nav>
+    <a href="index.html">Items</a>
+    <a href="monsters.html">Monsters</a>
+    <a href="quests.html">Quests</a>
+    <a href="maps.html">Maps</a>
+    <a href="planner.html"><span class="navlong">Character </span>Planner</a>
+    <a href="scaling.html" class="on">Scaling</a>
+    <a href="changelog.html">Changelog</a>
+  </nav>
+    <button type="button" id="themebtn" class="themebtn" aria-label="Switch theme">
+      <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.4"/><g><path d="M12 1.8v3M12 19.2v3M1.8 12h3M19.2 12h3M4.8 4.8l2.1 2.1M17.1 17.1l2.1 2.1M19.2 4.8l-2.1 2.1M6.9 17.1l-2.1 2.1"/></g></svg>
+      <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.6 13.6A8.6 8.6 0 0 1 10.4 3.4a8.6 8.6 0 1 0 10.2 10.2z"/></svg>
+    </button>
+</header>
+
+<div class="wrap">
+  <div class="hero">
+    <h1>Scaling</h1>
+  </div>
+  <p class="lede">How each number the game runs on answers to its input — where a stat keeps
+    paying, where it quietly stops, and what it costs to get there. Drag a control to pin a
+    reading; hover a curve for any point on it.</p>
+
+  <div id="sheet"></div>
+  <p class="note" id="foot"></p>
+</div>
+
+<script src="data.js?v=01152046"></script>
+<script src="app.js?v=01152046"></script>
+<script>
+/* Interactive scaling curves.
+
+   Every formula here comes from GAME or the instability helpers in app.js — this page owns
+   no arithmetic of its own. That is deliberate: the planner draws the same curves to size a
+   build, and a second copy of a formula is the bug that hides for a month, because both
+   copies look right in isolation.
+
+   The charts are hand-drawn SVG. The site ships no chart library and staying self-contained
+   is worth more than a dependency for six line charts. */
+
+const NS = "http://www.w3.org/2000/svg";
+const sv = (tag, attrs) => {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  return e;
+};
+
+/* Two series colours, and only two, because the checks that decide this are computable and
+   a third hue does not survive them: the site's green sits ΔE 5 from its amber under
+   deuteranopia, which is a coin flip for a red-green reader. Blue and amber are the site's
+   own quality hues re-stepped into each mode's lightness band, and the pair passes CVD
+   separation, the normal-vision floor and 3:1 contrast in both themes. A chart that would
+   need a third series is two charts. */
+const SERIES = ["var(--s1)", "var(--s2)"];
+
+const nice = v => {
+  const p = Math.pow(10, Math.floor(Math.log10(Math.abs(v) || 1)));
+  const n = v / p;
+  // 2.5 is on the ladder because without it a 10,968 maximum snaps to a 5,000 step and
+  // leaves a third of the plot empty.
+  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p;
+};
+
+const pct1 = v => (Math.round(v * 1000) / 10).toFixed(1) + "%";
+const mult2 = v => "×" + big(v);
+const multAxis = v => "×" + (Math.abs(v) < 1e15 ? short(v) : big(v));
+const whole = v => Math.round(v).toLocaleString();
+
+/**
+ * One line chart: a curve per series, a crosshair that follows the pointer, a marker pinned
+ * by the section's control, and a table of the same numbers.
+ *
+ * The pinned marker is the point of the page. A curve shows the shape, but the question a
+ * reader actually arrives with is "what do I get at 240 Fortitude", and that wants a number.
+ */
+function lineChart(opts) {
+  const W = 700, H = 250;
+  const PAD = {l: 60, r: 18, t: 16, b: 34};
+  const xs = opts.x, ys = opts.y || {};
+  const logY = !!ys.log;
+  const fmtY = ys.fmt || short;
+
+  const card = el("div", "chart");
+
+  const cap = el("div", "chartcap");
+  cap.appendChild(el("h3", null, opts.title));
+  // A legend whenever there is more than one series, so identity is never colour alone.
+  if (opts.series.length > 1) {
+    const leg = el("div", "legend");
+    opts.series.forEach((s, i) => {
+      const item = el("span", "legitem");
+      const key = sv("svg", {viewBox: "0 0 16 8", class: "legline"});
+      key.appendChild(sv("line", {x1: 1, y1: 4, x2: 15, y2: 4, stroke: SERIES[i],
+                                  "stroke-width": 2, "stroke-linecap": "round"}));
+      item.appendChild(key);
+      item.appendChild(el("span", null, s.name));
+      leg.appendChild(item);
+    });
+    cap.appendChild(leg);
+  }
+  card.appendChild(cap);
+  if (opts.formula) card.appendChild(el("code", "formula", opts.formula));
+
+  const holder = el("div", "plot");
+  const svg = sv("svg", {viewBox: "0 0 " + W + " " + H, class: "plotsvg",
+                         role: "img", "aria-label": opts.title});
+  holder.appendChild(svg);
+  card.appendChild(holder);
+
+  // Sampled once. These curves are cheap and the table view reads the same function.
+  const N = 240;
+  const sampleAt = i => xs.min + (xs.max - xs.min) * i / N;
+  const data = opts.series.map(s => {
+    const pts = [];
+    for (let i = 0; i <= N; i++) { const x = sampleAt(i); pts.push([x, s.f(x)]); }
+    return pts;
+  });
+
+  const allY = data.flat().map(p => p[1]).filter(isFinite);
+  let yMin = ys.min !== undefined ? ys.min : Math.min(0, ...allY);
+  if (logY) yMin = Math.max(1, Math.min(...allY.filter(v => v > 0)));
+  /* Round the top up to a whole tick rather than to the next nice NUMBER: nice(2.4) is 5,
+     which left a curve peaking at 230% sitting under an axis that ran to 500%. */
+  const rawMax = Math.max(...allY);
+  const yStep = nice((rawMax - yMin) / 5) || 1;
+  let yMax = ys.max !== undefined ? ys.max
+           : logY ? Math.pow(10, Math.ceil(Math.log10(rawMax)))
+                  : Math.ceil(rawMax / yStep) * yStep;
+
+  const px = x => PAD.l + (x - xs.min) / (xs.max - xs.min) * (W - PAD.l - PAD.r);
+  const py = y => {
+    const t = logY
+      ? (Math.log10(Math.max(y, yMin)) - Math.log10(yMin)) /
+        (Math.log10(yMax) - Math.log10(yMin))
+      : (y - yMin) / (yMax - yMin);
+    return H - PAD.b - t * (H - PAD.t - PAD.b);
+  };
+
+  // ---- grid and axes: solid hairlines one step off the surface, and recessive
+  const yTicks = [];
+  if (logY) {
+    /* One tick per decade is right over four decades and unreadable over thirty-five - at
+       instability 2000 the axis spans 10^0 to 10^35, which is a tick every five pixels. Thin
+       to at most eight, always in whole decades so the labels stay powers of ten. */
+    const lo = Math.ceil(Math.log10(yMin)), hi = Math.floor(Math.log10(yMax * 1.0001));
+    const every = Math.max(1, Math.ceil((hi - lo + 1) / 8));
+    for (let e = lo; e <= hi; e += every) yTicks.push(Math.pow(10, e));
+  } else {
+    for (let v = Math.ceil(yMin / yStep) * yStep; v <= yMax + 1e-9; v += yStep) yTicks.push(v);
+  }
+  for (const v of yTicks) {
+    svg.appendChild(sv("line", {x1: PAD.l, y1: py(v), x2: W - PAD.r, y2: py(v), class: "grid"}));
+    const t = sv("text", {x: PAD.l - 8, y: py(v) + 4, class: "tick tickr"});
+    t.textContent = fmtY(v);
+    svg.appendChild(t);
+  }
+  const xStep = nice((xs.max - xs.min) / 6);
+  for (let v = xs.min; v <= xs.max + 1e-9; v += xStep) {
+    const t = sv("text", {x: px(v), y: H - PAD.b + 18, class: "tick tickc"});
+    t.textContent = short(v);
+    svg.appendChild(t);
+  }
+  svg.appendChild(sv("line", {x1: PAD.l, y1: H - PAD.b, x2: W - PAD.r, y2: H - PAD.b,
+                              class: "axis"}));
+  if (xs.label) {
+    const t = sv("text", {x: W - PAD.r, y: H - 4, class: "axlabel tickr"});
+    t.textContent = xs.label;
+    svg.appendChild(t);
+  }
+
+  /* Annotations: the thresholds that are the whole reason to look at the curve. A soft cap
+     you cannot see is just a bend. */
+  for (const m of opts.marks || []) {
+    const x = px(m.x);
+    svg.appendChild(sv("line", {x1: x, y1: PAD.t, x2: x, y2: H - PAD.b, class: "markline"}));
+    const t = sv("text", {x: x + 6, y: PAD.t + 11, class: "marklabel"});
+    t.textContent = m.label;
+    svg.appendChild(t);
+  }
+  for (const m of opts.hmarks || []) {
+    const y = py(m.y);
+    svg.appendChild(sv("line", {x1: PAD.l, y1: y, x2: W - PAD.r, y2: y, class: "markline"}));
+    const t = sv("text", {x: W - PAD.r - 4, y: y - 7, class: "marklabel tickr"});
+    t.textContent = m.label;
+    svg.appendChild(t);
+  }
+
+  data.forEach((pts, i) => {
+    const d = pts.filter(p => isFinite(p[1]))
+                 .map((p, j) => (j ? "L" : "M") + px(p[0]).toFixed(1) + " " + py(p[1]).toFixed(1))
+                 .join(" ");
+    svg.appendChild(sv("path", {d: d, fill: "none", stroke: SERIES[i], "stroke-width": 2,
+                                "stroke-linejoin": "round", "stroke-linecap": "round"}));
+  });
+
+  const hair = sv("line", {y1: PAD.t, y2: H - PAD.b, class: "hair", visibility: "hidden"});
+  svg.appendChild(hair);
+
+  // Hover dots and pinned dots are the same mark; only what moves them differs. Each carries
+  // a 2px ring in the surface colour so it stays legible where it crosses its own line.
+  const marker = i => {
+    const g = sv("g", {visibility: "hidden"});
+    g.appendChild(sv("circle", {r: 6, class: "dotring"}));
+    g.appendChild(sv("circle", {r: 4, fill: SERIES[i]}));
+    svg.appendChild(g);
+    return g;
+  };
+  const dots = data.map((_, i) => marker(i));
+  const pins = data.map((_, i) => marker(i));
+
+  const tipBox = el("div", "charttip");
+  tipBox.hidden = true;
+  holder.appendChild(tipBox);
+
+  const valuesAt = x => opts.series.map(s => s.f(x));
+  const xText = x => (xs.name || "x") + " " +
+    (Math.round(x * 100) / 100).toLocaleString() + (xs.unit || "");
+
+  function showTip(x, clientX) {
+    const vals = valuesAt(x);
+    tipBox.replaceChildren();
+    const head = el("div", "ttx");
+    head.textContent = xText(x);
+    tipBox.appendChild(head);
+    opts.series.forEach((s, i) => {
+      const row = el("div", "ttrow");
+      const key = sv("svg", {viewBox: "0 0 16 8", class: "legline"});
+      key.appendChild(sv("line", {x1: 1, y1: 4, x2: 15, y2: 4, stroke: SERIES[i],
+                                  "stroke-width": 2, "stroke-linecap": "round"}));
+      row.appendChild(key);
+      // Value leads, name follows: the reader has the series and wants the number.
+      row.append(el("b", null, (s.fmt || fmtY)(vals[i])), el("span", null, s.name));
+      tipBox.appendChild(row);
+    });
+    tipBox.hidden = false;
+    const r = holder.getBoundingClientRect();
+    let left = clientX - r.left + 14;
+    if (left + tipBox.offsetWidth > r.width - 4) left = clientX - r.left - tipBox.offsetWidth - 14;
+    tipBox.style.left = Math.max(4, left) + "px";
+  }
+
+  function place(group, x, y) {
+    if (!isFinite(y)) { group.setAttribute("visibility", "hidden"); return; }
+    group.setAttribute("visibility", "visible");
+    group.setAttribute("transform",
+      "translate(" + px(x).toFixed(1) + "," + py(y).toFixed(1) + ")");
+  }
+
+  /** Move the pinned reading. Called by whichever control scopes this chart. */
+  card.pin = x => {
+    const vals = valuesAt(x);
+    pins.forEach((g, i) => place(g, x, vals[i]));
+  };
+
+  const dataX = e => {
+    const r = svg.getBoundingClientRect();
+    const sx = (e.clientX - r.left) / r.width * W;
+    const x = xs.min + (sx - PAD.l) / (W - PAD.l - PAD.r) * (xs.max - xs.min);
+    return Math.max(xs.min, Math.min(xs.max, xs.snap ? Math.round(x) : x));
+  };
+  svg.addEventListener("pointermove", e => {
+    const x = dataX(e);
+    hair.setAttribute("visibility", "visible");
+    hair.setAttribute("x1", px(x));
+    hair.setAttribute("x2", px(x));
+    const vals = valuesAt(x);
+    dots.forEach((g, i) => place(g, x, vals[i]));
+    showTip(x, e.clientX);
+  });
+  svg.addEventListener("pointerleave", () => {
+    hair.setAttribute("visibility", "hidden");
+    dots.forEach(g => g.setAttribute("visibility", "hidden"));
+    tipBox.hidden = true;
+  });
+
+  /* The same numbers without hovering, which is the path that works on a phone, on a
+     keyboard, and in print. */
+  const det = el("details", "numbers");
+  det.appendChild(el("summary", null, "Show the numbers"));
+  const tbl = el("table", "numtable");
+  const head = el("tr");
+  head.appendChild(el("th", null, (xs.name || "x") + (xs.unit || "")));
+  opts.series.forEach(s => head.appendChild(el("th", null, s.name)));
+  tbl.appendChild(head);
+  const rows = opts.tableAt ||
+    Array.from({length: 11}, (_, i) => xs.min + (xs.max - xs.min) * i / 10);
+  for (const x of rows) {
+    const tr = el("tr");
+    tr.appendChild(el("td", null, (Math.round(x * 100) / 100).toLocaleString()));
+    opts.series.forEach(s => tr.appendChild(el("td", null, (s.fmt || fmtY)(s.f(x)))));
+    tbl.appendChild(tr);
+  }
+  det.appendChild(tbl);
+  card.appendChild(det);
+  return card;
+}
+
+/* ---- page furniture ------------------------------------------------------ */
+
+const sheet = document.getElementById("sheet");
+
+/** A titled block: one control row above the charts that row scopes. */
+function section(title, blurb) {
+  const s = el("section", "scard");
+  const h = el("div", "shead");
+  h.appendChild(el("h2", null, title));
+  if (blurb) h.appendChild(el("p", "sblurb", blurb));
+  const ctl = el("div", "sctl");
+  const body = el("div", "sbody");
+  s.append(h, ctl, body);
+  sheet.appendChild(s);
+  return {ctl: ctl, body: body};
+}
+
+/** A labelled slider whose readout is whatever the caller's handler returns. */
+function slider(label, min, max, value, step, onInput) {
+  const row = el("label", "sl");
+  row.appendChild(el("span", "sllab", label));
+  const inp = el("input");
+  inp.type = "range";
+  inp.min = min; inp.max = max; inp.step = step || 1; inp.value = value;
+  const out = el("b", "slval");
+  const sync = () => { out.textContent = onInput(Number(inp.value)); };
+  inp.addEventListener("input", sync);
+  row.append(inp, out);
+  row.sync = sync;
+  return row;
+}
+
+/** The sentence under a section's charts that says what the pinned reading means. */
+function readoutLine(parent) {
+  const p = el("p", "readout");
+  if (parent) parent.appendChild(p);   // a section that rebuilds re-attaches it itself
+  return p;
+}
+
+/* ---- instability --------------------------------------------------------- */
+{
+  /* No ceiling to show, because the game has none. What a portal will OFFER is your highest
+     cleared tier on that map, +1 if you carry an attuned Breach Catalyst, so the limit is
+     your own progress rather than a number in a table. Recorded play has reached 50, which
+     is why the charts open at 60 — but the range is yours to set, up to the point where the
+     client's own float32 growth overflows. */
+  const RANGE_MAX = (typeof INSTABILITY_UI_LIMIT === "number") ? INSTABILITY_UI_LIMIT : 2000;
+  let range = 60, tier = 20;
+
+  const s = section("Rift instability",
+    "One dial raises everything in a rift at once, and nothing caps it — a portal offers one " +
+    "tier above your best clear, forever. It is also the only mechanic in the game with a " +
+    "soft cap: past tier 10 the monsters slow down, and past about tier 40 the rewards stop.");
+
+  const out = readoutLine(null);
+  let enemies, loot, flaw, rewards;
+
+  /* Rebuilt rather than re-pinned when the range changes: the curves are sampled across the
+     x range at construction, so a new range is genuinely new data.
+
+     Past about tier 100 the enemy chart has to go logarithmic. Health and damage are both
+     multipliers and belong on one axis, but they diverge — ×6,971 against ×713 at tier 200,
+     and four orders apart by tier 1000 — so on a linear scale the damage curve flattens onto
+     the floor and stops being readable at all. */
+  function build() {
+    const logNeeded = range > 100;
+
+    enemies = lineChart({
+      title: "What the monsters gain" + (logNeeded ? " (log scale)" : ""),
+      formula: "health ×1.15^min(t,10) × 1.04^max(0,t−10)   ·   damage ×1.10 / ×1.03",
+      x: {min: 0, max: range, name: "Instability", snap: true, label: "instability tier"},
+      // Ticks stay plain and readings carry the decimals - an axis of ×0.00 ×10.00 is noise.
+      y: {fmt: multAxis, log: logNeeded},
+      marks: [{x: 10, label: "soft cap"}],
+      series: [
+        {name: "Health", f: t => enemyHealthMult(t), fmt: mult2},
+        {name: "Damage", f: t => enemyDamageMult(t), fmt: mult2},
+      ],
+      tableAt: tableRows(),
+    });
+
+    /* Loot power and Flawless chance are both percentages and still cannot share an axis:
+       one climbs without limit while the other is built to stop under 10%, so on one scale
+       the Flawless curve was a flat line using 2% of the plot height. Two charts. */
+    loot = lineChart({
+      title: "Loot power",
+      formula: "1 + 0.08 × min(t,10) + 0.03 × max(0,t−10)",
+      x: {min: 0, max: range, name: "Instability", snap: true, label: "instability tier"},
+      y: {fmt: pct1, min: 0},
+      marks: [{x: 10, label: "soft cap"}],
+      series: [{name: "Extra item power", f: t => instabilityMult(t) - 1}],
+      tableAt: tableRows(),
+    });
+
+    /* Ceiling and axis both read from the constants rather than being written down: this
+       chart said 10% for a week after v3492098 cut it to 2%, with the curve squashed into
+       the bottom eighth of the plot under an axis that still ran to 11%. */
+    const flawCap = QUALITY_THRESHOLDS.flawless[1] / 100;
+    flaw = lineChart({
+      title: "Flawless chance",
+      formula: QUALITY_THRESHOLDS.flawless[0] + "% + " +
+               (QUALITY_THRESHOLDS.flawless[1] - QUALITY_THRESHOLDS.flawless[0]) +
+               "% × t² / (t² + " + (QUALITY_MIDPOINT * QUALITY_MIDPOINT) + ")",
+      x: {min: 0, max: range, name: "Instability", snap: true, label: "instability tier"},
+      y: {fmt: pct1, min: 0, max: flawCap * 1.1},
+      hmarks: [{y: flawCap, label: "ceiling " + pct1(flawCap)}],
+      series: [{name: "Flawless", f: t => flawlessChancePercent(t) / 100}],
+      tableAt: tableRows(),
+    });
+
+    const fresh = el("div", "pair sub");
+    fresh.append(loot, flaw);
+    s.body.replaceChildren(enemies, fresh, out);
+    rewards = fresh;
+    paint();
+  }
+
+  /** Nine rows across whatever range is showing, as whole tiers. */
+  function tableRows() {
+    const step = Math.max(1, Math.round(range / 8));
+    const rows = [];
+    for (let t = 0; t <= range; t += step) rows.push(t);
+    if (rows[rows.length - 1] !== range) rows.push(range);
+    return rows;
+  }
+
+  function paint() {
+    enemies.pin(tier); loot.pin(tier); flaw.pin(tier);
+    const h = enemyHealthMult(tier), d = enemyDamageMult(tier);
+    const p = instabilityMult(tier) - 1, fl = flawlessChancePercent(tier);
+    if (tier === 0) {
+      out.textContent = "At tier 0 nothing is scaled: monsters as they stand, and 1.0% of " +
+        "equipment drops coming back Flawless.";
+      return;
+    }
+    // What the tier costs against what it pays, which is the only question worth asking
+    // once both curves are on screen.
+    const ratio = h / instabilityMult(tier);
+    out.textContent =
+      "At instability " + tier + " a monster has " + mult2(h) + " health and hits for " +
+      mult2(d) + ", while gear drops " + Math.round(p * 100) + "% stronger and " +
+      fl.toFixed(2) + "% of drops come back Flawless. That is " + big(ratio) +
+      "× the health for each unit of gear power — it was 1.00 at tier 0" +
+      (fl > QUALITY_THRESHOLDS.flawless[1] * 0.94
+        ? ", and Flawless has all but stopped moving: the roll is built to saturate at " +
+          QUALITY_THRESHOLDS.flawless[1] + "%."
+        : ".");
+  }
+
+  const tierSl = slider("Instability", 0, range, tier, 1, v => { tier = v; paint(); return String(v); });
+  const rangeRow = el("label", "sl");
+  rangeRow.appendChild(el("span", "sllab", "Chart up to"));
+  const rangeInp = el("input");
+  rangeInp.type = "number";
+  rangeInp.min = 10; rangeInp.max = RANGE_MAX; rangeInp.step = 10; rangeInp.value = range;
+  rangeInp.title = "The game caps instability nowhere. This stops at " + RANGE_MAX +
+                   ", where the client's own float maths overflows.";
+  rangeInp.oninput = () => {
+    range = Math.min(RANGE_MAX, Math.max(10, Number(rangeInp.value) || 10));
+    // The reading has to stay on the chart, and the slider has to be able to reach the end.
+    const sl = tierSl.querySelector("input");
+    sl.max = range;
+    if (tier > range) { tier = range; sl.value = String(tier); }
+    tierSl.sync();
+    build();
+  };
+  rangeRow.appendChild(rangeInp);
+  s.ctl.append(tierSl, rangeRow);
+  enhanceNumberInputs(rangeRow);
+  build();
+  tierSl.sync();
+}
+
+/* ---- mitigation ---------------------------------------------------------- */
+{
+  const s = section("Fortitude and Defense",
+    "The two ways damage is taken off a hit. Fortitude saturates and then stops dead at a " +
+    "hard 60% — the only true ceiling on the page — while Defense is flat all the way up.");
+
+  const CAP_AT = GAME.mitigationCapAt();
+  const chart = lineChart({
+    title: "Damage taken",
+    formula: "mitigation = min(60%, F / (F + 500))   ·   Defense = 0.02% per point",
+    x: {min: 0, max: 1600, name: "Fortitude", label: "Fortitude"},
+    y: {fmt: pct1, min: 0, max: 0.7},
+    marks: [{x: CAP_AT, label: "cap binds at " + CAP_AT}],
+    hmarks: [{y: GAME.MITIGATION_CAP, label: "hard cap 60%"}],
+    series: [{name: "Mitigation", f: f => GAME.mitigation(f)}],
+    tableAt: [0, 100, 250, 500, 750, 1000, 1250, 1600],
+  });
+  s.body.appendChild(chart);
+  const out = readoutLine(s.body);
+
+  let fort = 500, def = 0;
+  const paint = () => {
+    chart.pin(fort);
+    const m = GAME.mitigation(fort);
+    const dr = def * 0.0002;
+    const through = (1 - m) * (1 - dr);
+    const next = GAME.mitigation(fort + 100) - m;
+    out.textContent =
+      "At " + fort + " Fortitude you stop " + pct1(m) + " of a hit" +
+      (def ? ", and Defense " + def + " takes " + pct1(dr) + " off what is left" : "") +
+      " — " + pct1(through) + " of the raw number reaches you. " +
+      (fort >= CAP_AT
+        ? "You are past the cap: the next hundred Fortitude is worth nothing at all here."
+        : "The next hundred Fortitude is worth " + pct1(next) + " more, and the cap binds at " +
+          CAP_AT + ".");
+  };
+  const f1 = slider("Fortitude", 0, 1600, fort, 10, v => { fort = v; paint(); return String(v); });
+  const f2 = slider("Defense skill", 0, 400, def, 1, v => { def = v; paint(); return String(v); });
+  s.ctl.append(f1, f2);
+  f1.sync(); f2.sync();
+}
+
+/* ---- alacrity ------------------------------------------------------------ */
+{
+  const s = section("Alacrity",
+    "Cast speed, on the same saturating shape as Fortitude but with the character's level " +
+    "in the denominator — so the identical stat is worth steadily less as you level.");
+
+  let lvl = 80, ala = 200;
+  const chart = lineChart({
+    title: "Cast time removed",
+    formula: "0.4 × A / (A + 20 + level)",
+    x: {min: 0, max: 800, name: "Alacrity", label: "Alacrity"},
+    y: {fmt: pct1, min: 0, max: 0.4},
+    hmarks: [{y: GAME.ALACRITY_CAP, label: "ceiling 40%"}],
+    series: [
+      {name: "At level 1", f: a => GAME.castSpeed(a, 1)},
+      {name: "At level 80", f: a => GAME.castSpeed(a, 80)},
+    ],
+    tableAt: [0, 50, 100, 200, 300, 400, 600, 800],
+  });
+  s.body.appendChild(chart);
+  const out = readoutLine(s.body);
+
+  const paint = () => {
+    chart.pin(ala);
+    const v = GAME.castSpeed(ala, lvl);
+    const base = 2.5;
+    out.textContent =
+      "At " + ala + " Alacrity and level " + lvl + " a cast is " + pct1(v) + " faster — a " +
+      base + "s spell lands in " + (base * (1 - v)).toFixed(2) + "s. " +
+      "The same " + ala + " Alacrity at level 1 would give " + pct1(GAME.castSpeed(ala, 1)) +
+      ". Doubling it to " + (ala * 2) + " buys " + pct1(GAME.castSpeed(ala * 2, lvl) - v) + " more.";
+  };
+  const a1 = slider("Alacrity", 0, 800, ala, 10, v => { ala = v; paint(); return String(v); });
+  const a2 = slider("Character level", 1, 80, lvl, 1, v => { lvl = v; paint(); return String(v); });
+  s.ctl.append(a1, a2);
+  a1.sync(); a2.sync();
+}
+
+/* ---- health -------------------------------------------------------------- */
+{
+  const s = section("Health",
+    "Flat and unbounded, which makes it the one stat on the page that never disappoints — " +
+    "and the reason a point of Vitality is worth more than a level.");
+
+  let cls = Object.keys(D.classes || {})[0] || "1", vit = 100, lvl = 80;
+  const base = () => (D.classes[cls] || {}).health_base || 162;
+  const out = el("p", "readout");
+  let chart = null;
+
+  /* Class and Vitality change the curve itself, not the point being read, so those two
+     rebuild while the level slider only re-pins. */
+  function build() {
+    const fresh = lineChart({
+      title: "Maximum health by level",
+      formula: "base + 8 × (level − 1) + 10 × Vitality",
+      x: {min: 1, max: 80, name: "Level", snap: true, label: "character level"},
+      y: {fmt: whole, min: 0},
+      series: [
+        {name: "With " + vit + " Vitality", f: L => GAME.maxHealth(base(), L, vit)},
+        {name: "Vitality 0", f: L => GAME.maxHealth(base(), L, 0)},
+      ],
+      tableAt: [1, 10, 20, 30, 40, 50, 60, 70, 80],
+    });
+    if (chart) s.body.replaceChild(fresh, chart); else s.body.append(fresh, out);
+    chart = fresh;
+    paint();
+  }
+
+  function paint() {
+    chart.pin(lvl);
+    const hp = GAME.maxHealth(base(), lvl, vit);
+    const bare = GAME.maxHealth(base(), lvl, 0);
+    out.textContent =
+      (D.classes[cls] || {}).name + " at level " + lvl + " with " + vit + " Vitality has " +
+      whole(hp) + " health — " + whole(bare) + " of it from the class and the levels, and " +
+      whole(hp - bare) + " bought with Vitality. A point is 10 health flat and a level is " +
+      GAME.HEALTH_PER_LEVEL + ", so one point of Vitality is worth " +
+      (GAME.HEALTH_PER_VITALITY / GAME.HEALTH_PER_LEVEL).toFixed(2) + " levels of it.";
+  }
+
+  const pickWrap = el("label", "sl");
+  pickWrap.appendChild(el("span", "sllab", "Class"));
+  const pick = el("select");
+  for (const [id, c] of Object.entries(D.classes || {})) {
+    const o = el("option", null, c.name);
+    o.value = id;
+    pick.appendChild(o);
+  }
+  pick.value = cls;
+  pick.onchange = () => { cls = pick.value; build(); };
+  pickWrap.appendChild(pick);
+
+  const h1 = slider("Level", 1, 80, lvl, 1, v => { lvl = v; paint(); return String(v); });
+  const h2 = slider("Vitality", 0, 600, vit, 10, v => { vit = v; build(); return String(v); });
+  s.ctl.append(pickWrap, h1, h2);
+  build();
+}
+
+/* ---- levelling ----------------------------------------------------------- */
+if (D.levelXp && Object.keys(D.levelXp).length) {
+  const xp = D.levelXp;
+  const top = Math.max(...Object.keys(xp).map(Number));
+  const cum = {};
+  let run = 0;
+  for (let L = 1; L <= top; L++) { run += xp[L] || 0; cum[L] = run; }
+
+  const s = section("Character levelling",
+    "Nine orders of magnitude between the first level and the last, which is why this one " +
+    "is drawn on a log scale — on a linear axis every level below 70 is a flat line on zero.");
+
+  const chart = lineChart({
+    title: "Experience to finish a level",
+    x: {min: 1, max: top, name: "Level", snap: true, label: "character level"},
+    y: {fmt: short, log: true},
+    series: [
+      {name: "This level", f: L => xp[Math.round(L)] || 0},
+      {name: "Total so far", f: L => cum[Math.round(L)] || 0},
+    ],
+    tableAt: [1, 10, 20, 30, 40, 50, 60, 70, 80].filter(L => L <= top),
+  });
+  s.body.appendChild(chart);
+  const out = readoutLine(s.body);
+
+  const set = L => {
+    chart.pin(L);
+    const here = xp[L] || 0, sofar = cum[L] || 0, all = cum[top] || 1;
+    out.textContent =
+      "Level " + L + " costs " + whole(here) + " xp on its own, and " + whole(sofar) +
+      " have been spent getting there — " + (100 * sofar / all).toFixed(1) +
+      "% of everything needed for level " + top + ". " +
+      (L < top ? "The next level costs " + ((xp[L + 1] || 0) / (here || 1)).toFixed(2) +
+                 "× this one." : "This is the last level.");
+    return String(L);
+  };
+  const sl = slider("Level", 1, top, top, 1, set);
+  s.ctl.appendChild(sl);
+  sl.sync();
+}
+
+/* ---- proficiency --------------------------------------------------------- */
+if ((D.skills || []).some(sk => sk.group === "Combat")) {
+  const capSkill = (D.skills || []).find(sk => sk.group === "Combat") || {max: 400};
+  const MAXL = capSkill.max || 400;
+  const cumXp = L => {
+    let t = 0;
+    for (let i = 0; i < L; i++) t += GAME.profXpForLevel(i);
+    return t;
+  };
+  const total = cumXp(MAXL);
+
+  const s = section("Weapon proficiency",
+    "Added in v3489988. The payoff is perfectly flat — 0.025% a point, all the way — while " +
+    "the cost per level keeps rising, so the curve you are really buying is the cost one.");
+
+  const chart = lineChart({
+    title: "Experience to reach a proficiency level",
+    formula: "each level costs ceil(3 + level × 0.12)",
+    x: {min: 0, max: MAXL, name: "Skill level", snap: true, label: "proficiency level"},
+    y: {fmt: whole, min: 0},
+    series: [{name: "Total xp spent", f: L => cumXp(Math.round(L))}],
+    tableAt: [0, 50, 100, 150, 200, 250, 300, 350, MAXL],
+  });
+  s.body.appendChild(chart);
+  const out = readoutLine(s.body);
+
+  const set = L => {
+    chart.pin(L);
+    const spent = cumXp(L);
+    out.textContent =
+      "Level " + L + " is +" + (L * 0.00025 * 100).toFixed(1) +
+      "% damage and healing, or −" + (L * 0.0002 * 100).toFixed(1) +
+      "% damage taken on Defense, for " + whole(spent) + " xp — " +
+      (100 * spent / total).toFixed(1) + "% of the " + whole(total) + " a full " + MAXL +
+      " costs. The level after this one costs " + GAME.profXpForLevel(L) +
+      ", against " + GAME.profXpForLevel(0) + " for the first.";
+    return String(L);
+  };
+  const sl = slider("Proficiency level", 0, MAXL, 200, 1, set);
+  s.ctl.appendChild(sl);
+  sl.sync();
+}
+
+document.getElementById("foot").textContent =
+  "Every curve here is the client's own arithmetic, drawn from the same functions the " +
+  "planner uses. Where a formula is not in the client at all — how much experience a hit " +
+  "awards, how many points a level grants — it was measured from recorded play and is " +
+  "marked as such on the page that uses it.";
+</script>
+</body>
+</html>

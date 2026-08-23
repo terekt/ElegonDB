@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Elegon DB — Quests</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css?v=01152046">
+<script>
+/* Resolve the theme before first paint: a stored choice if there is one, otherwise
+   whatever the operating system asks for. Kept inline and tiny on purpose — loading it
+   from app.js would paint the wrong theme first and then correct it. */
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem("elegon-theme"); } catch (e) { /* private mode */ }
+  var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.dataset.theme = saved || (dark ? "dark" : "light");
+})();
+</script>
+</head>
+<body>
+<header>
+  <div class="brand"><span>ELEGON</span> DB</div>
+  <nav>
+    <a href="index.html">Items</a>
+    <a href="monsters.html">Monsters</a>
+    <a href="quests.html" class="on">Quests</a>
+    <a href="maps.html">Maps</a>
+    <a href="planner.html"><span class="navlong">Character </span>Planner</a>
+    <a href="scaling.html">Scaling</a>
+    <a href="changelog.html">Changelog</a>
+  </nav>
+    <button type="button" id="themebtn" class="themebtn" aria-label="Switch theme">
+      <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.4"/><g><path d="M12 1.8v3M12 19.2v3M1.8 12h3M19.2 12h3M4.8 4.8l2.1 2.1M17.1 17.1l2.1 2.1M19.2 4.8l-2.1 2.1M6.9 17.1l-2.1 2.1"/></g></svg>
+      <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.6 13.6A8.6 8.6 0 0 1 10.4 3.4a8.6 8.6 0 1 0 10.2 10.2z"/></svg>
+    </button>
+</header>
+
+<div class="wrap">
+  <div class="hero">
+    <h1>Quests</h1>
+  </div>
+
+  <!-- One row of controls, grouped by the question each answers: what am I looking for,
+       who is it for, what does it involve. Sort last, because it changes the arrangement
+       rather than the contents. -->
+  <div class="bar questbar">
+    <input type="search" id="q" placeholder="Search quests, objectives, people or rewards…">
+    <span class="barsplit"></span>
+    <span class="grpline"><label for="lo">Level</label>
+      <input type="number" id="lo" placeholder="min" style="width:66px">
+      <input type="number" id="hi" placeholder="max" style="width:66px"></span>
+    <span class="grpline"><label for="giver">Given by</label><select id="giver"></select></span>
+  </div>
+  <div class="bar barsecond">
+    <span id="flags" class="chipset"></span>
+    <button id="clear" class="linkbtn" hidden>Clear filters</button>
+    <span class="count" id="count"></span>
+  </div>
+
+  <div id="line" class="questline"></div>
+  <p class="note" id="note"></p>
+</div>
+
+<script src="data.js?v=01152046"></script>
+<script src="app.js?v=01152046"></script>
+<script>
+/* The quests page.
+
+   The old table sorted 39 rows by column. That fought the data: these quests are not a
+   catalogue, they are one storyline — a single root with all 39 hanging off it, 33 deep,
+   branching in three places. What a player wants is the order to do them in and what each
+   one is worth, so the page is laid out as the line itself, one step per row, and the
+   filters narrow that line rather than replacing it.
+
+   The other orderings are kept because "which quest pays best" is a real question, and they
+   render the same cards in a flat list — one component, two arrangements. */
+
+const QUESTS = D.quests || [];
+
+/* Always story order: these quests are one line, and any other arrangement was a way of
+   pretending they are a catalogue. */
+const S = {q: "", lo: null, hi: null, rewards: false, branch: false, ends: false, giver: ""};
+
+const flags = document.getElementById("flags");
+const flagChips = {};
+for (const [key, label, title] of [
+  ["rewards", "Gives items", "Only quests whose reward list is not empty"],
+  ["branch", "Opens a branch", "The three quests that unlock more than one follow-up"],
+  ["ends", "Ends a branch", "The five quests nothing follows"],
+]) {
+  const chip = el("span", "chip", label);
+  chip.title = title;
+  chip.onclick = () => { S[key] = !S[key]; chip.classList.toggle("on", S[key]); draw(); };
+  flagChips[key] = chip;
+  flags.appendChild(chip);
+}
+
+/* Given by. Quest givers are few and each has several, so this is the quickest way to see
+   one person's whole list — which is how you meet them in game. */
+const giverSel = document.getElementById("giver");
+giverSel.appendChild(Object.assign(el("option", null, "Anyone"), {value: ""}));
+for (const [id, list] of [...QUESTS_BY_GIVER].sort(
+       (a, b) => b[1].length - a[1].length || a[0] - b[0])) {
+  const npc = NPC_BY_ID.get(id);
+  giverSel.appendChild(Object.assign(
+    el("option", null, `${(npc && npc.name) || "NPC " + id} (${list.length})`),
+    {value: String(id)}));
+}
+
+document.getElementById("q").oninput = e => { S.q = e.target.value.toLowerCase(); draw(); };
+document.getElementById("lo").oninput = e => { S.lo = e.target.value === "" ? null : +e.target.value; draw(); };
+document.getElementById("hi").oninput = e => { S.hi = e.target.value === "" ? null : +e.target.value; draw(); };
+giverSel.onchange = e => { S.giver = e.target.value; draw(); };
+
+const clearBtn = document.getElementById("clear");
+clearBtn.onclick = () => {
+  Object.assign(S, {q: "", lo: null, hi: null, rewards: false, branch: false,
+                    ends: false, giver: ""});
+  document.getElementById("q").value = "";
+  document.getElementById("lo").value = "";
+  document.getElementById("hi").value = "";
+  giverSel.value = "";
+  for (const chip of Object.values(flagChips)) chip.classList.remove("on");
+  draw();
+};
+
+/** Which objective types a quest involves, for the task filter and its badges. */
+function questKinds(q) {
+  // Types 2 and 3 carry no objective rows of their own; the quest is the whole task.
+  return q.obj.length ? [...new Set(q.obj.map(o => o.type))] : [OBJ_TALK];
+}
+
+/** What a quest asks of you, in one line. */
+function objectiveText(q) {
+  if (!q.obj.length) return q.short || "—";
+  return q.obj.map(o => o.desc || (o.need ? o.need + " required" : "Objective")).join(" · ");
+}
+
+/** Everything searchable about a quest, so one box covers name, objective and reward. */
+function haystack(q) {
+  return [q.name, q.short, q.desc, q.fromName, q.toName, objectiveText(q),
+          ...q.rewards.map(id => (ITEM_BY_ID.get(id) || {}).name || "")]
+    .join(" ").toLowerCase();
+}
+
+const anyFilter = () => !!(S.q || S.lo !== null || S.hi !== null || S.rewards || S.branch
+                           || S.ends || S.giver);
+
+function matches(q) {
+  return (!S.q || haystack(q).includes(S.q))
+      && (S.lo === null || q.lvl >= S.lo)
+      && (S.hi === null || q.lvl <= S.hi)
+      && (!S.rewards || q.rewards.length)
+      && (!S.branch || opensBranch(q))
+      && (!S.ends || endsBranch(q))
+      && (!S.giver || q.from === +S.giver);
+}
+
+/* ---- one quest, as a card ------------------------------------------------- */
+
+function questCard(q) {
+  const card = el("article", "qcard");
+  card.tabIndex = 0;
+  card.setAttribute("role", "button");
+
+  const head = el("div", "qhead");
+  const title = el("h3", "qname", q.name);
+  head.appendChild(title);
+  for (const type of questKinds(q)) {
+    const meta = OBJ_KINDS[type];
+    if (meta) head.appendChild(el("span", "objkind " + meta.cls, meta.label));
+  }
+  if (opensBranch(q)) head.appendChild(el("span", "qfork", "splits"));
+  else if (endsBranch(q)) head.appendChild(el("span", "qfork", "ends here"));
+  card.appendChild(head);
+
+  // Who to ask and who to return to. The arrow is the point: a quest that sends you
+  // somewhere else is a different proposition from one you hand straight back.
+  const who = el("div", "qwho");
+  who.appendChild(icon("npcs", q.from, !!(NPC_BY_ID.get(q.from) || {}).icon, 46));
+  who.appendChild(el("span", "qwhoname", q.fromName || "—"));
+  if (q.to && q.to !== q.from) {
+    who.appendChild(el("span", "qarrow", "→"));
+    who.appendChild(icon("npcs", q.to, !!(NPC_BY_ID.get(q.to) || {}).icon, 46));
+    who.appendChild(el("span", "qwhoname", q.toName));
+  } else {
+    who.appendChild(el("span", "qsame", "· and back"));
+  }
+  card.appendChild(who);
+
+  card.appendChild(el("p", "qobj", objectiveText(q)));
+
+  const foot = el("div", "qfoot");
+  const pay = el("div", "qpay");
+  if (q.lvl) pay.appendChild(el("span", "qlvl", "Level " + q.lvl));
+  if (q.xp) pay.appendChild(el("span", "qxp", fmtNum(q.xp) + " XP"));
+  foot.appendChild(pay);
+
+  if (q.rewards.length) {
+    const strip = el("div", "qrewards");
+    if (q.anyReward && q.rewards.length > 1)
+      strip.appendChild(el("span", "qoneof", "one of"));
+    for (const id of q.rewards.slice(0, 6)) {
+      const it = lootItem(id);
+      const art = framedIcon(id, it.icon, it.equip ? 1 : 1, 30);
+      art.title = it.name;
+      strip.appendChild(art);
+    }
+    if (q.rewards.length > 6)
+      strip.appendChild(el("span", "muted", "+" + (q.rewards.length - 6)));
+    foot.appendChild(strip);
+  }
+  card.appendChild(foot);
+
+  /* Hovering a card shows where the quest sends you. Built on first hover rather than with
+     the card: eighty-seven quests would mean eighty-seven maps constructed for a page that
+     shows one at a time, and most are never pointed at. */
+  let peek = null;
+  card.onmouseenter = () => {
+    if (peek === null) {
+      const places = questPlaces(q);
+      peek = places.length ? questMap(places[0], {compact: true}) : false;
+    }
+    if (peek) showQuestPeek(card, peek, q);
+  };
+  card.onmouseleave = hideQuestPeek;
+  card.addEventListener("focus", () => card.onmouseenter());
+  card.addEventListener("blur", hideQuestPeek);
+
+  const open = () => openSheet(questSheet(q.id));
+  card.onclick = open;
+  card.onkeydown = e => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
+  };
+  return card;
+}
+
+/* ---- the hover map -------------------------------------------------------
+   One floating panel reused by every card, positioned beside whatever is being pointed at.
+   A panel per card would be eighty-seven absolutely-positioned maps in the document. */
+const qpeek = el("div", "qpeek");
+qpeek.hidden = true;
+document.body.appendChild(qpeek);
+
+function showQuestPeek(anchor, map, q) {
+  qpeek.replaceChildren();
+  const head = el("div", "qpeekhead");
+  head.append(el("b", null, q.name), el("i", null, q.fromName || ""));
+  qpeek.append(head, map);
+  qpeek.hidden = false;
+
+  // Painted pixels from getBoundingClientRect, CSS lengths going back out - the root zoom
+  // scales the second but not the first, so divide once at the end.
+  const z = pageZoom();
+  const r = anchor.getBoundingClientRect();
+  const t = qpeek.getBoundingClientRect();
+  let left = r.right + 14;
+  if (left + t.width > window.innerWidth - 10) left = r.left - t.width - 14;
+  if (left < 8) left = Math.max(8, (window.innerWidth - t.width) / 2);
+  let top = r.top + r.height / 2 - t.height / 2;
+  top = Math.max(8, Math.min(top, window.innerHeight - t.height - 8));
+  qpeek.style.left = (left / z) + "px";
+  qpeek.style.top = (top / z) + "px";
+}
+const hideQuestPeek = () => { qpeek.hidden = true; };
+window.addEventListener("scroll", hideQuestPeek, {passive: true});
+
+/* ---- the two arrangements ------------------------------------------------- */
+
+/** Story order: grouped by how far into the line each quest sits. */
+function drawStory(rows, into) {
+  const byDepth = new Map();
+  for (const q of rows) {
+    const d = questDepth(q);
+    const at = byDepth.get(d);
+    if (at) at.push(q); else byDepth.set(d, [q]);
+  }
+
+  let previous = null;
+  for (const depth of [...byDepth.keys()].sort((a, b) => a - b)) {
+    const group = byDepth.get(depth).sort((a, b) => a.name.localeCompare(b.name));
+
+    // Filtering can leave holes in the line. Saying so is better than a silent jump from
+    // step 4 to step 19, which reads like missing data.
+    if (previous !== null && depth > previous + 1)
+      into.appendChild(el("li", "qgap",
+        `${depth - previous - 1} step${depth - previous - 1 === 1 ? "" : "s"} hidden by the filters`));
+    previous = depth;
+
+    const step = el("li", "qstep");
+    const rail = el("div", "qrail");
+    rail.appendChild(el("span", "qnum", String(depth)));
+    step.appendChild(rail);
+
+    const cards = el("div", "qcards" + (group.length > 1 ? " qparallel" : ""));
+    if (group.length > 1)
+      cards.appendChild(el("p", "qparallelnote",
+        `${group.length} quests open at this point — any order`));
+    for (const q of group) cards.appendChild(questCard(q));
+    step.appendChild(cards);
+    into.appendChild(step);
+  }
+}
+
+function draw() {
+  const rows = QUESTS.filter(matches);
+  const line = document.getElementById("line");
+  line.replaceChildren();
+  line.className = "questline";
+
+  if (!rows.length) {
+    line.appendChild(el("p", "empty", QUESTS.length
+      ? "No quests match these filters."
+      : "No quests."));
+  } else {
+    drawStory(rows, line);
+  }
+
+  clearBtn.hidden = !anyFilter();
+  document.getElementById("count").textContent = anyFilter()
+    ? `${rows.length} of ${QUESTS.length} quests`
+    : `${QUESTS.length} quests`;
+}
+
+draw();
+</script>
+</body>
+</html>

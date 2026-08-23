@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Elegon DB — Monsters</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css?v=01152046">
+<script>
+/* Resolve the theme before first paint: a stored choice if there is one, otherwise
+   whatever the operating system asks for. Kept inline and tiny on purpose — loading it
+   from app.js would paint the wrong theme first and then correct it. */
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem("elegon-theme"); } catch (e) { /* private mode */ }
+  var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.dataset.theme = saved || (dark ? "dark" : "light");
+})();
+</script>
+</head>
+<body>
+<header>
+  <div class="brand"><span>ELEGON</span> DB</div>
+  <nav>
+    <a href="index.html">Items</a>
+    <a href="monsters.html" class="on">Monsters</a>
+    <a href="quests.html">Quests</a>
+    <a href="maps.html">Maps</a>
+    <a href="planner.html"><span class="navlong">Character </span>Planner</a>
+    <a href="scaling.html">Scaling</a>
+    <a href="changelog.html">Changelog</a>
+  </nav>
+    <button type="button" id="themebtn" class="themebtn" aria-label="Switch theme">
+      <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.4"/><g><path d="M12 1.8v3M12 19.2v3M1.8 12h3M19.2 12h3M4.8 4.8l2.1 2.1M17.1 17.1l2.1 2.1M19.2 4.8l-2.1 2.1M6.9 17.1l-2.1 2.1"/></g></svg>
+      <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.6 13.6A8.6 8.6 0 0 1 10.4 3.4a8.6 8.6 0 1 0 10.2 10.2z"/></svg>
+    </button>
+</header>
+
+<div class="wrap">
+  <div class="hero">
+    <h1>Monsters</h1>
+  </div>
+
+  <div class="bar">
+    <input type="search" id="q" placeholder="Search monsters…">
+    <label>Level</label>
+    <input type="number" id="lo" placeholder="min" style="width:80px">
+    <input type="number" id="hi" placeholder="max" style="width:80px">
+    <span id="flags"></span>
+    <label for="mylvl">Your level</label><span id="mylvl"></span>
+    <label>Instability</label><span id="inst"></span>
+  </div>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr id="head"></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</div>
+
+<script src="data.js?v=01152046"></script>
+<script src="app.js?v=01152046"></script>
+<script>
+const S = {q:"", lo:null, hi:null, aggressive:false, tier:0, sort:{key:"lvl", desc:false}};
+
+document.getElementById("mylvl").appendChild(levelPicker());
+document.addEventListener("levelchange", draw);
+
+const flags = document.getElementById("flags");
+const agg = el("span", "chip", "Aggressive only");
+agg.onclick = () => { S.aggressive = !S.aggressive; agg.classList.toggle("on", S.aggressive); draw(); };
+flags.appendChild(agg);
+
+document.getElementById("q").oninput = e => { S.q = e.target.value.toLowerCase(); draw(); };
+document.getElementById("lo").oninput = e => { S.lo = e.target.value === "" ? null : +e.target.value; draw(); };
+document.getElementById("hi").oninput = e => { S.hi = e.target.value === "" ? null : +e.target.value; draw(); };
+document.getElementById("inst").appendChild(instabilityInput(0, v => { S.tier = v; draw(); }));
+
+/* The loot table's own source records, keyed by enemy id, so a monster row can reach its
+   drops. Gathering nodes live in the same list and have no enemy id; they are not monsters
+   and are reachable only from an item's source list. */
+const SOURCE_BY_ENEMY = new Map(DROP.sources.filter(s => !s.node).map(s => [s.id, s]));
+
+const COLS = [
+  {key:"name", label:"Monster", left:true},
+  {key:"lvl", label:"Level"},
+  {key:"hp", label:"Health"},
+  {key:"dmg", label:"Attack"},
+  {key:"dps", label:"DPS"},
+  {key:"xp", label:"XP"},
+  {key:"kills", label:"Kills/level"},
+  {key:"drops", label:"Drops"},
+  {key:"aggro", label:"Aggro range"},
+  {key:"leash", label:"Gives up at"},
+  {key:"respawn", label:"Respawn (s)"},
+];
+
+const fmt = fmtNum;
+
+function draw() {
+  const hpMul = enemyHealthMult(S.tier), dmgMul = enemyDamageMult(S.tier);
+  const rows = D.monsters.filter(m =>
+      (!S.q || m.name.toLowerCase().includes(S.q)) &&
+      (S.lo === null || m.lvl >= S.lo) &&
+      (S.hi === null || m.lvl <= S.hi) &&
+      (!S.aggressive || m.aggressive))
+    .map(m => {
+      const src = SOURCE_BY_ENEMY.get(m.id) || null;
+      // Sorting has to see the same number the column prints, so the scaling happens here
+      // rather than at draw time.
+      return {...m, src, drops: src ? dropsOf(src).length : 0,
+              hp: Math.round(m.hp * hpMul), dmg: Math.round(m.dmg * dmgMul),
+              dps: Math.round(m.dmg * dmgMul / (D.attackInterval || 3)),
+              xp: xpAt(m), kills: killsPerLevel(m)};
+    });
+
+  applySort(rows, S.sort);
+  const cols = COLS.map(c => c.key !== "xp" ? c
+    : {...c, label: LEVEL.value === null ? "XP" : "XP at " + LEVEL.value});
+  sortableTable(document.getElementById("head"), cols, S.sort, draw);
+
+  const body = document.getElementById("rows");
+  body.replaceChildren();
+  if (!rows.length) emptyRow(body, COLS.length, "No monsters match these filters.");
+  for (const m of rows) {
+    const tr = el("tr");
+    const td = nameCell("monsters", m.id, m.icon, m.name, m.src && m.src.boss ? "boss" : null);
+    if (m.aggressive) td.firstChild.appendChild(el("span", "tag", "aggressive"));
+    tr.appendChild(td);
+    tr.appendChild(el("td", null, m.lvl));
+    tr.appendChild(el("td", null, fmt(m.hp)));
+    tr.appendChild(el("td", null, fmt(m.dmg)));
+    // What the attack is worth over time. Every creature measured swings on the same 3s
+    // cycle, so this is the attack divided by it - the number that decides whether you can
+    // stand in front of one, which a per-hit figure never says on its own.
+    const dpsCell = el("td", null, fmt(m.dps));
+    dpsCell.title = `${fmt(m.dmg)} every ${D.attackInterval || 3}s`;
+    tr.appendChild(dpsCell);
+    tr.appendChild(el("td", m.xp ? null : "z", m.xp ? fmt(m.xp) : "·"));
+    tr.appendChild(el("td", m.kills ? null : "z", m.kills ? fmt(m.kills) : "·"));
+    tr.appendChild(m.drops ? el("td", null, m.drops) : el("td", "z", "·"));
+    tr.appendChild(el("td", null, m.aggro + "m"));
+    tr.appendChild(el("td", null, m.leash ? m.leash + "m" : "·"));
+    tr.appendChild(el("td", null, m.respawn));
+    if (m.src) clickableRow(tr, "Loot table for " + m.name,
+                            () => openSheet(monsterSheet(m.src)));
+    body.appendChild(tr);
+  }
+}
+draw();
+
+</script>
+</body>
+</html>

@@ -1,0 +1,1989 @@
+/* v16 — Styled after elegon.app: neutral-950 surfaces, amber accent, Outfit + Alice.
+   Tokens lifted from the live site — body oklch(0.145 0 0), text oklch(0.922 0 0),
+   accent oklch(0.852 0.199 91.936), header border oklch(0.269 0 0). */
+
+/* All @import rules must come first — anything above them is dropped. */
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=Alice&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Modern+Antiqua&display=swap');
+
+/* The game's own UI face, copied byte-for-byte out of the PCK by the UI exporter
+   (art/fonts/modern_antiqua/modern_antiqua-regular.ttf). Listed first in --game-font so the
+   planner uses the exact file the client does; the Google copy only covers the case where
+   the site is shared without the export having been run. */
+@font-face{
+  font-family:"Elegon Antiqua";
+  src:url("fonts/modern_antiqua-regular.ttf") format("truetype");
+  font-display:swap;
+}
+@font-face{
+  font-family:"Elegon Alice";
+  src:url("fonts/alice-regular.ttf") format("truetype");
+  font-display:swap;
+}
+
+:root{
+  --bg:        oklch(0.145 0 0);          /* neutral-950 */
+  --panel:     oklch(0.205 0 0);          /* neutral-900 */
+  --panel2:    oklch(0.269 0 0);          /* neutral-800 */
+  --line:      oklch(0.269 0 0);
+  --line-soft: oklch(0.235 0 0);
+  --ink:       oklch(0.922 0 0);          /* neutral-200 */
+  --dim:       oklch(0.708 0 0);          /* neutral-400 */
+  --faint:     oklch(0.556 0 0);          /* neutral-500 */
+  --gold:      oklch(0.852 0.199 91.936); /* the site's amber */
+  --gold-ink:  oklch(0.145 0 0);
+  --strong:    #fff;                      /* the brand and page titles, brighter than --ink */
+  --scrim:     rgba(0,0,0,.72);           /* behind a dialog */
+  --shadow:    rgba(0,0,0,.6);            /* what a panel casts */
+
+  /* Exact quality colours from ItemQuality.GetColor, converted from the game's floats:
+     Normal (0.86,0.86,0.86) · Fine (0.33,0.65,0.91) · Superior (0.71,0.42,1) ·
+     Flawless (0.94,0.71,0.16). Normal deliberately has no border/backdrop in game. */
+  --normal:#dbdbdb; --fine:#54a6e8; --superior:#b56bff; --flawless:#f0b529;
+  /* Panel text colours read straight out of the exported panel dump. */
+  --parchment:#c2b5a3;      /* stat row label, CreateCharacterStatLabel Color(.76,.71,.64) */
+  --panel-heading:#bab8ad;  /* Panel2/AttributesHeading */
+  --ilvl-label:#d6d1c2;     /* ItemLevelCard/Content/Label */
+  --ilvl-value:#f5e0b8;     /* ItemLevelCard/Content/Value */
+  --ilvl-bg:#0b0c0c;        /* ItemLevelCard stylebox bg */
+  --stat-positive:#59d959;  /* InGameUi.PositiveStatColor (0.35,0.85,0.35) */
+  --stat-negative:#ff4040;  /* InGameUi.NegativeStatColor (1,0.25,0.25) */
+
+  /* The panel uses Alice for headings and most labels, and Modern Antiqua only for the
+     item-level card and the attribute rows — 19 Alice nodes against 2 Antiqua in the dump. */
+  --game-font:"Elegon Antiqua","Modern Antiqua",Alice,Georgia,serif;
+  --panel-font:"Elegon Alice",Alice,Georgia,serif;
+  --good:#5ec97a;
+
+  /* Chart series. The site's own Fine blue and Flawless amber, re-stepped into the dark
+     mode's OKLCH lightness band (0.48-0.67) so they carry as marks rather than as text.
+     Validated: CVD separation 25.2, normal-vision 28.1, contrast >= 3:1 on --panel. */
+  --s1:#2a93de; --s2:#be8700;
+  --plot-grid:oklch(0.30 0 0);   /* one step off the panel, never dashed */
+  --bad:#e2564a;            /* the counterpart to --good: danger, hostility, loss */
+  /* Schematic grid: --line-soft vanishes against a darkened panel, so the ruling gets its
+     own token bright enough to read without competing with the markers. */
+  --grid:oklch(0.36 0 0);
+  /* Divides every 100vh calculation below. vh does not account for the zoom applied on
+     large screens, so without it a "full height" panel renders zoom-times taller than the
+     screen and the page grows a scrollbar it should not have. */
+  --zoom:1;
+  --radius:6px;
+  --header-h:57px;                        /* sticky table heads park under the nav */
+}
+
+/* ---- light theme ---------------------------------------------------------
+   Dark is the default and is left exactly as it always was; light re-declares the same
+   tokens, so every rule in this file is written once and neither theme is a special case.
+
+   Only ONE block, keyed on the attribute, because the inline script in each page's <head>
+   always resolves a value - from localStorage, or from prefers-color-scheme the first
+   time. That also means the attribute is set before first paint, so switching themes
+   never flashes the other one.
+
+   The map markers are deliberately NOT re-themed: they sit on a photograph of dark terrain
+   in either theme, so their black outlines and light fills stay right where they are. */
+:root[data-theme="light"]{
+  --bg:        oklch(0.978 0 0);
+  --panel:     oklch(1 0 0);
+  --panel2:    oklch(0.955 0 0);
+  --line:      oklch(0.878 0 0);
+  --line-soft: oklch(0.928 0 0);
+  --ink:       oklch(0.26 0 0);
+  --dim:       oklch(0.45 0 0);
+  --faint:     oklch(0.57 0 0);
+  /* The amber has to carry text on white, so it drops in lightness and the ink on top of
+     it flips. Same hue: the site still reads as the same site. */
+  --gold:      oklch(0.62 0.148 76);
+  --gold-ink:  oklch(1 0 0);
+  --strong:    oklch(0.18 0 0);
+  --scrim:     rgba(24,24,27,.42);
+  --shadow:    rgba(24,24,27,.18);
+
+  /* The quality colours are the game's own and are kept exact in dark mode. On white,
+     Normal (0.86 grey) is invisible and the other three are thin, so light mode uses
+     darkened counterparts at the same hues rather than illegible fidelity. */
+  --normal:#5f5f5f; --fine:#1a6aa8; --superior:#7331c0; --flawless:#946707;
+
+  --parchment:#6a5e4c;
+  --panel-heading:#6d6b60;
+  --ilvl-label:#5d5748;
+  --ilvl-value:#7a5c1e;
+  --ilvl-bg:#f2f0eb;
+  --stat-positive:#1f8a3a;
+  --stat-negative:#c62828;
+
+  --good:#1f8a45;
+
+  /* The same two hues re-stepped for white. Validated: CVD 22.4, normal-vision 25.8. */
+  --s1:#006ab1; --s2:#9a6500;
+  --plot-grid:oklch(0.90 0 0);
+  --bad:#c0392b;
+  --grid:oklch(0.86 0 0);
+}
+
+*{box-sizing:border-box}
+/* Any `display` declaration outranks the hidden attribute's UA rule, so state it once
+   rather than rediscovering it per component. */
+[hidden]{display:none !important}
+html,body{background:var(--bg)}
+body{margin:0;color:var(--ink);font:400 15px/1.6 Outfit,system-ui,-apple-system,"Segoe UI",sans-serif;
+  -webkit-font-smoothing:antialiased}
+h1,h2,h3{font-family:Alice,Georgia,"Times New Roman",serif;font-weight:400}
+a{color:var(--gold);text-decoration:none}
+::selection{background:var(--gold);color:var(--gold-ink)}
+
+/* focus rings for keyboard users only, so mouse clicks stay quiet */
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px;border-radius:3px}
+
+/* ---- scrollbars ----------------------------------------------------------
+   Firefox takes the standard two properties; WebKit needs its own pseudo-elements,
+   so both are declared rather than picking one and leaving a browser with the
+   default light scrollbar on a dark page. */
+*{scrollbar-width:thin;scrollbar-color:oklch(0.36 0 0) transparent}
+::-webkit-scrollbar{width:12px;height:12px}
+::-webkit-scrollbar-track{background:color-mix(in oklab,var(--bg) 60%,black)}
+::-webkit-scrollbar-thumb{background:oklch(0.36 0 0);border-radius:999px;
+  border:3px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:oklch(0.48 0 0);background-clip:padding-box}
+::-webkit-scrollbar-thumb:active{background:var(--gold);background-clip:padding-box}
+::-webkit-scrollbar-corner{background:transparent}
+
+/* ---- native form controls ------------------------------------------------
+   A select's arrow and a number field's spinners cannot be styled directly, so the
+   arrow is replaced with our own chevron and the spinners are hidden in favour of the
+   stepper buttons app.js adds. */
+
+input[type=number]{appearance:textfield;-moz-appearance:textfield}
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+
+/* Search field's clear affordance, recoloured to match. */
+input[type=search]::-webkit-search-cancel-button{-webkit-appearance:none;height:14px;width:14px;
+  cursor:pointer;background:var(--faint);
+  -webkit-mask:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M3 3l10 10M13 3L3 13' stroke='black' stroke-width='2.2' stroke-linecap='round'/></svg>") center/contain no-repeat}
+input[type=search]::-webkit-search-cancel-button:hover{background:var(--ink)}
+
+/* Number field with our own steppers, since the native ones are unstylable. */
+.numfield{display:inline-flex;align-items:stretch;border:1px solid var(--line);
+  border-radius:var(--radius);background:var(--bg);overflow:hidden;
+  transition:border-color .12s}
+.numfield:hover{border-color:var(--faint)}
+.numfield:focus-within{border-color:var(--gold)}
+.numfield input[type=number]{width:52px;border:0;border-radius:0;background:transparent;
+  text-align:center;padding:7px 2px;font-variant-numeric:tabular-nums}
+.numfield input[type=number]:focus{outline:none}
+.numfield button{border:0;border-radius:0;background:transparent;color:var(--dim);
+  padding:0 9px;font-size:15px;line-height:1;cursor:pointer;user-select:none}
+.numfield button:hover{background:var(--panel2);color:var(--gold)}
+.numfield button:active{background:var(--line)}
+
+/* ---- chrome -------------------------------------------------------------- */
+header{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:26px;
+  padding:14px 26px;background:color-mix(in oklab,var(--bg) 82%,transparent);
+  backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+header .brand{font-family:Alice,serif;font-size:20px;color:var(--strong);letter-spacing:.3px;white-space:nowrap}
+header .brand span{color:var(--gold)}
+header nav{display:flex;gap:22px;flex-wrap:wrap}
+header nav a{color:var(--dim);font-size:15px;padding:2px 0;border-bottom:2px solid transparent;
+  transition:color .12s}
+header nav a:hover{color:var(--ink)}
+header nav a.on{color:var(--gold);border-bottom-color:var(--gold)}
+
+/* Theme switch, hard right. It shows the theme you would GET, not the one you are in:
+   a moon while light, a sun while dark, which is what a reader reaches for. */
+/* padding:0 is the whole fix for the icon sitting right of centre: the global button rule
+   gives every button 14px of horizontal padding, which left a 34px square with a 4px
+   content box and pushed an 18px icon out of it. */
+.themebtn{margin-left:auto;flex:0 0 auto;display:grid;place-items:center;
+  width:34px;height:34px;padding:0;border-radius:9px;cursor:pointer;
+  background:transparent;border:1px solid var(--line);color:var(--dim);
+  transition:color .12s,border-color .12s,background .12s}
+.themebtn:hover{color:var(--gold);border-color:var(--gold);
+  background:color-mix(in oklab,var(--gold) 10%,transparent)}
+.themebtn:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+/* Both icons are outlines: a filled moon against a stroked sun made the two states look
+   like different weights rather than the same control. display:block matters as much —
+   an inline svg sits on the text baseline, which is what pushed both glyphs right of
+   centre inside the button. */
+.themebtn svg{display:block;width:18px;height:18px;fill:none;stroke:currentColor;
+  stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+/* One icon at a time: the sun offers dark, the moon offers light. */
+.themebtn .i-moon{display:none}
+:root[data-theme="light"] .themebtn .i-sun{display:none}
+:root[data-theme="light"] .themebtn .i-moon{display:block}
+
+.wrap{padding:26px;max-width:1560px;margin:0 auto}
+
+.hero{margin:0 2px 18px}
+.hero h1{margin:0 0 4px;font-size:27px;color:var(--strong);letter-spacing:.2px}
+.hero p{margin:0;color:var(--faint);font-size:14px;max-width:70ch}
+
+/* ---- filter bar ---------------------------------------------------------- */
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--panel);
+  border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:18px}
+.bar label{color:var(--faint);font-size:12px;letter-spacing:.3px}
+/* background-COLOR, not the shorthand: `background:` also resets background-image and
+   would wipe the select chevron defined above. */
+select,input[type=search],input[type=number],input[type=text]{background-color:var(--bg);color:var(--ink);
+  border:1px solid var(--line);border-radius:var(--radius);padding:7px 10px;font:inherit;font-size:14px;
+  transition:border-color .12s}
+select:hover,input:hover{border-color:var(--faint)}
+select:focus,input:focus{outline:none;border-color:var(--gold)}
+input[type=search]{min-width:230px;flex:1 1 230px;max-width:340px}
+
+select{appearance:none;-webkit-appearance:none;padding-right:30px;cursor:pointer;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%23a3a3a3' stroke-width='1.6' stroke-linecap='round'/></svg>");
+  background-repeat:no-repeat;background-position:right 10px center;background-size:11px}
+select:hover{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%23eaeaea' stroke-width='1.6' stroke-linecap='round'/></svg>")}
+/* The dropdown list itself is drawn by the OS; this is the most it will honour. */
+select option{background:oklch(0.205 0 0);color:var(--ink)}
+.chip{padding:6px 13px;border:1px solid var(--line);border-radius:999px;background:transparent;
+  color:var(--dim);cursor:pointer;font-size:13px;transition:.12s;user-select:none}
+.chip:hover{color:var(--ink);border-color:var(--faint)}
+.chip.on{background:var(--gold);border-color:var(--gold);color:var(--gold-ink);font-weight:500}
+.count{margin-left:auto;color:var(--faint);font-size:13px;white-space:nowrap}
+
+/* Setup bar: each control is a labelled group so the label belongs to one thing rather
+   than floating between two. */
+.bar.setup{align-items:flex-end;gap:18px}
+.bar.setup .grp{display:flex;flex-direction:column;gap:6px}
+.bar.setup .grp.grow{flex:0 1 auto}
+.bar.setup .grp > label{color:var(--faint);font-size:11px;letter-spacing:.6px;
+  text-transform:uppercase}
+.grpline{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+
+/* Two-row filter bar: row 1 is what you are looking at, row 2 is how it is measured. */
+/* nowrap matters: .bar sets flex-wrap:wrap for its single-row form, and a COLUMN flex
+   container that wraps takes its width from its content instead of its container - so the
+   rows inside refused to shrink and dragged the whole card off the side of a phone. */
+.bar.stacked{flex-direction:column;flex-wrap:nowrap;align-items:stretch;gap:12px}
+.barrow{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.barrow + .barrow{padding-top:12px;border-top:1px solid var(--line-soft)}
+.chipset{display:inline-flex;gap:6px;flex-wrap:wrap}
+/* Divides the equipment slots from the other item kinds in the same button row. */
+.chipsep{width:1px;align-self:stretch;background:var(--line);margin:0 4px}
+
+/* Rarity as buttons in the game's quality colours: the choice is visual, so it should
+   look like what it selects. */
+.rarityset{display:inline-flex;gap:6px;flex-wrap:wrap}
+.rbtn{padding:6px 12px;font-size:12.5px;font-weight:500;border:1px solid var(--line);
+  border-radius:var(--radius);background:transparent;color:var(--dim);cursor:pointer;
+  transition:.12s;white-space:nowrap}
+.rbtn:hover{border-color:currentColor}
+.rbtn.r1{color:var(--normal)} .rbtn.r3{color:var(--fine)}
+.rbtn.r2{color:var(--superior)} .rbtn.r4{color:var(--flawless)}
+.rbtn.on{border-color:currentColor;
+  background:color-mix(in oklab,currentColor 20%,transparent);
+  box-shadow:inset 0 0 0 1px color-mix(in oklab,currentColor 35%,transparent)}
+
+/* ---- tables -------------------------------------------------------------- */
+/* Scrolls on both axes with a bounded height. That is what makes the sticky header work:
+   a sticky th resolves against its nearest scroll container, so if the wrapper scrolls
+   horizontally it must own the vertical scroll too, otherwise the header is offset into
+   the middle of the table instead of pinned to its top. */
+.tablewrap{overflow:auto;max-height:calc(100vh / var(--zoom) - var(--header-h) - 210px);min-height:340px;
+  border:1px solid var(--line);border-radius:10px;background:var(--panel);
+  overscroll-behavior:contain}
+table{width:100%;border-collapse:collapse;background:transparent}
+th{position:sticky;top:0;z-index:10;background:var(--panel2);color:var(--dim);
+  font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.7px;padding:11px 10px;
+  text-align:right;cursor:pointer;white-space:nowrap;user-select:none;transition:color .12s}
+th:first-child,th.l{text-align:left}
+th:hover{color:var(--ink)}
+th.sorted{color:var(--gold)}
+th .arrow{opacity:0;margin-left:5px;font-size:9px}
+th.sorted .arrow{opacity:1}
+td{padding:8px 10px;border-top:1px solid var(--line-soft);text-align:right;white-space:nowrap;font-size:14px}
+td:first-child,td.l{text-align:left}
+tbody tr{transition:background .1s}
+tbody tr:hover{background:var(--panel2)}
+td.empty{text-align:center;color:var(--faint);padding:38px 10px;font-size:14px}
+
+/* Item icons are square art and may fill their box; monster portraits are 3D renders
+   on transparency, so they must be contained or the creature gets cropped. */
+.ico{width:34px;height:34px;border-radius:var(--radius);vertical-align:middle;
+  background:var(--bg);border:1px solid var(--line);object-fit:contain}
+/* Portraits are 3D renders on transparency and the creature reaches the edges of its frame,
+   so they need room inside the box: contain plus padding, or the rounded border clips legs
+   and antlers. Larger than item icons because there is real detail to see. */
+.ico.mon{width:64px;height:64px;padding:3px;object-fit:contain;
+  background:radial-gradient(circle at 50% 45%,var(--panel2),var(--bg) 74%)}
+td .ico.mon{margin:-6px 0}   /* keep the taller icon from inflating row height */
+.ico.ph{display:inline-block;line-height:32px;text-align:center;color:var(--faint);font-size:15px}
+/* Block-level, not inline-flex: an inline box sits on the text baseline and
+   reserves descender space below it, which lifted the icon and the label off
+   the row's centre line. */
+.nmcell{display:flex;align-items:center;gap:11px}
+
+.z{color:oklch(0.4 0 0)}
+.tag{font-size:11px;color:var(--faint);border:1px solid var(--line);
+  border-radius:999px;padding:1px 9px;margin-left:7px}
+.r1{color:var(--normal)} .r3{color:var(--fine)} .r2{color:var(--superior)} .r4{color:var(--flawless)}
+.note{color:var(--faint);font-size:13px;margin:12px 2px}
+
+button{background:transparent;color:var(--ink);border:1px solid var(--line);
+  border-radius:var(--radius);padding:7px 14px;font:inherit;font-size:14px;font-weight:500;cursor:pointer;
+  transition:.12s}
+button:hover{border-color:var(--gold);color:var(--gold)}
+button.gold{background:var(--gold);border-color:var(--gold);color:var(--gold-ink)}
+button.gold:hover{filter:brightness(1.08);color:var(--gold-ink)}
+
+/* ---- planner: a paperdoll modelled on the in-game character panel ---------
+   Slot order follows InGameUi.EnumerateCharacterPanelSlots (weapons, head, neck,
+   shoulder, back, chest, waist, legs, feet, hands). The column split is inferred —
+   the panel's actual arrangement lives in character_panel.tscn, which is inside the
+   PCK and cannot be read — but the slot set, order and visual treatment are the
+   game's own: a bordered square, a quality-tinted backdrop behind the icon (hidden
+   at Normal, exactly as ItemQuality.GetBorderColor returns null there), and
+   Modern Antiqua labels. */
+/* paperdoll · attributes · rift · spells, collapsing as the viewport narrows */
+.plan{display:grid;grid-template-columns:auto 300px 340px 340px;gap:16px;
+  align-items:start;justify-content:start}
+
+/* Sized to its contents rather than stretched: the panel is 256px wide in game, so a
+   sprawling web version reads nothing like it. The grid hugs the two slot columns and the
+   figure, and the whole block is capped and centred instead of filling the viewport. */
+/* Sticky like the panels beside it. It was the one column that scrolled away while the
+   attributes and the rift roster stayed put, which read as a bug rather than a choice. */
+.doll{position:sticky;top:calc(var(--header-h) + 18px);
+  display:grid;grid-template-columns:auto minmax(150px,220px) auto;gap:10px;
+  justify-content:center;justify-self:start;width:max-content;max-width:100%;
+  background:
+    radial-gradient(120% 90% at 50% 0%,color-mix(in oklab,var(--gold) 5%,transparent),transparent 60%),
+    var(--panel);
+  border:1px solid var(--line);border-radius:10px;padding:14px}
+.dollcol{display:flex;flex-direction:column;gap:6px}
+.dollmid{display:grid;place-items:center;align-self:center}
+.dollweapons{grid-column:1/-1;display:flex;justify-content:center;gap:10px;
+  padding-top:10px;border-top:1px solid var(--line-soft)}
+
+/* A slot reproduces slot_visual.tscn layer for layer, with the numbers taken from the
+   exported panel dump rather than estimated:
+     Background  texture, full slot, untinted
+     QualityBackdrop  hidden until an item with a quality colour is in the slot
+     Border      texture at 34.94px over a 32px slot (anchors -0.05..1.05), and crucially
+                 self_modulate #4b4b4b — the frame is drawn DARK, not at full brightness,
+                 which is what made the slot colour look wrong before
+     item icon   inside a 2px margin  -> 87.5% of the slot
+     placeholder inside a 6px margin  -> 62.5% of the slot, self_modulate #ffffff50 (31%) */
+.eqslot{width:76px;display:flex;flex-direction:column;align-items:center;
+  background:none;border:0;padding:0;cursor:pointer;color:inherit;font:inherit}
+.eqbox{position:relative;width:64px;height:64px;display:grid;place-items:center;
+  background:url("icons/ui/spr_dark_fantasy_frame_box_medium_23_background_1_2.png") center/100% 100% no-repeat;
+  transition:filter .12s}
+.eqbox::after{                       /* Border, 1.092x the slot, tinted #4b4b4b */
+  content:"";position:absolute;inset:-4.6%;
+  background:url("icons/ui/spr_dark_fantasy_frame_box_medium_23_variant_03.png") center/100% 100% no-repeat;
+  filter:brightness(0.294);          /* 0x4b / 0xff */
+  pointer-events:none}
+/* The same frame around a portrait. One component, two users: the paperdoll's slots and any
+   list that shows a creature or a person beside its name — so a face in a list is framed the
+   way the game frames things, not boxed the way a web page does. */
+.portrait{position:relative;display:inline-grid;place-items:center;width:44px;height:44px;
+  flex:0 0 auto;vertical-align:middle;
+  background:url("icons/ui/spr_dark_fantasy_frame_box_medium_23_background_1_2.png")
+             center/100% 100% no-repeat}
+.portrait::after{content:"";position:absolute;inset:-4.6%;pointer-events:none;
+  background:url("icons/ui/spr_dark_fantasy_frame_box_medium_23_variant_03.png")
+             center/100% 100% no-repeat;
+  filter:brightness(0.294)}
+.portrait .portraitimg{width:auto;height:auto;max-width:78%;max-height:78%;
+  background:none;border:0;border-radius:0;padding:0}
+.portrait .ico.ph{line-height:1;font-size:13px}
+
+/* When the in-engine captures exist they already contain background, quality backdrop and
+   border, so the composed layers must get out of the way.
+   The capture pads the slot by 16px on each side of a 192px slot so the overhanging border
+   fits, giving a 224px image. Contents therefore sit inside the middle 85.7%: an item icon
+   is 87.5% of 192 = 75% of the image, a placeholder 62.5% of 192 = 53.6%. */
+.eqbox.state{background-size:100% 100%}
+.eqbox.state::after{display:none}
+.eqbox.state img{max-width:75%;max-height:75%}
+.eqbox.state .ph{max-width:53.6%;max-height:53.6%}
+
+.eqslot:hover .eqbox::after{filter:brightness(0.75)}
+.eqslot:hover .eqbox{filter:brightness(1.12)}
+.eqslot:disabled{opacity:.4;cursor:not-allowed}
+.eqslot:disabled:hover .eqbox,.eqslot:disabled:hover .eqbox::after{filter:brightness(0.294)}
+.eqslot.weapon .eqbox{width:74px;height:69px}   /* Wep1Slot/Wep2Slot are wider than tall */
+
+/* QualityBackdrop stand-in. The real one is drawn by item_quality_backdrop.gdshader with
+   the quality colour as a uniform; this approximates it until that shader is exported.
+   Hidden at Normal, matching GetBorderColor returning null there. */
+.eqbox .glow{position:absolute;inset:6%;
+  background:radial-gradient(circle at 50% 55%,
+    color-mix(in oklab,var(--q) 46%,transparent) 0%,
+    color-mix(in oklab,var(--q) 12%,transparent) 52%,transparent 72%)}
+
+/* Icons inside a slot must not carry the table styling: its opaque rounded background sits
+   on top of the quality backdrop and hides the rarity colour entirely. */
+.eqbox img,.framed img,.slotimg{background:none;border:0;border-radius:0}
+
+/* Icons are centred absolutely and bounded with max-width/max-height rather than sized
+   with width/height percentages.
+   A percentage height on a grid item resolves against the GRID AREA, and an auto row is
+   sized to its content — so for a tall icon (a staff is 89x177) the row grew to the icon's
+   intrinsic height and 67% of THAT overflowed the slot. Tall art clipped through the frame
+   while square art looked fine. max-* against a definitely sized box has no such trap, and
+   the browser scales the art to satisfy both bounds while keeping its aspect. */
+.eqbox img,.eqbox .ph,.framed img{position:absolute;top:50%;left:50%;
+  transform:translate(-50%,-50%);width:auto;height:auto;object-fit:contain}
+
+/* The game's own ratio: a 2px margin in a 32px slot is 87.5%, with KeepAspectCentered.
+   An earlier version shrank this to 78% because tall icons appeared to clip — but that was
+   the grid percentage-height bug below, not the ratio. With max-* bounds the art is
+   genuinely contained, so the faithful 87.5% is correct and fills the frame as in game. */
+.eqbox img{max-width:87.5%;max-height:87.5%}
+.eqbox .ph{max-width:62.5%;max-height:62.5%;opacity:.314}
+
+/* The panel's slot frame reused for item icons in tables and the picker. The captured slot
+   is padded (192px slot in a 224px image), so 87.5% of the slot is 75% of the image. */
+.framed{position:relative;display:inline-grid;place-items:center;width:54px;height:54px;
+  background-size:100% 100%;background-repeat:no-repeat;vertical-align:middle;flex:0 0 auto}
+.framed img{max-width:75%;max-height:75%}
+td .framed{margin:-7px 0}
+
+.eqcap{font-family:var(--panel-font);font-size:10px;letter-spacing:.8px;text-transform:uppercase;
+  color:var(--panel-heading);line-height:1.2}
+.eqname{font-size:11px;max-width:92px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  text-align:center;line-height:1.3}
+.eqtier{font-size:9.5px;color:var(--faint)}
+
+/* Panel2/ItemLevelCard: near-black card, Modern Antiqua label and value. */
+.ilvlcard{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  background:var(--ilvl-bg);border:1px solid var(--line);border-radius:6px;
+  padding:9px 13px;margin-bottom:14px}
+.ilvlcard .lab{font-family:var(--game-font);font-size:12.5px;color:var(--ilvl-label)}
+.ilvlcard .val{font-family:var(--game-font);font-size:22px;color:var(--ilvl-value);line-height:1}
+
+/* Stands in for the panel's SubViewport character preview. */
+.dollfig{margin:0;display:flex;flex-direction:column;align-items:center;gap:10px;width:100%}
+.dollfig img{width:100%;min-height:270px;max-height:320px;object-fit:contain;
+  filter:drop-shadow(0 14px 26px var(--shadow))}
+.dollfig figcaption{font-family:var(--game-font);font-size:10.5px;letter-spacing:.9px;
+  text-transform:uppercase;color:var(--faint);text-align:center}
+.figmissing{max-width:220px;text-align:center;font-size:11.5px;line-height:1.6;color:var(--faint);
+  border:1px dashed var(--line);border-radius:10px;padding:16px 14px}
+.figmissing code{color:var(--gold);font-size:11px}
+
+.attrbtn{font-family:var(--game-font);font-size:12.5px;letter-spacing:.4px;padding:8px 16px}
+.attrbtn span{font-variant-numeric:tabular-nums}
+/* The two buttons under the figure are peers and stack, so they match each other
+   rather than each sizing to its own label - a 158px button above a 132px one reads
+   as a mistake. Stretching to the figure also keeps them steady as the numbers in
+   them change width. */
+.dollfig .attrbtn{align-self:stretch;justify-content:space-between;display:flex;gap:10px}
+/* Unspent points are worth noticing. */
+.attrbtn.hasleft{border-color:var(--gold);color:var(--gold)}
+
+.allocrows{display:flex;flex-direction:column;gap:2px;padding-top:12px}
+.allocrow{display:grid;grid-template-columns:1fr auto 46px auto 54px;align-items:center;gap:10px;
+  padding:7px 4px;border-top:1px solid var(--line-soft)}
+.allocrow .an{font-family:var(--game-font);font-size:14px;color:var(--parchment)}
+.allocrow button{width:32px;padding:4px 0;font-size:16px;line-height:1}
+.allocrow button:disabled{opacity:.32;cursor:not-allowed;border-color:var(--line);color:var(--ink)}
+.allocrow .av{text-align:center;font-variant-numeric:tabular-nums;font-size:16px;color:var(--ink)}
+.allocrow .av.maxed{color:var(--gold)}
+.allocrow .amax{font-size:11px;color:var(--faint)}
+
+
+.attrs{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px;
+  position:sticky;top:calc(var(--header-h) + 18px)}
+/* Panel2/AttributesHeading: Alice, 10px, #bab8ad, uppercase. */
+.attrs h3{margin:0 0 10px;font-family:var(--panel-font);color:var(--panel-heading);font-size:11px;
+  text-transform:uppercase;letter-spacing:1.4px}
+.attrs .divider{height:1px;background:var(--line);margin:0 0 10px}
+/* Character-panel stat rows: label left, value right, 22px tall, parchment label. */
+.attr{display:flex;justify-content:space-between;gap:12px;align-items:center;min-height:22px;
+  padding:6px 0;border-top:1px solid var(--line-soft)}
+/* CreateCharacterStatLabel builds BOTH the name and the value with Modern Antiqua at 11px;
+   only the name gets the parchment colour. ApplyCharacterPanelStatValue then colours a
+   positive value with PositiveStatColor (0.35,0.85,0.35) and leaves zero at the default. */
+.attr span{color:var(--parchment);font-family:var(--game-font);font-size:13px}
+.attr b{color:var(--stat-positive);font-family:var(--game-font);font-weight:400;font-size:14px;
+  font-variant-numeric:tabular-nums}
+.attr.zero b{color:var(--ink)}
+/* ---- rift panel ---------------------------------------------------------- */
+.rifthead{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  margin-bottom:10px;flex-wrap:wrap}
+.rifthead h3{margin:0;font-family:var(--game-font);font-size:17px;letter-spacing:.2px;
+  text-transform:none;color:var(--gold)}
+.rifthead label{color:var(--faint);font-size:11px;letter-spacing:.6px;text-transform:uppercase}
+.rifthead input[type=number]{width:64px}
+
+.riftrow{display:grid;grid-template-columns:76px minmax(0,1fr) auto;align-items:center;gap:12px;
+  padding:10px 0;border-top:1px solid var(--line-soft);cursor:help}
+.riftrow:hover{background:color-mix(in oklab,var(--panel2) 70%,transparent);
+  border-radius:5px;margin:0 -8px;padding-left:8px;padding-right:8px}
+.riftrow .rn{font-size:14.5px;line-height:1.3;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+.riftrow .rl{font-size:11.5px;color:var(--faint);letter-spacing:.3px}
+.riftrow .rfx{font-size:11.5px;color:var(--parchment);line-height:1.35;
+  white-space:normal;margin-top:2px}
+.riftrow .rv{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.riftrow .rhp{font-family:var(--game-font);font-size:17px;color:var(--ink);line-height:1.2}
+.riftrow .rdmg{font-size:13px;color:var(--stat-negative)}
+.riftrow .rheal{font-size:13px;color:var(--stat-positive)}
+/* Spell rows keep the icon column when art exists, and drop it when it does not. */
+.spellrow{grid-template-columns:minmax(0,1fr) auto}
+.spells .riftrow{grid-template-columns:38px minmax(0,1fr) auto}
+.spells .riftrow.spellrow{grid-template-columns:minmax(0,1fr) auto}
+/* The empty main-hand art is a pale line drawing meant to sit inside a slot, so it is
+   dimmed here to read as "nothing equipped" rather than as a real icon. */
+/* The empty main hand, inside the same frame an equipped weapon gets. Sized by the
+   frame like any other slot image, and dimmed because it is an absence. */
+.spells .slotart{opacity:.4}
+.framed > .slotart{max-width:75%;max-height:75%}
+.spells .framed{width:38px;height:38px;flex:0 0 auto}
+.spells .ico{width:38px;height:38px;padding:0;background:var(--bg);
+  border:1px solid var(--line);border-radius:5px}
+.spells .rhp{color:var(--ilvl-value)}
+.riftrow.boss .rn{color:var(--gold)}
+.rift .note{font-size:12.5px;line-height:1.6}
+/* Portraits carry their own framing in the render; the table icon's panel background and
+   border only shrink and box them in here. */
+.riftrow .ico{width:76px;height:76px;padding:0;background:none;border:0;border-radius:0}
+
+.attr.hastip{cursor:help}
+.attr.hastip:hover{background:color-mix(in oklab,var(--panel2) 70%,transparent);
+  border-radius:5px;margin:0 -8px;padding-left:8px;padding-right:8px}
+
+/* Hover tooltip: replaces the old static notes block, styled like the game's own. */
+.tip{position:fixed;z-index:60;max-width:330px;pointer-events:none;
+  background:color-mix(in oklab,var(--panel) 96%,black);border:1px solid var(--line);
+  border-radius:7px;padding:11px 13px;font-size:12.5px;line-height:1.55;color:var(--dim);
+  box-shadow:0 14px 34px var(--shadow)}
+.tip[hidden]{display:none}
+.tip b{color:var(--ink)}
+.tip > b:first-child{display:block;font-family:var(--game-font);font-size:14px;color:var(--gold);
+  margin-bottom:2px}
+.tip i{display:block;font-style:normal;font-family:var(--game-font);font-size:11.5px;
+  color:var(--parchment);margin-bottom:7px}
+
+dialog{background:var(--panel);color:var(--ink);border:1px solid var(--line);
+  border-radius:10px;padding:0;width:min(1180px,94vw);max-height:88vh}
+/* A column, so the body gets exactly the room the header leaves and the dialog itself never
+   has anything to scroll. It used to be a fixed 62vh body under a header of whatever height
+   the hero came to: on a 1080p screen at 125% scaling those add up past the dialog's own cap,
+   and you got two scrollbars — one inside the other. [open] because the UA hides a closed
+   dialog with display:none, which a bare display:flex here would override. */
+dialog[open]{display:flex;flex-direction:column}
+/* Seven short rows do not need the item picker's width. */
+#attrDlg{width:min(440px,94vw)}
+#attrDlg .dbody{max-height:none}
+dialog::backdrop{background:var(--scrim);backdrop-filter:blur(2px)}
+
+/* Two rows, not one wrapping row. The filters used to share a line with Close, so on a
+   narrow modal Close wrapped out of reach behind the table. Title and Close now own the
+   top row and stay reachable at any width. */
+.dhead{padding:12px 18px 10px;border-bottom:1px solid var(--line);flex:0 0 auto;
+  background:var(--panel);z-index:5}
+.dtop{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.dtop b{font-family:var(--game-font);font-weight:400;font-size:18px;color:var(--gold)}
+.dtop .spacer{margin-left:auto}
+.dfilters{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.dfilters label{color:var(--faint);font-size:12px;letter-spacing:.3px}
+.dbody{overflow:auto;flex:1 1 auto;min-height:0;padding:0 18px 18px}
+.dbody table{border:none;border-radius:0}
+.dbody th{top:0}
+.dbody tbody tr{cursor:pointer}
+
+/* ---- drop tables ---------------------------------------------------------
+   Chance is banded by how notable it is, deliberately outside the quality palette: a blue
+   bar beside a Fine item would read as the item's rarity rather than the drop's. The bar
+   is a tint of the same colour, so the figure stays the thing you read and the bar only
+   gives the row a shape you can scan down. */
+/* min-width, not width: on a wide table the browser squeezes a plain width hint until the
+   meter is too short to read, and the wrapper already scrolls horizontally. */
+/* The figure, and a thin rule under it. The colour lives in the rule alone: the number is
+   read, the rule is scanned, and neither has to shout over the item names in the next
+   column. */
+td.chance{width:104px;min-width:76px;padding-right:14px;text-align:right}
+.cwrap{display:inline-flex;flex-direction:column;align-items:stretch;gap:4px;
+  min-width:52px;width:100%;max-width:74px}
+.cval{font-weight:500;font-size:13px;line-height:1.1;color:var(--ink);
+  font-variant-numeric:tabular-nums}
+.cmeter{height:3px;border-radius:2px;overflow:hidden;
+  background:color-mix(in oklab,var(--ink) 9%,transparent)}
+.cbar{display:block;height:100%;border-radius:2px;background:currentColor;opacity:.85}
+/* Three steps, on the rule only: better than a coin flip, worse than one kill in seven, and
+   everything between. */
+.c-often{color:var(--good)}
+.c-mid{color:color-mix(in oklab,var(--ink) 55%,transparent)}
+.c-rare{color:var(--gold)}
+.muted{color:var(--dim)}
+.boss{color:var(--gold)}
+
+/* Rows that open a detail sheet. Focusable, so the keyboard reaches them too. */
+tbody tr[role=button]{cursor:pointer}
+tbody tr[role=button]:focus-visible{outline:2px solid var(--gold);outline-offset:-2px}
+
+/* ---- detail sheet --------------------------------------------------------
+   Shares the picker's head/body chrome so a drop table looks the same however it was
+   opened, with a back button for the monster -> item -> monster trail. */
+dialog.sheet{width:min(940px,94vw)}
+.sheet .sback{padding:5px 11px;font-size:13px;color:var(--dim)}
+.sheet .ssub{color:var(--faint);font-size:13px;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+/* .dtop b is more specific than a bare .r1, so the rarity colours are restated here. */
+.dtop b.r1{color:var(--normal)} .dtop b.r3{color:var(--fine)}
+.dtop b.r2{color:var(--superior)} .dtop b.r4{color:var(--flawless)}
+.sfilterrow{display:flex;align-items:center;gap:10px;width:100%;flex-wrap:wrap}
+
+/* Sheet tabs. A segmented control rather than chips, because these choose which view you
+   are in rather than filtering the one you are looking at. */
+.tabstrip{display:inline-flex;border:1px solid var(--line);border-radius:var(--radius);
+  overflow:hidden}
+.tabstrip .tab{border:0;border-radius:0;padding:7px 18px;font-size:13.5px;color:var(--dim);
+  background:transparent}
+.tabstrip .tab + .tab{border-left:1px solid var(--line)}
+.tabstrip .tab:hover{color:var(--ink);background:var(--panel2)}
+.tabstrip .tab.on{background:var(--gold);color:var(--gold-ink);font-weight:500}
+.tabstrip .tab.on:hover{color:var(--gold-ink);filter:brightness(1.06)}
+
+.shead{display:flex;align-items:center;gap:16px;padding:14px 0 4px}
+.shead .ico.mon{flex:0 0 auto;border:0;background:none;padding:0}
+.sheadtext{min-width:0;flex:1 1 auto}
+.sheadtext .note{margin:6px 0 0}
+/* The item's own description, in the game's face so it reads as flavour rather than data. */
+.flavour{margin:7px 0 0;font-family:var(--game-font);font-size:13px;line-height:1.5;
+  color:var(--parchment);max-width:64ch}
+.ssection{margin:16px 0 0;font-family:var(--panel-font);color:var(--panel-heading);
+  font-size:11px;font-weight:400;text-transform:uppercase;letter-spacing:1.4px}
+
+/* Spawn map: a window onto the exported area render, with a dot per recorded spawn.
+   The window is applied as a scaled background rather than by cropping the file, so one
+   image serves every creature that lives on that map. */
+.spawnwrap{margin-top:8px}
+.spawnhead{display:flex;align-items:baseline;gap:10px;margin-bottom:6px}
+.spawnarea{font-family:var(--game-font);font-size:14px;color:var(--ilvl-value)}
+.spawnmap{position:relative;aspect-ratio:1.6;border:1px solid var(--line);border-radius:8px;
+  background-repeat:no-repeat;background-color:var(--bg);overflow:hidden;
+  cursor:grab;touch-action:none}
+.spawnmap.dragging{cursor:grabbing}
+
+/* Zoom, because an aggro circle at the fitted view is the size of the dot it surrounds and
+   the whole point is being able to look at it. Same three controls as the maps page. */
+.spawnzoom{position:absolute;top:8px;right:8px;display:flex;flex-direction:column;gap:5px;
+  z-index:4}
+.spawnzoom button{min-width:28px;padding:4px 7px;border-radius:6px;
+  border:1px solid var(--line);color:var(--dim);font:inherit;font-size:12px;cursor:pointer;
+  background:color-mix(in oklab,var(--bg) 80%,transparent);backdrop-filter:blur(4px)}
+.spawnzoom button:hover{color:var(--ink);border-color:var(--faint)}
+.spawndot{position:absolute;width:11px;height:11px;margin:-5.5px 0 0 -5.5px;border-radius:50%;
+  background:var(--gold);border:1.5px solid rgba(0,0,0,.75);
+  box-shadow:0 0 0 3px color-mix(in oklab,var(--gold) 28%,transparent)}
+
+/* How far it notices you, drawn at the scale of the ground it covers. Under the dots, and
+   faint: it is context for the points, not a mark of its own. */
+/* How far it notices you, at the scale of the ground it covers. No blend mode: over dark
+   terrain a screen blend of a near-transparent fill came out as nothing at all. */
+.spawnring{position:absolute;transform:translate(-50%,-50%);border-radius:50%;
+  border:1.5px solid color-mix(in oklab,var(--bad) 80%,transparent);
+  background:color-mix(in oklab,var(--bad) 22%,transparent);pointer-events:none;
+  box-shadow:0 0 0 1px rgba(0,0,0,.45) inset}
+
+/* Breaches have no terrain the map camera can draw, so there is no photograph to show.
+   A ruled grid says so plainly and still carries the layout of the points. */
+/* repeat, explicitly: the photograph case above sets no-repeat, which would tile the
+   ruling exactly once in the corner and look like nothing at all. */
+.spawnmap.schematic{background-color:color-mix(in oklab,var(--panel) 70%,black);
+  background-repeat:repeat;
+  background-image:linear-gradient(to right,var(--grid) 1px,transparent 1px),
+                   linear-gradient(to bottom,var(--grid) 1px,transparent 1px)}
+.schemanote{position:absolute;right:9px;bottom:7px;font-size:11px;color:var(--faint);
+  background:color-mix(in oklab,var(--bg) 70%,transparent);padding:2px 7px;border-radius:4px}
+
+/* The whole area, small, with the shown window drawn on it. A close view tells you what a
+   creature lives beside; only this tells you where that is. */
+.spawnloc{position:absolute;left:9px;bottom:9px;z-index:3;pointer-events:none;width:23%;min-width:96px;max-width:150px;
+  background-size:100% 100%;background-repeat:no-repeat;border-radius:4px;
+  border:1px solid color-mix(in oklab,var(--ink) 30%,transparent);
+  box-shadow:0 2px 10px rgba(0,0,0,.55);opacity:.88}
+.spawnframe{position:absolute;border:1.5px solid var(--gold);border-radius:2px;
+  background:color-mix(in oklab,var(--gold) 18%,transparent);
+  box-shadow:0 0 0 1px rgba(0,0,0,.6);
+  /* Never thinner than a hairline: a window a few per cent across would vanish. */
+  min-width:3px;min-height:3px}
+
+/* ---- the map page --------------------------------------------------------
+   The frame clips; the stage inside it holds the image and every marker at capture-pixel
+   coordinates and is moved and scaled as one, so pan and zoom cost a single transform no
+   matter how many markers there are. */
+.mapview{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:10px;
+  background:color-mix(in oklab,var(--bg) 60%,black);width:100%;
+  max-height:calc(100vh / var(--zoom) - var(--header-h) - 150px);min-height:380px;
+  cursor:grab;touch-action:none;user-select:none}
+.mapview.grabbing{cursor:grabbing}
+/* The stage carries only the picture. `will-change` is deliberately absent: it promotes the
+   layer to a cached raster that is then GPU-scaled, which blurs everything on it - including
+   markers, which are plain CSS circles and ought to stay pixel-crisp at any zoom. */
+.mapstage{position:absolute;top:0;left:0;transform-origin:0 0}
+
+/* Markers live outside the scaled stage and are placed in screen coordinates, so they are
+   never scaled at all and never inherit its rasterisation. */
+/* z-index 2 makes this a stacking context, so a hovered marker's z-index 3 is contained
+   within it. The controls that sit over the map take 4 and therefore always win: a zoom
+   button disappearing behind a wolf is not a button. */
+.mapmarkers{position:absolute;inset:0;pointer-events:none;z-index:2}
+.mapmarkers .mk{pointer-events:auto}
+/* Where you are standing, above everything the map draws over itself — including those
+   controls. A zoom button hiding a wolf is fine; one hiding you is not, and it is the one
+   marker on the map that moves on its own and has to be findable. */
+.maplive{position:absolute;inset:0;pointer-events:none;z-index:6}
+.mapimg{display:block;width:100%;height:100%;image-rendering:auto;pointer-events:none}
+.mapstage.schematic{background-color:color-mix(in oklab,var(--panel) 70%,black);
+  background-repeat:repeat;
+  background-image:linear-gradient(to right,var(--grid) 1px,transparent 1px),
+                   linear-gradient(to bottom,var(--grid) 1px,transparent 1px)}
+
+/* Markers cancel the stage's zoom so they stay a constant size on screen. */
+.mk{position:absolute;width:13px;height:13px;border-radius:50%;display:block;
+  border:1.5px solid rgba(0,0,0,.8);
+  transform:translate(-50%,-50%);cursor:pointer;transition:filter .1s}
+.mk:hover,.mk:focus-visible{filter:brightness(1.35);outline:none;z-index:3}
+/* A living thing shows its own face. Twelve interchangeable coloured dots told you that
+   twelve species were here and nothing about which; the rendered model says what it is
+   before you read anything, and the tint around it — --c, now the creature's family colour
+   shaded by its level — says what kind of thing it is and roughly how dangerous, and lights
+   up a whole species when one of them is pointed at.
+
+   The portraits are transparent PNGs of the whole model, so the crop is a background
+   window rather than a real image: monsters sit centred in their frame and are zoomed to
+   fill the circle, while a person is a tall thin figure and has to be framed on the head
+   and shoulders or the marker would be a pair of boots. */
+.mk-mob,.mk-npc,.mk-quest,.mk-mine{width:25px;height:25px;border-radius:50%;
+  /* Two channels, two jobs. --d is the disc: the level band, and the backdrop the portrait
+     is read against — it used to be the tint mixed 40% into near-black, which made every
+     creature a dark smudge on a dark circle. --c is the ring: the family, at one lightness
+     for all of them and painted neat, because a 3px ring washed into the map carries no
+     colour at all. The hairline outside can be a single dark now that no ring is ever dark. */
+  background-color:var(--d,color-mix(in oklab,var(--c,#e2683c) 40%,#0f131a));
+  box-shadow:0 0 0 2px var(--c,#e2683c),
+             0 0 0 2.5px rgba(0,0,0,.5),
+             0 1px 4px rgba(0,0,0,.5)}
+/* The level, written on the marker.
+   Colour can separate five families; it cannot separate nineteen wolves, and two creatures
+   that share a model have identical portraits as well — so the one thing that actually tells
+   Snow Wolf from Frostfang Wolf is the number, and it is on the map rather than a hover away.
+   Bottom-right, where a centred portrait has least to say, in the family's own dark end so it
+   reads as part of the marker instead of stuck to it. */
+.mk-mob[data-lvl]::after{content:attr(data-lvl);position:absolute;right:-5px;bottom:-4px;
+  min-width:9px;padding:0 3px;border-radius:7px;background:var(--b,#11141a);
+  border:1px solid color-mix(in oklab,#fff 32%,transparent);
+  color:#fff;font:600 9.5px/13px var(--panel-font);text-align:center;
+  font-variant-numeric:tabular-nums;pointer-events:none}
+/* In the panel the level is already a column of its own, so the badge would say it twice. */
+.panelrow .mk-mob[data-lvl]::after{display:none}
+
+.mkart{background-repeat:no-repeat;background-image:var(--art)}
+.mk-mob.mkart{background-size:152%;background-position:50% 50%}
+/* Gentler than a creature's. A wolf tolerates being clipped at the flanks; a gem or a
+   crate is a shape you are trying to recognise, and the props range from 12% to 74% tall,
+   so anything tighter cropped half of them into an unreadable band. */
+.mk-quest.mkart,.mk-mine.mkart{background-size:126%;background-position:50% 50%}
+/* 280% frames roughly y29-y121 of the 256px portrait: head, shoulders, upper chest. A
+   person is a tall thin figure, and centred like a wolf the marker would be a pair of boots. */
+.mk-npc.mkart{background-size:280%;background-position:50% 18%}
+
+/* Quest props are one green for all of them: what distinguishes a wood pile from a crate is
+   the model, which is on the marker. Mineable veins are the other half of what used to be one
+   "Gathering" row, and they carry the game's own ore tint instead - set per marker, so this
+   is only the fallback for a vein whose tint_hex has not been captured yet. */
+.mk-quest{--c:#4f9d69}
+.mk-mine{--c:#c98f3b}
+
+/* A rift entrance is a hole in the world, so it is drawn as one: three spiral arms wound
+   in to a bright core. Still, deliberately — a conic gradient is uniform along each radius
+   and cannot wind inward, so the earlier attempt read as a glossy button, and animating it
+   only drew the eye to whichever marker mattered least. Real spiral geometry, drawn once. */
+.mk-portal{width:26px;height:26px;border-radius:50%;
+  /* The same disc and ring every other marker wears, with the game's own portal art inside
+     it — a bare cut-out floated over the terrain with nothing holding it. */
+  border:1.5px solid rgba(0,0,0,.8);
+  background:url("icons/ui/portal.png") center/122% no-repeat,
+             radial-gradient(circle at 50% 50%, #14385f, #0b1d33);
+  box-shadow:0 0 0 2px oklch(0.72 0.155 245), 0 0 0 2.5px rgba(0,0,0,.5),
+             0 1px 4px rgba(0,0,0,.5)}
+
+/* A respawn point is a grave, so it is a gothic ring cross rather than a shape that has to
+   be learned. Drawn dark-first and light on top, so it holds its edge over pale snow and
+   dark cave floor alike — a flat silhouette disappears against one or the other. */
+.mk-respawn{width:21px;height:24px;border:0;border-radius:0;background-color:transparent;
+  box-shadow:none;background-repeat:no-repeat;background-position:center;
+  background-size:contain;
+  filter:drop-shadow(0 1px 2px rgba(0,0,0,.85));
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 28'><g fill='none' stroke='%23090b0f' stroke-width='3.6' stroke-linejoin='round'><path d='M10.2 1.7h3.6v24.6h-3.6z'/><path d='M3.3 8h17.4v3.6H3.3z'/><circle cx='12' cy='9.8' r='6.1' stroke-width='2.8'/></g><g fill='%23ccd2dc'><path d='M10.2 1.7h3.6v24.6h-3.6z'/><path d='M3.3 8h17.4v3.6H3.3z'/></g><circle cx='12' cy='9.8' r='6.1' fill='none' stroke='%23ccd2dc' stroke-width='2.8'/></svg>")}
+
+/* Pointing at one marker names every other spawn of the same creature, and steps the rest
+   back so the answer is the shape of that species' range rather than a search. Only the
+   things there are several of take part — see HIGHLIGHTS in maps.html — so the ring is
+   always drawn on a circle and never boxes in a gravestone. */
+.mapmarkers.dimmed .mk{opacity:.22}
+.mapmarkers.dimmed .mk.kin{opacity:1;z-index:2;
+  box-shadow:0 0 0 3px rgba(0,0,0,.55),0 0 0 6px var(--c,var(--gold))}
+
+
+.mapscale{position:absolute;left:12px;bottom:12px;z-index:4;display:flex;align-items:center;gap:8px;
+  background:color-mix(in oklab,var(--bg) 78%,transparent);backdrop-filter:blur(4px);
+  border:1px solid var(--line);border-radius:8px;padding:7px 11px;pointer-events:none}
+.mapscale span{display:block;height:3px;background:var(--dim);border-radius:2px;min-width:20px}
+.mapscale b{font-size:11.5px;font-weight:400;color:var(--faint);white-space:nowrap}
+
+.mapempty{position:absolute;inset:0;display:grid;place-items:center;text-align:center;
+  padding:0 15%;color:var(--faint);font-size:14px;line-height:1.7;pointer-events:none}
+
+/* Merchant stock. Short list, so rows rather than a table - a table head above two lines
+   would be more furniture than content. */
+.vendors{display:flex;flex-direction:column;gap:2px;margin-top:6px}
+.vendor{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:9px 2px;border-top:1px solid var(--line-soft)}
+.vname{font-size:14.5px}
+.vprice{font-family:var(--game-font);font-size:14px;color:var(--ilvl-value);
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* Attribute chips for the item sheet: label and value paired, so a row of them reads as
+   the tooltip's stat block rather than as loose numbers. */
+.statline{display:flex;flex-wrap:wrap;gap:7px}
+.sstat{display:inline-flex;align-items:baseline;gap:7px;padding:4px 11px;
+  border:1px solid var(--line);border-radius:999px;background:var(--bg)}
+.sstat .sk{color:var(--parchment);font-family:var(--game-font);font-size:11.5px}
+.sstat b{color:var(--stat-positive);font-family:var(--game-font);font-weight:400;
+  font-size:14px;font-variant-numeric:tabular-nums}
+
+/* ---- responsive ---------------------------------------------------------- */
+/* ---- large screens -------------------------------------------------------
+   The page was capped at 1560px, which on a 4K display is a ribbon of content down the
+   middle of an empty desk. Two levers, applied in that order:
+
+   1. more width, which the wide tables and the maps genuinely use;
+   2. above ~2200px, zoom - because every size in this file is in px, so the type would
+      otherwise keep shrinking in apparent size as the screen grows. Zoom scales the whole
+      design uniformly, which keeps the proportions everything here was tuned at, rather
+      than growing the container while the text stays 13px.
+
+   Deliberately not applied to the quests storyline, which stays a reading column. */
+@media (min-width:1700px){
+  .wrap{max-width:1800px}
+}
+@media (min-width:2200px){
+  :root{zoom:1.15;--zoom:1.15}
+  .wrap{max-width:1900px}
+}
+@media (min-width:3000px){
+  :root{zoom:1.35;--zoom:1.35}
+  .wrap{max-width:2000px}
+}
+
+@media (max-width:1800px){
+  .plan{grid-template-columns:auto 300px 340px}
+}
+@media (max-width:1500px){
+  .plan{grid-template-columns:auto 320px}
+}
+@media (max-width:1100px){
+  .plan{grid-template-columns:1fr}
+  /* Stacked in one column, sticky panels would sit on top of each other. */
+  .attrs,.doll{position:static}
+}
+/* ---- the wide tables on a small screen ------------------------------------
+   The items table is thirteen columns; nothing sensible fits it into 375px, and dropping
+   columns would be deciding for the reader which of their stats matter. It scrolls
+   sideways instead, with the name frozen to the left edge so there is always something
+   saying which row you are reading. */
+@media (max-width:900px){
+  th:first-child, td:first-child{position:sticky;left:0;z-index:6;
+    background:var(--panel);
+    box-shadow:1px 0 0 var(--line-soft)}
+  th:first-child{z-index:11;background:var(--panel2)}
+  tbody tr:hover td:first-child{background:color-mix(in oklab,var(--panel) 88%,var(--ink))}
+  /* Narrower than the desktop cell, so the frozen column leaves room for the data. The
+     ellipsis goes on the NAME, not on the last child: a row carrying a tag ("Off Hand")
+     ends with the tag, and truncating that let the name run under the next column. */
+  td:first-child .nmcell{max-width:44vw;overflow:hidden}
+  td:first-child .nmcell > span:not(.tag){min-width:0;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  td:first-child .nmcell > .tag{flex:0 0 auto}
+}
+
+@media (max-width:760px){
+  /* The slot buttons are eleven of fourteen chips and wrapped into five rows, which put
+     the first item 481px down a 812px screen. One scrolling row instead. */
+  /* min-width:0 matters as much as the overflow: a flex item defaults to min-width:auto,
+     so without it the row refuses to shrink below its contents and stretches the whole
+     filter card past the edge of the screen instead of scrolling inside it. */
+  .bar .chipset{flex:1 1 100%;min-width:0;max-width:100%;
+    flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin;
+    padding-bottom:2px;-webkit-overflow-scrolling:touch;
+    /* The bar itself is the affordance; a native scrollbar under a row of buttons reads as
+       a stray black line, especially in light mode. */
+    scrollbar-width:none}
+  .bar .chipset::-webkit-scrollbar{display:none}
+  .bar .chipset > *{flex:0 0 auto}
+  .barrow{min-width:0}
+  .bar select,.bar input[type=search]{min-width:0}
+  th,td{padding-left:8px;padding-right:8px}
+
+  /* Two rows, not five: the brand and the theme switch share the first line and the nav
+     takes the whole of the second. Letting the header stack every child instead cost 185px
+     of a 812px phone screen before the page even began. */
+  header{flex-wrap:wrap;align-items:center;gap:8px 16px;padding:11px 16px}
+  header .brand{order:0;font-size:18px}
+  .themebtn{order:1;margin-left:auto}
+  header nav{order:2;flex-basis:100%;gap:15px}
+  .navlong{display:none}
+  :root{--header-h:88px}
+  .hero h1{font-size:23px}
+  .tablewrap{max-height:calc(100vh / var(--zoom) - 260px)}
+  .wrap{padding:16px}
+  .slots{grid-template-columns:repeat(2,1fr)}
+  .count{margin-left:0}
+  input[type=search]{max-width:none}
+  /* A portrait plus a stat block will not fit beside each other on a phone. */
+  .shead{flex-direction:column;align-items:flex-start;gap:10px}
+
+  /* The sheet's own top row is .dtop, not .shead: title, subtitle and Close competing for
+     375px squeezed "A Friend on the Road" into one word per line. Title and Close share
+     the first line; the subtitle drops to its own. */
+  .dtop{flex-wrap:wrap;gap:8px 10px}
+  .dtop .stitle{flex:1 1 auto;min-width:0;font-size:17px;line-height:1.25}
+  .dtop .sclose{order:2;margin-left:auto;flex:0 0 auto}
+  .dtop .ssub{order:3;flex:1 1 100%;white-space:normal}
+  .dtop .spacer{display:none}
+}
+@media (prefers-reduced-motion:reduce){
+  *{transition:none !important}
+  .slot:hover{transform:none}
+}
+
+/* Coverage layer: which chunks have never reported. Sits under the markers so a spawn is
+   never hidden by it, and is stretched from a coarse canvas because the shading is blocky. */
+.mapcover{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;
+  image-rendering:pixelated;z-index:1}
+
+/* Live debug marker: where the character is standing right now. Deliberately unlike the
+   spawn markers — it is a state, not a place. */
+.mk-you{width:19px;height:19px;background:#fff;border:2px solid #111;
+  box-shadow:0 0 0 4px color-mix(in oklab,#fff 45%,transparent);z-index:4;animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{50%{box-shadow:0 0 0 9px color-mix(in oklab,#fff 12%,transparent)}}
+@media (prefers-reduced-motion:reduce){.mk-you{animation:none}}
+
+/* ---- sheet hero ----------------------------------------------------------
+   The subject of a sheet: portrait or icon, the numbers that describe it, and its flavour.
+   It sits in the head, above the tabs, because it is what the sheet is about and does not
+   belong to any one tab. Monsters, items and NPCs all use it, so the three read alike. */
+.dhero{display:flex;align-items:center;gap:16px;padding:2px 0 0}
+/* Tabs and counts sit under the subject with air around them, and no rule of their own: the
+   header's own bottom edge is the only line the sheet needs. */
+.dfilters:not(:empty){margin-top:14px}
+.hero{display:flex;align-items:center;gap:16px;min-width:0;width:100%}
+.hero > .ico.mon{flex:0 0 auto;border:0;background:none;padding:0}
+.hero > .framed{flex:0 0 auto}
+.herotext{min-width:0;flex:1 1 auto}
+.herofacts{display:flex;flex-wrap:wrap;gap:7px;align-items:center}
+.herotext .note{margin:7px 0 0}
+.herotext .flavour{margin:5px 0 0}
+.sstat.good b{color:var(--stat-positive)}
+.sstat.bad b{color:var(--bad)}
+.sstat b{color:var(--ink)}
+
+/* Map tooltip as a card: portrait, name, the numbers that decide whether to walk there. */
+.tip{max-width:340px}
+.tipcard{display:flex;gap:12px;align-items:flex-start}
+.tipart{flex:0 0 auto;border:0;background:none;padding:0}
+.tiptext{min-width:0;flex:1 1 auto}
+.tipfacts{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+.tipstat{display:inline-flex;align-items:baseline;gap:5px;padding:2px 8px;border-radius:999px;
+  background:color-mix(in oklab,var(--ink) 8%,transparent);font-size:11.5px;color:var(--faint)}
+.tipstat b{color:var(--ink);font-weight:500;font-variant-numeric:tabular-nums}
+.tiphint{margin:9px 0 0;font-size:12px;color:var(--faint);line-height:1.45}
+
+/* ---- where an item comes from ---------------------------------------------
+   Three routes and no more: a monster, a quest, a merchant — or nothing we know of. Drop
+   chance alone answered only the first, so a fifth of the catalogue read as unobtainable
+   when it is simply bought or handed over. Badges rather than one word, because more than
+   one route can be true of the same item. */
+.srcflags{display:inline-flex;flex-wrap:wrap;gap:4px}
+.srcflag{font-size:10px;letter-spacing:.05em;text-transform:uppercase;padding:2px 6px;
+  border-radius:99px;border:1px solid var(--line);color:var(--dim);cursor:help;
+  white-space:nowrap}
+.srcdrop{color:var(--fine);border-color:color-mix(in oklab,var(--fine) 45%,transparent)}
+.srcbuy{color:var(--gold);border-color:color-mix(in oklab,var(--gold) 45%,transparent)}
+.srcquest{color:var(--good);border-color:color-mix(in oklab,var(--good) 45%,transparent)}
+/* Dimmed and dashed: a real answer, but the one that means nobody has found a way yet. */
+.srcnone{color:var(--faint);border-style:dashed}
+
+/* A quest's rewards in the list, as the items they are. */
+.rewardstrip{display:inline-flex;align-items:center;flex-wrap:wrap;gap:4px}
+.rewardstrip .ico{width:24px;height:24px}
+.rewardstrip .muted{font-size:11px}
+
+/* ---- the quests page ------------------------------------------------------
+   These quests are not a catalogue, they are one storyline: a single first quest with all
+   39 hanging off it, 33 deep, branching in exactly three places. A sortable table put that
+   shape through a mangle — every row equal, the order an accident of whichever column was
+   clicked. The page is the line instead, one step per row, and the filters narrow it.    */
+
+
+/* Two bars rather than one nine-control row: what you are looking for, then how it is
+   narrowed. The second is quieter because it is the less-used half. */
+.questbar{margin-bottom:8px}
+.barsecond{padding:9px 16px;background:transparent;border-color:transparent;
+  margin-bottom:16px}
+.barsplit{width:1px;align-self:stretch;background:var(--line);margin:0 2px}
+.linkbtn{background:none;border:0;color:var(--faint);font:inherit;font-size:12.5px;
+  cursor:pointer;text-decoration:underline;text-underline-offset:3px;padding:0}
+.linkbtn:hover{color:var(--ink)}
+
+/* Held to a column. The page is 1560px wide for tables of thirteen stat columns; a line of
+   prose read across that is a different and much worse thing. */
+.questline{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;
+  max-width:860px}
+.qstep{display:grid;grid-template-columns:46px 1fr;gap:0;align-items:stretch}
+
+/* The rail is the line itself: a number on a thread running the height of the page. */
+.qrail{position:relative;display:flex;justify-content:center;padding-top:14px}
+.qrail::before{content:"";position:absolute;top:0;bottom:-1px;left:50%;width:2px;
+  transform:translateX(-50%);background:var(--line)}
+.qstep:first-child .qrail::before{top:22px}
+.qstep:last-child .qrail::before{bottom:auto;height:22px}
+.qnum{position:relative;width:26px;height:26px;border-radius:50%;display:grid;
+  place-items:center;background:var(--bg);border:1px solid var(--line);color:var(--dim);
+  font-size:11.5px;font-variant-numeric:tabular-nums}
+
+.qcards{padding:8px 0 8px 14px;min-width:0;display:flex;flex-direction:column;gap:8px}
+/* Where the line forks, the quests sit side by side and say so. */
+.qparallel .qcard{border-color:color-mix(in oklab,var(--gold) 34%,var(--line));
+  background:color-mix(in oklab,var(--gold) 5%,var(--panel))}
+.qparallelnote{margin:2px 0 0;color:var(--gold);font-size:11.5px;letter-spacing:.03em}
+.qgap{grid-column:1 / -1;color:var(--faint);font-size:11.5px;padding:6px 0 6px 60px;
+  font-style:italic}
+
+/* Sorted by anything other than the story, the line means nothing, so the cards go into a
+   plain grid instead of pretending to a sequence. */
+.questflat .qgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));
+  gap:10px}
+
+.qcard{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:12px 14px;cursor:pointer;transition:border-color .12s,background .12s;
+  display:flex;flex-direction:column;gap:7px}
+.qcard:hover{border-color:var(--faint);background:color-mix(in oklab,var(--panel) 80%,var(--ink) 4%)}
+.qcard:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.qhead{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.qname{margin:0;font-family:var(--game-font);font-size:15px;color:var(--ink);font-weight:500}
+.qfork{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--gold);
+  border:1px solid color-mix(in oklab,var(--gold) 45%,transparent);border-radius:99px;
+  padding:2px 7px}
+
+.qwho{display:flex;align-items:center;gap:6px;color:var(--dim);font-size:12.5px;
+  flex-wrap:wrap}
+/* An NPC render is a figure standing on transparency, so a border and a filled box just
+   draw a frame around empty corners. Bigger and bare, on the card and in the sheet alike. */
+.qwho .ico{width:46px;height:46px;flex:0 0 auto;border:0;background:none;
+  border-radius:0;object-fit:contain}
+.qwhoname{white-space:nowrap}
+.qarrow{color:var(--faint);padding:0 1px}
+.qsame{color:var(--faint)}
+
+.qobj{margin:0;color:var(--dim);font-size:13px;line-height:1.45}
+
+.qfoot{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:1px}
+.qpay{display:flex;align-items:center;gap:8px}
+.qlvl{color:var(--faint);font-size:11.5px;font-variant-numeric:tabular-nums}
+.qxp{color:var(--good);font-size:11.5px;font-variant-numeric:tabular-nums}
+.qrewards{display:flex;align-items:center;gap:4px;margin-left:auto;flex-wrap:wrap}
+.qrewards .framed,.qrewards .ico{width:30px;height:30px}
+.qoneof{color:var(--faint);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+  padding-right:2px}
+
+.empty{color:var(--faint);padding:28px 2px;text-align:center}
+
+@media (max-width:620px){
+  .qstep{grid-template-columns:34px 1fr}
+  .qcards{padding-left:10px}
+  .qrewards{margin-left:0}
+}
+
+/* ---- quest sheet ---------------------------------------------------------- */
+.objcell{max-width:460px;white-space:normal;line-height:1.45}
+.objlist{display:flex;flex-direction:column;gap:4px;margin-top:6px}
+.objrow{display:flex;align-items:baseline;gap:10px;padding:8px 2px;
+  border-top:1px solid var(--line-soft)}
+.objwhat{flex:1 1 auto;font-size:14.5px}
+.objtargets{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 8px}
+.objtargets .chip{cursor:default}
+.objtargets .chip[onclick],.objtargets .chip{cursor:pointer}
+
+/* An objective is a small block rather than a line: what it asks, then what that resolves
+   to, then where those come from. Boxed so several objectives do not run together. */
+.objblock{border:1px solid var(--line-soft);border-radius:8px;padding:4px 10px 2px;
+  background:color-mix(in oklab,var(--ink) 3%,transparent)}
+.objblock .objrow{border-top:0;padding:8px 0 6px}
+.objstep{flex:0 0 auto;width:19px;height:19px;border-radius:50%;display:grid;place-items:center;
+  background:color-mix(in oklab,var(--ink) 12%,transparent);color:var(--dim);
+  font-size:11px;font-variant-numeric:tabular-nums}
+.objkind{flex:0 0 auto;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+  padding:2px 7px;border-radius:99px;border:1px solid var(--line)}
+.objkind.objslay{color:var(--bad);border-color:color-mix(in oklab,var(--bad) 45%,transparent)}
+.objkind.objcollect{color:var(--good);border-color:color-mix(in oklab,var(--good) 45%,transparent)}
+.objkind.objtalk,.objkind.objuse{color:var(--faint)}
+
+/* A target carries its own art, so "Slay 5 Bramble Foxes" shows the fox. */
+.targetchip{display:inline-flex;align-items:center;gap:6px;padding-left:4px}
+.targetchip .ico{width:22px;height:22px;flex:0 0 auto}
+.targetchip i{color:var(--faint);font-style:normal;font-size:11px;
+  font-variant-numeric:tabular-nums}
+
+/* "Collect 4 Gloamfang Pelts" is really "kill whatever drops them", so the droppers get
+   their own line rather than being left for the reader to look up. */
+.objfrom{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 8px}
+.objfromlabel{color:var(--faint);font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+
+/* A gathering node is a place, not a fight, so it reads as one: the prop's own model and
+   where it stands, rather than a chip in a row of monsters. */
+.gatherline{display:flex;align-items:center;gap:10px;margin:0 0 8px;padding:7px 9px;
+  border-radius:7px;border:1px solid var(--line-soft);
+  background:color-mix(in oklab,var(--good) 7%,transparent)}
+.gatherline.clickable{cursor:pointer}
+.gatherline.clickable:hover{border-color:color-mix(in oklab,var(--good) 45%,transparent);
+  background:color-mix(in oklab,var(--good) 13%,transparent)}
+.gatherline .ico{width:34px;height:34px;flex:0 0 auto}
+.gathertext{display:flex;flex-direction:column;gap:1px;min-width:0}
+.gathertext b{font-size:13.5px}
+.gatherwhere{color:var(--dim);font-size:11.5px}
+
+
+/* Who gives it and who takes it, as two cards: a quest is a journey between two people. */
+.people{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.person{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;
+  border:1px solid var(--line-soft);background:color-mix(in oklab,var(--ink) 3%,transparent)}
+.person.clickable{cursor:pointer}
+.person.clickable:hover{border-color:var(--line);background:color-mix(in oklab,var(--ink) 7%,transparent)}
+.person .ico{width:76px;height:76px;flex:0 0 auto;border:0;background:none;
+  border-radius:0;object-fit:contain}
+.persontext{display:flex;flex-direction:column;gap:1px;min-width:0}
+.persontext b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.personrole{color:var(--faint);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase}
+.personwhere{color:var(--dim);font-size:11.5px;font-variant-numeric:tabular-nums}
+.person.hintonly{color:var(--faint);font-size:12.5px;align-items:center;justify-content:center;
+  text-align:center;border-style:dashed}
+
+/* Rewards are items, so they are shown as items rather than as words. */
+.rewardgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px;
+  margin-top:8px}
+.rewardcard{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8px;
+  border:1px solid var(--line-soft);background:color-mix(in oklab,var(--ink) 3%,transparent);
+  color:inherit;font:inherit;text-align:left;cursor:pointer}
+.rewardcard:hover{border-color:var(--line);background:color-mix(in oklab,var(--ink) 7%,transparent)}
+.rewardtext{display:flex;flex-direction:column;gap:1px;min-width:0}
+.rewardtext b{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rewardsub{color:var(--faint);font-size:11.5px}
+
+/* The chain, as the storyline it is: every step in order, this one marked. */
+.chain{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chainstep{display:inline-flex;align-items:center;gap:7px;padding:5px 10px 5px 5px;
+  border-radius:99px;border:1px solid var(--line-soft);
+  background:color-mix(in oklab,var(--ink) 3%,transparent);
+  color:var(--dim);font:inherit;font-size:12.5px;cursor:pointer}
+.chainstep:hover{border-color:var(--line);color:var(--ink)}
+.chainstep.on{border-color:var(--gold);color:var(--gold);cursor:default;
+  background:color-mix(in oklab,var(--gold) 10%,transparent)}
+.chainn{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto;
+  background:color-mix(in oklab,var(--ink) 12%,transparent);font-size:10.5px;
+  font-variant-numeric:tabular-nums}
+.chainstep.on .chainn{background:color-mix(in oklab,var(--gold) 24%,transparent)}
+.chainlvl{color:var(--faint);font-size:11px;font-variant-numeric:tabular-nums}
+.chaingap{align-self:center;color:var(--faint);font-size:11.5px;padding-right:2px}
+.chainlead{margin:10px 0 0;color:var(--dim);font-size:12.5px}
+
+@media (max-width:620px){ .people{grid-template-columns:1fr} }
+
+/* ---- map view controls ---------------------------------------------------
+   On the map, not in the filter bar: these change how you are looking at it rather than
+   what is on it, and mixing the two made the bar read as one undifferentiated row. */
+.mapctl{position:absolute;top:12px;right:12px;z-index:4;display:flex;flex-direction:column;gap:6px;
+  align-items:stretch}
+.mapctl button{background:color-mix(in oklab,var(--bg) 82%,transparent);backdrop-filter:blur(4px);
+  border:1px solid var(--line);color:var(--dim);padding:7px 11px;font-size:13px;min-width:38px}
+.mapctl button:hover{color:var(--gold);border-color:var(--gold)}
+.mapctl button.on{background:var(--gold);border-color:var(--gold);color:var(--gold-ink)}
+.mapctl button#zin,.mapctl button#zout{font-size:17px;line-height:1;padding:5px 11px}
+
+
+/* ---- map page layout -----------------------------------------------------
+   The panel beside the map is legend and filter in one. Keeping them apart meant the swatch
+   that told you what a colour meant lived somewhere other than the switch that hid it, and
+   the kind toggles existed twice. One row now does both jobs: swatch, name, live count. */
+/* start, not stretch: the view has an aspect-ratio, and a stretched item would take its
+   height from the row and then derive a WIDTH from that, overflowing the column. The panel
+   stretches on its own so the two still end up the same height. */
+.maplayout{display:grid;grid-template-columns:268px minmax(0,1fr);gap:16px;align-items:start}
+
+.mappanel{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:14px;display:flex;flex-direction:column;gap:9px;
+  /* Matches the map's height and scrolls inside it, so the two sit as one block. */
+  align-self:stretch;max-height:calc(100vh / var(--zoom) - var(--header-h) - 150px);
+  overflow:auto;overscroll-behavior:contain;
+  /* The gutter is reserved whether or not there is anything to scroll. Filtering the list
+     down used to make the scrollbar vanish, which widened the panel — and with it the level
+     slider, under a pointer that was still holding the thumb. */
+  scrollbar-gutter:stable}
+.mappanel input[type=search]{min-width:0;width:100%;max-width:none;flex:0 0 auto}
+.mappanel .grpline{gap:8px}
+.mappanel .grpline input[type=number]{width:100%}
+.mappanel .numfield{flex:1 1 0}
+
+.panelhead{font-size:10.5px;letter-spacing:.9px;text-transform:uppercase;color:var(--faint);
+  padding-top:5px;border-top:1px solid var(--line-soft);margin-top:2px}
+.kindlist{display:flex;flex-direction:column;gap:1px}
+.legspecies{display:flex;flex-direction:column;gap:1px}
+
+/* The portrait row, then whatever the person has to say under it, at full width. */
+.herostack{display:flex;flex-direction:column;gap:9px;width:100%;min-width:0}
+
+/* What an NPC says when you talk to them: their own words, so they are set as speech rather
+   than as another field. The quote marks are the characters themselves — written as CSS
+   escapes they went through a build step that read C as an octal byte and left U+0081,
+   an invisible control character, sitting either side of every line. */
+.npcsays{position:relative;margin:0;padding-left:26px;color:var(--parchment);
+  font-family:var(--game-font);font-size:13.5px;line-height:1.6;max-width:74ch}
+/* A hanging opening quote, sized like a drop cap. Speech marks are what set speech apart on
+   a page; a rule down the side is what a blockquote plugin does. */
+.npcsays::before{content:"“";position:absolute;left:0;top:-2px;font-size:30px;line-height:1;
+  color:color-mix(in oklab,var(--parchment) 45%,transparent)}
+.npcsays::after{content:"”";margin-left:2px;
+  color:color-mix(in oklab,var(--parchment) 45%,transparent)}
+
+/* ---- an NPC's errands -------------------------------------------------------
+   A row per quest, with the direction on the row itself. Two headings over two wrapped
+   rows of pills said the same thing in more space and left the direction to be inferred
+   from whichever heading you had scrolled past. */
+.qlist{display:flex;flex-direction:column;margin-top:4px}
+.qrow{display:flex;align-items:baseline;gap:11px;width:100%;padding:8px 9px;background:transparent;
+  border:0;border-bottom:1px solid var(--line-soft);border-radius:5px;
+  color:var(--ink);font:inherit;font-size:13.5px;text-align:left;cursor:pointer;
+  transition:background .12s}
+.qrow:last-child{border-bottom:0}
+.qrow:hover,.qrow:focus-visible{outline:0;background:color-mix(in oklab,var(--ink) 7%,transparent)}
+.qrow:hover .qname{color:var(--gold)}
+.qrole{flex:0 0 auto;min-width:58px;text-align:center;font-family:var(--panel-font);
+  font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;
+  border-radius:99px;border:1px solid}
+.qrole.give{color:var(--stat-positive);
+  border-color:color-mix(in oklab,var(--stat-positive) 42%,transparent);
+  background:color-mix(in oklab,var(--stat-positive) 12%,transparent)}
+.qrole.take{color:var(--faint);border-color:var(--line);
+  background:color-mix(in oklab,var(--ink) 5%,transparent)}
+.qname{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qlvl{flex:0 0 auto;color:var(--faint);font-size:11.5px;font-variant-numeric:tabular-nums}
+.qxp{flex:0 0 auto;min-width:62px;text-align:right;color:var(--stat-positive);font-size:11.5px;
+  font-variant-numeric:tabular-nums}
+.qxp.nil{color:var(--line)}
+@media (max-width:520px){
+  .qrow{flex-wrap:wrap;gap:3px 9px}
+  .qname{flex:1 1 100%;order:3}
+}
+
+/* One row shape for both lists, so a creature reads like a kind. */
+.panelrow{display:flex;align-items:center;gap:9px;width:100%;background:transparent;border:0;
+  border-radius:5px;padding:5px 7px 5px 4px;color:var(--dim);font:inherit;font-size:13px;
+  cursor:pointer;text-align:left;opacity:.45;transition:opacity .1s,background .1s}
+.panelrow.on{opacity:1}
+.panelrow:hover{background:color-mix(in oklab,var(--ink) 9%,transparent);color:var(--ink)}
+/* relative, not static: the portal marker's swirl is an absolutely-positioned pseudo-element
+   sized in per cent, so it needs its marker to be a containing block. Made static here, it
+   resolved against the page instead and painted a 2000px spinning gradient behind
+   everything. Relative is identical in flow and cannot leak. */
+.panelrow .mk{position:relative;transform:none;flex:0 0 auto;width:11px;height:11px}
+/* The kind rows stay swatch-sized — they name a category, not a creature. A species row
+   names one creature, so it gets the same face the map does, big enough to read. */
+.panelrow .mk-respawn{width:13px;height:15px}
+.panelrow.sp .mk{width:23px;height:23px}
+.panelrow.sp{padding-top:3px;padding-bottom:3px}
+.panelname{flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.panellvl{color:var(--faint);font-size:11px;font-variant-numeric:tabular-nums}
+.paneln{min-width:26px;text-align:right;color:var(--faint);font-size:11px;
+  font-variant-numeric:tabular-nums}
+/* What one kill is worth to the reader, only shown once they have said what level they are.
+   Two lines rather than one long number: the amount, and what that amount buys. */
+.panelxp{min-width:64px;flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;
+  line-height:1.25;font-size:11px;color:var(--stat-positive);font-variant-numeric:tabular-nums}
+.panelxp b{font-weight:500}
+.panelxp i{font-style:normal;font-size:10px;color:var(--faint)}
+.panelxp.nil{color:var(--faint);text-decoration:line-through;
+  text-decoration-color:color-mix(in oklab,var(--faint) 55%,transparent)}
+
+/* ---- "your level" -----------------------------------------------------------
+   One control, two shapes. In a filter bar it is a number; in the map's panel a slider
+   leads it, because there the question is "where should I be at level 20" and dragging
+   answers that far faster than typing. The clear button appears only once there is
+   something to clear — the empty state is a real answer, not a missing one. */
+.lvlpick{display:inline-flex;align-items:center;gap:7px}
+.lvlpick input[type=number]{width:66px;flex:0 0 auto}
+.lvlpick.wide{display:flex;width:100%}
+.lvlpick.wide input[type=range]{flex:1 1 auto;min-width:0}
+.lvlpick.wide input[type=number]{width:64px;flex:0 0 auto}
+.lvlpick input[type=range]{accent-color:var(--gold);height:20px;cursor:pointer}
+/* Hidden by visibility, never removed: taking it out of the row resized the slider
+   mid-drag, and the value jumped with it. */
+.lvlclear{padding:0;width:20px;height:20px;flex:0 0 auto;border:0;border-radius:50%;
+  background:transparent;color:var(--faint);font-size:14px;line-height:1;cursor:pointer}
+.lvlclear:hover{color:var(--gold);background:color-mix(in oklab,var(--ink) 10%,transparent)}
+/* Narrows the row above it rather than being a kind of its own, so it is indented under
+   that row and carries a rule back to it instead of a colour swatch of its own. */
+.panelsub{display:flex;align-items:center;gap:9px;width:calc(100% - 20px);margin-left:20px;
+  position:relative;background:transparent;border:0;border-radius:5px;padding:4px 7px 4px 4px;
+  color:var(--faint);font:inherit;font-size:12px;cursor:pointer;text-align:left;
+  transition:color .1s,background .1s}
+.panelsub::before{content:"";position:absolute;left:-9px;top:0;bottom:50%;width:9px;
+  border-left:1px solid var(--line);border-bottom:1px solid var(--line);
+  border-bottom-left-radius:5px}
+.panelsub:hover{background:color-mix(in oklab,var(--ink) 9%,transparent);color:var(--dim)}
+.panelsub.on{color:var(--gold)}
+.panelsub.on::before{border-color:color-mix(in oklab,var(--gold) 55%,transparent)}
+
+/* Dimmed rather than removed: a species hidden by a filter should still be findable. */
+.panelrow.sp{font-size:12.5px;padding-left:6px}
+.panelrow.sp.off{opacity:.3}
+.panelrow.sp.off .panelname{text-decoration:line-through;text-decoration-color:var(--faint)}
+
+@media (max-width:900px){
+  .maplayout{grid-template-columns:1fr}
+  /* The map is the page; on one column it goes first and the filters follow it, rather
+     than a screenful of legend standing between the reader and the thing they came for. */
+  .mapview{order:-1}
+  /* Still capped and still scrolling: uncapped, the creature list ran to several screens
+     and buried everything under it. */
+  .mappanel{max-height:calc(52vh / var(--zoom))}
+}
+
+/* On a phone the map is a few hundred pixels across, and markers sized for a desktop
+   cover the ground they are meant to point at. Everything on the map shrinks together so
+   the proportions stay the ones the desktop view was tuned at. */
+/* The paperdoll is two columns of 76px slots either side of a 220px figure - 422px, which
+   overflows a 375px phone. Everything in it scales down together rather than the figure
+   being squeezed while the slots stay put, so the panel keeps the proportions of the game
+   screen it reproduces. */
+@media (max-width:520px){
+  .doll{grid-template-columns:auto minmax(96px,1fr) auto;width:auto;gap:6px;padding:10px}
+  .eqslot{width:58px}
+  .eqbox{width:52px;height:52px}
+  .eqslot.weapon .eqbox{width:58px;height:54px}
+  .eqname{max-width:58px}
+  .dollweapons{gap:8px}
+}
+
+@media (max-width:760px){
+  .mapview{min-height:250px;max-height:calc(100vh / var(--zoom) - var(--header-h) - 220px)}
+  .mk-mob,.mk-npc,.mk-quest,.mk-mine{width:19px;height:19px}
+  .mk-portal{width:18px;height:18px}
+  .mk-respawn{width:15px;height:17px}
+  .mapctl{top:8px;right:8px;gap:4px}
+  .mapctl button{padding:5px 8px;font-size:11.5px}
+  .mapscale{left:8px;bottom:8px;padding:5px 8px}
+  .mapscale b{font-size:10.5px}
+  .mapcoords{right:8px;bottom:8px}
+}
+
+/* World position under the cursor, mirroring the readout the game's own map shows. */
+.mapcoords{position:absolute;right:12px;bottom:12px;z-index:4;display:flex;align-items:baseline;gap:6px;
+  background:color-mix(in oklab,var(--bg) 82%,transparent);backdrop-filter:blur(4px);
+  border:1px solid var(--line);border-radius:8px;padding:7px 11px;pointer-events:none;
+  font-size:11.5px;color:var(--faint)}
+.mapcoords b{color:var(--ink);font-weight:500;font-variant-numeric:tabular-nums;
+  min-width:38px;text-align:right}
+
+
+/* ---- the data changelog ---------------------------------------------------
+   Built on alignment rather than decoration. An earlier pass gave every number its own
+   pill in its own colour, repeated the same totals in a legend above them, and sat the
+   whole thing on tinted cards - which reads as ornament standing in for structure. Here
+   the labels are said once at the top of the panel and every figure sits in a fixed
+   column beneath its own heading, so two builds can be compared by eye down the page.
+   Colour is carried by the numerals alone; nothing is boxed that does not need to be. */
+
+.chgpanel{border-top:1px solid var(--line);padding:26px 0 8px;max-width:820px}
+.chgpanel:first-child{border-top:0;padding-top:6px}
+
+.chghead{display:flex;align-items:baseline;gap:14px}
+.chgtitle{display:flex;align-items:baseline;gap:11px;flex:1 1 auto;min-width:0}
+.chgtitle h2{margin:0;font-family:var(--game-font);font-weight:400;font-size:25px;
+  line-height:1.1;color:var(--ink);letter-spacing:.4px}
+.chgfrom{color:var(--faint);font-size:12.5px}
+.chgcount{display:flex;align-items:baseline;gap:6px;color:var(--faint);font-size:12px}
+.chgcount b{font-size:16px;font-weight:500;color:var(--dim);
+  font-variant-numeric:tabular-nums}
+
+/* Two pixels of colour, sized by proportion. Enough to see the shape of a patch; not
+   enough to become the page. */
+.chgbar{display:flex;height:2px;margin:14px 0 2px;overflow:hidden;
+  background:var(--line-soft)}
+.chgseg{display:block;min-width:2px}
+.chgseg.k-add{background:var(--good)}
+.chgseg.k-del{background:var(--bad)}
+.chgseg.k-mod{background:var(--gold)}
+
+/* name | added | removed | changed | all | chevron */
+.chgcats{display:flex;flex-direction:column;margin-top:6px}
+.chgcolhead,.chgcat{display:grid;
+  grid-template-columns:minmax(0,1fr) 74px 74px 74px 74px 22px;
+  align-items:center;gap:0;text-align:right}
+.chgcolhead{padding:10px 0 6px;color:var(--faint);font-size:10.5px;letter-spacing:.09em;
+  text-transform:uppercase;border-bottom:1px solid var(--line-soft)}
+
+.chgcat{width:100%;padding:11px 0;background:transparent;border:0;
+  border-bottom:1px solid var(--line-soft);border-radius:0;color:inherit;font:inherit;
+  cursor:pointer;transition:color .12s}
+.chgcat:hover{color:var(--gold)}
+.chgcat:focus-visible{outline:2px solid var(--gold);outline-offset:-2px}
+
+.chgname{display:flex;align-items:center;gap:10px;text-align:left;min-width:0;
+  font-size:14px;color:var(--ink)}
+.chgcat:hover .chgname{color:var(--gold)}
+.catglyph{width:17px;height:17px;flex:0 0 auto;fill:none;stroke:var(--faint);
+  stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;display:block;
+  transition:stroke .12s}
+.chgcat:hover .catglyph{stroke:var(--gold)}
+
+/* Tabular figures so the columns line up digit for digit down the page. */
+.fig{font-size:13.5px;font-variant-numeric:tabular-nums;color:var(--dim)}
+.fig.k-add{color:var(--good)}
+.fig.k-del{color:var(--bad)}
+.fig.k-mod{color:var(--gold)}
+.fig.nil{color:var(--line)}
+.fig.all{color:var(--ink);font-weight:500}
+.chgopen{color:var(--line);font-size:17px;line-height:1;transition:color .12s}
+.chgcat:hover .chgopen{color:var(--gold)}
+
+.chgnone{margin:14px 0 0;color:var(--faint);font-size:13px}
+
+/* ---- the drill-down ------------------------------------------------------- */
+.chgsection{display:flex;align-items:baseline;gap:9px;margin:20px 0 0;
+  font-family:var(--panel-font);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--faint)}
+.chgsection:first-child{margin-top:4px}
+.mark{font-size:13px;line-height:1;font-weight:600}
+.mark.k-add{color:var(--good)}
+.mark.k-del{color:var(--bad)}
+.mark.k-mod{color:var(--gold)}
+.chgn{margin-left:auto;font-variant-numeric:tabular-nums;letter-spacing:0}
+
+/* The subject of the drill-down: which table, and what the patch did to it. Sits in the
+   sheet's header, which does not scroll, so it survives a long list. */
+.chghero{display:flex;align-items:center;gap:10px;flex-wrap:wrap;width:100%}
+.chghero .catglyph{width:26px;height:26px;flex:0 0 auto}
+.chgtally{display:inline-flex;align-items:baseline;gap:6px;padding:4px 11px;border-radius:99px;
+  border:1px solid var(--line);background:var(--bg);font-size:11.5px;color:var(--faint);
+  font-family:var(--panel-font);letter-spacing:.05em;text-transform:uppercase}
+.chgtally b{font-family:var(--game-font);font-weight:400;font-size:15px;letter-spacing:0;
+  font-variant-numeric:tabular-nums}
+.chgtally.k-add{border-color:color-mix(in oklab,var(--good) 40%,var(--line))}
+.chgtally.k-add b{color:var(--good)}
+.chgtally.k-del{border-color:color-mix(in oklab,var(--bad) 40%,var(--line))}
+.chgtally.k-del b{color:var(--bad)}
+.chgtally.k-mod{border-color:color-mix(in oklab,var(--gold) 40%,var(--line))}
+.chgtally.k-mod b{color:var(--gold)}
+
+/* The thing itself, beside its name. No box of its own: an item brings the game's slot
+   frame, a portrait brings the backdrop the sheets give it, and both already know how to
+   look. Only the row's own spacing is set here. */
+.chgart{flex:0 0 auto;margin:-3px 0}
+
+.chglist{display:flex;flex-direction:column;margin-top:4px}
+.chgrow{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;padding:8px 0;
+  border-bottom:1px solid var(--line-soft)}
+.chgitem{font-size:13.5px;color:var(--ink);flex:0 1 auto;min-width:0;
+  overflow-wrap:anywhere}
+/* A row from a table with no name column. Said, rather than left blank. */
+.chgitem.none{color:var(--faint);font-style:italic}
+
+/* A column the patch put on the table or took off it. There is no before and after to show -
+   the field simply was not there - so it gets a word rather than a from/to pair. */
+.chgnote{margin-left:auto;font-family:var(--panel-font);font-size:10.5px;letter-spacing:.08em;
+  text-transform:uppercase;padding:2px 8px;border-radius:99px;border:1px solid var(--line);
+  background:var(--bg)}
+.chgnote.k-add{color:var(--good);border-color:color-mix(in oklab,var(--good) 40%,var(--line))}
+.chgnote.k-del{color:var(--bad);border-color:color-mix(in oklab,var(--bad) 40%,var(--line))}
+
+/* Said beside the category's name, because it is not one of the row counts beside it. */
+.chgcols{font-family:var(--panel-font);font-size:10px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--faint);padding:1px 7px;border-radius:99px;
+  border:1px solid var(--line);flex:0 0 auto}
+
+/* A row is the thing itself, so it opens like anything else on the site does. */
+.chgrow.open{cursor:pointer;padding-left:9px;padding-right:9px;margin:0 -9px;
+  border-radius:5px;transition:background .12s}
+.chgrow.open:hover,.chgrow.open:focus-visible{outline:0;
+  background:color-mix(in oklab,var(--ink) 7%,transparent)}
+.chgrow.open:hover .chgitem{color:var(--gold)}
+.chgrow.open:hover .chgopen{color:var(--gold)}
+.chgrow .chgopen{margin-left:8px;order:3}
+
+/* was -> now, per field. The old value is struck through, so direction reads without an
+   arrow having to carry it. */
+.chgfields{display:flex;flex-wrap:wrap;gap:3px 16px;margin-left:auto;order:2}
+.chgfield{display:inline-flex;align-items:baseline;gap:6px;font-size:11.5px}
+.chgfield i{font-style:normal;color:var(--faint);text-transform:capitalize}
+.chgfield s{color:var(--faint);text-decoration-color:color-mix(in oklab,var(--faint) 60%,transparent);
+  font-variant-numeric:tabular-nums}
+.chgfield b{font-weight:500;color:var(--ink);font-variant-numeric:tabular-nums}
+
+/* A value too long to sit beside its label: the whole width, and the two versions stacked so
+   each can be read as a sentence rather than as a column squeezed to nothing. */
+.chgfield.long{flex:1 1 100%;flex-direction:column;align-items:stretch;gap:3px;
+  margin-top:4px;padding:8px 10px;border-radius:6px;
+  background:color-mix(in oklab,var(--ink) 4%,transparent)}
+.chgfield.long s,.chgfield.long b{font-variant-numeric:normal;line-height:1.55;
+  overflow-wrap:anywhere}
+.chgfield.long i{margin-bottom:1px}
+
+/* The old value is also the way to see the old build, so it has to look like a control
+   without turning the line into a row of buttons. */
+.chgwas{cursor:pointer;border-bottom:1px dashed transparent;transition:color .12s}
+.chgwas:hover,.chgwas:focus-visible{color:var(--gold);outline:0;
+  text-decoration-color:color-mix(in oklab,var(--gold) 70%,transparent);
+  border-bottom-color:color-mix(in oklab,var(--gold) 55%,transparent)}
+
+/* ---- the change, carried onto the thing it happened to ---------------------
+   Sits at the top of the sheet a changelog entry opens, above the loot table or the map, so
+   the sheet answers "what moved" before it answers everything else it always answers. */
+.dchg{--kind:var(--gold);margin:0 0 18px;padding:14px 16px;border-radius:8px;
+  border:1px solid color-mix(in oklab,var(--kind) 26%,var(--line));
+  background:color-mix(in oklab,var(--kind) 6%,var(--panel))}
+.dchg.k-add{--kind:var(--good)}
+.dchg.k-del{--kind:var(--bad)}
+.dchg.k-mod{--kind:var(--gold)}
+
+.dchghead{display:flex;align-items:center;gap:9px;font-family:var(--panel-font);
+  font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+/* The sign is the whole colour cue: a filled disc reads as a status at a glance, where a
+   stripe down one edge only reads as decoration. */
+.dchg .mark{display:grid;place-items:center;width:19px;height:19px;border-radius:50%;
+  flex:0 0 auto;font-size:12px;line-height:1;color:var(--bg);background:var(--kind)}
+.dchghead b{font-family:var(--game-font);font-weight:400;font-size:16px;letter-spacing:0;
+  text-transform:none;color:var(--dim)}
+.dchgfrom{margin-left:auto;font-size:11.5px;letter-spacing:0;text-transform:none}
+
+.dchgrows{display:flex;flex-direction:column;gap:6px;margin-top:12px}
+.dchgrow{display:grid;align-items:baseline;gap:0 12px;font-size:12.5px;
+  grid-template-columns:minmax(88px,max-content) minmax(0,max-content) auto minmax(0,1fr)}
+.dchgf{color:var(--faint);font-size:11.5px}
+.dchgarrow{color:var(--line)}
+.dchgnew{font-weight:500;color:var(--ink);font-variant-numeric:tabular-nums}
+.dchggone{color:var(--faint);text-decoration:line-through;
+  text-decoration-color:color-mix(in oklab,var(--faint) 55%,transparent);
+  font-variant-numeric:tabular-nums}
+.dchgnote{margin:11px 0 0;color:var(--faint);font-size:12px}
+
+/* The old value, again the way to go and look at it. */
+.dchgold{padding:0;border:0;background:transparent;font:inherit;text-align:left;
+  cursor:pointer;color:var(--faint);text-decoration:line-through;
+  text-decoration-color:color-mix(in oklab,var(--faint) 60%,transparent);
+  font-variant-numeric:tabular-nums;transition:color .12s}
+.dchgold:hover,.dchgold:focus-visible{color:var(--gold);outline:0;
+  text-decoration-color:color-mix(in oklab,var(--gold) 70%,transparent)}
+
+/* A stat chip the patch moved, wherever the sheets draw one. */
+.sstat.sdiff{border-color:color-mix(in oklab,var(--gold) 50%,var(--line));
+  background:color-mix(in oklab,var(--gold) 7%,var(--bg))}
+.sstat .swas{color:var(--faint);font-size:10.5px;font-variant-numeric:tabular-nums}
+
+.chgempty{padding:56px 0;text-align:center;max-width:820px}
+.chgempty h2{margin:0 0 9px;font-family:var(--game-font);font-weight:400;font-size:19px;
+  color:var(--dim)}
+.chgempty p{margin:0 auto;color:var(--faint);font-size:13px;line-height:1.7;max-width:50ch}
+
+/* The hero gains a right-hand slot for the sample-data switch. */
+.herorow{display:flex;align-items:baseline;gap:16px;flex-wrap:wrap}
+.herorow h1{flex:1 1 auto}
+.debugbtn{flex:0 0 auto;border:0;padding:0;background:transparent;font-size:12px;
+  color:var(--faint);text-decoration:underline;text-underline-offset:3px;
+  text-decoration-color:var(--line)}
+.debugbtn:hover{color:var(--dim)}
+.debugbtn.on{color:var(--gold);text-decoration-color:var(--gold)}
+
+@media (max-width:700px){
+  /* The three kind columns will not fit beside a name on a phone; the total carries the
+     row and the detail is one tap away. */
+  .chgcolhead{display:none}
+  .chgcat{grid-template-columns:minmax(0,1fr) 56px 22px}
+  /* :not(.all), not the three kind classes: a zero renders as a dash with no kind class of
+     its own, so naming the colours left those behind and pushed the row onto a second line. */
+  .chgcat .fig:not(.all){display:none}
+  .chgrow{gap:2px 12px}
+  .chgfields{margin-left:0;flex-basis:100%}
+  /* The whole row is the tap target on a phone, so the chevron would only be a third line. */
+  .chgrow .chgopen{display:none}
+  .dchgrow{display:flex;flex-wrap:wrap;gap:2px 9px}
+}
+
+/* ---- planner: saved builds and sharing ----------------------------------- */
+/* The saves row is a sibling of the setup row above it and is built the same way: an
+   uppercase micro-label over each control, so the two read as one form rather than as a
+   styled bar with a raw text box dropped into it. */
+.bar.saves{margin-top:-4px}
+.bar.saves select{min-width:170px}
+.bar.saves input[type=text]{min-width:170px;flex:1 1 170px;max-width:280px}
+/* Delete sits against the select it acts on, so it is an icon rather than a word competing
+   with Save for attention. */
+.iconbtn{padding:7px 10px;line-height:1;color:var(--faint)}
+.iconbtn:hover:not(:disabled){border-color:var(--bad);color:var(--bad)}
+.iconbtn svg{width:15px;height:15px;display:block;fill:none;stroke:currentColor;
+  stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+button:disabled{opacity:.4;cursor:default}
+button:disabled:hover{border-color:var(--line);color:var(--ink)}
+/* The outcome of the last action, said next to the button that caused it and gone a moment
+   later — a toast for something this small would be louder than the thing it reports. */
+.savenote{font-size:12px;color:var(--faint);min-width:0;align-self:center}
+.savenote.ok{color:var(--good)}
+
+/* ---- planner: spell rows and the spell tooltip ---------------------------- */
+/* The meta line under a spell's name. Three facts of two kinds: what sort of spell it is
+   (a category, so a tag) and what it costs in time (numbers, so they read as numbers). */
+.spellmeta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dtag{font-family:var(--panel-font);font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;
+  padding:2px 7px;border-radius:99px;border:1px solid var(--line);color:var(--faint);
+  white-space:nowrap}
+.spellmeta .mnum{font-variant-numeric:tabular-nums;color:var(--dim);font-size:12px}
+.spellmeta .mnum.instant{color:var(--faint);font-style:italic}
+.spellmeta .mnum.cd::before{content:"⟳ ";opacity:.6}
+
+/* The tooltip proper: three bands, weighted so the answer is the largest thing in it. */
+.sptip{display:flex;flex-direction:column;gap:9px;max-width:330px}
+/* Scoped through .tip, because the generic .tip b / .tip i rules above are more specific
+   than a bare class and would otherwise decide the size of every figure in here. */
+.tip .sphead b{display:block;font-family:var(--game-font);font-size:15px;color:var(--gold);
+  margin:0}
+.tip .sphead i{display:flex;align-items:center;gap:7px;font-style:normal;
+  font-family:var(--panel-font);font-size:11px;color:var(--faint);margin:3px 0 0}
+.spdesc{margin:0;font-size:12.5px;color:var(--dim);line-height:1.45}
+.splead{display:flex;gap:16px;flex-wrap:wrap;padding:9px 0;
+  border-top:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft)}
+.tstat{display:flex;flex-direction:column;gap:1px;min-width:0}
+.tip .tstat b{font-family:var(--game-font);font-size:19px;line-height:1.1;
+  font-variant-numeric:tabular-nums;color:var(--ink);margin:0}
+.tstat span{font-family:var(--panel-font);font-size:9.5px;letter-spacing:.07em;
+  text-transform:uppercase;color:var(--faint)}
+.tip .tstat.dmg b{color:var(--bad)}
+.tip .tstat.heal b{color:var(--good)}
+.tip .tstat.buff b{color:var(--gold)}
+.speffect{margin:0;font-size:12.5px;color:var(--gold)}
+/* The time and reach row: smaller figures than the headline, because they qualify it. */
+.spcost{display:flex;gap:14px;flex-wrap:wrap}
+.tip .spcost .tstat b{font-size:13.5px;color:var(--dim)}
+.spnote{display:flex;flex-direction:column;gap:3px;padding-top:7px;
+  border-top:1px solid var(--line-soft)}
+.spnote p{margin:0;font-size:11px;line-height:1.4;color:var(--faint)}
+
+/* ---- planner: self buffs -------------------------------------------------- */
+.buffbtn{padding:6px 12px;font-size:13px;display:inline-flex;align-items:center;gap:7px}
+.buffbtn.on{border-color:var(--gold);color:var(--gold)}
+.buffn{min-width:17px;padding:1px 5px;border-radius:99px;background:var(--gold);
+  color:var(--gold-ink);font-size:11px;font-weight:600;line-height:1.45;
+  font-variant-numeric:tabular-nums}
+/* Nothing switched on: the count is how many there ARE, so it says "there is something
+   here" without claiming anything is running. */
+.buffn.idle{background:transparent;color:var(--faint);border:1px solid var(--line);
+  font-weight:500}
+.buffrows{display:flex;flex-direction:column;gap:6px}
+.buffsection{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:14px 0 2px;
+  font-family:var(--panel-font);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--faint)}
+.buffsection:first-child{margin-top:0}
+.buffhint{letter-spacing:0;text-transform:none;font-size:11.5px;font-family:var(--game-font)}
+/* A buff is a thing you switch on, so the row reads as a switch: off is quiet, on is lit
+   along its whole width rather than by a tick in the corner. */
+.buffrow{display:flex;align-items:center;gap:12px;width:100%;text-align:left;
+  padding:9px 12px;border:1px solid var(--line);border-radius:var(--radius);
+  background:transparent;transition:.12s}
+.buffrow:hover{border-color:var(--faint)}
+.buffrow.on{border-color:var(--gold);background:color-mix(in oklab,var(--gold) 8%,transparent)}
+.buffrow .ico{flex:0 0 auto;width:34px;height:34px}
+.buffrow .bm{flex:1 1 auto;min-width:0}
+.buffrow .bn{font-size:14px;color:var(--ink)}
+.buffrow.on .bn{color:var(--gold)}
+.buffrow .bl{font-size:11.5px;color:var(--faint);margin-top:1px}
+.buffrow .bv{flex:0 0 auto;text-align:right}
+.buffrow .bv b{display:block;font-size:16px;font-variant-numeric:tabular-nums;color:var(--dim)}
+.buffrow .bv span{font-family:var(--panel-font);font-size:9.5px;letter-spacing:.07em;
+  text-transform:uppercase;color:var(--faint)}
+.buffrow.on .bv.amp b{color:var(--bad)}
+.buffrow.on .bv.mit b{color:var(--good)}
+/* Damage per second, under the per-hit figure it is derived from — smaller, because it is
+   the consequence rather than the measurement. */
+.rdps{font-size:11.5px;color:var(--faint);font-variant-numeric:tabular-nums}
+
+/* ---- quest map ------------------------------------------------------------
+   Where a quest sends you, on the area's own art. The two people are WoW's punctuation
+   because it is the one convention every reader of a quest map already has; the things you
+   go and do are plain discs, because there can be ninety of them and ninety glyphs would be
+   a texture rather than a map. */
+.qmapwrap{display:flex;flex-direction:column;gap:8px;margin:0 0 14px}
+.qmap{position:relative;width:100%;border:1px solid var(--line);border-radius:var(--radius);
+  background-color:var(--bg);background-repeat:no-repeat;overflow:hidden}
+.qmap.schematic{background-image:
+  linear-gradient(var(--line-soft) 1px,transparent 1px),
+  linear-gradient(90deg,var(--line-soft) 1px,transparent 1px);
+  background-size:26px 26px}
+.qmap.compact{border-radius:calc(var(--radius) - 1px)}
+
+.qmk{position:absolute;transform:translate(-50%,-50%);pointer-events:auto;
+  display:flex;align-items:center;justify-content:center}
+/* The objectives: small, semi-opaque, and allowed to overlap into a cloud — a hundred wolf
+   spawns should read as "this whole valley", not as a hundred separate answers. */
+.qmk-kill,.qmk-gather{width:9px;height:9px;border-radius:50%;
+  border:1px solid rgba(0,0,0,.55)}
+.qmk-kill{background:#c0392b}
+.qmk-gather{background:#3f9c5a}
+.compact .qmk-kill,.compact .qmk-gather{width:7px;height:7px}
+/* The people: full opacity, drawn last, and shaped so they are found instantly among them. */
+.qmk-giver,.qmk-turnin{width:19px;height:19px;border-radius:4px 4px 8px 8px;
+  background:linear-gradient(#ffd257,#e0a01e);border:1.5px solid rgba(0,0,0,.6);
+  color:#3a2a05;font:700 13px/1 var(--game-font);text-shadow:0 1px 0 rgba(255,255,255,.45);
+  box-shadow:0 1px 4px rgba(0,0,0,.5)}
+.compact .qmk-giver,.compact .qmk-turnin{width:16px;height:16px;font-size:11px}
+/* The turn-in is the same gold, hollowed: the pair belong together and are not the same act. */
+.qmk-turnin{background:linear-gradient(#fff0c2,#f5cf6a)}
+
+.qmaplegend{display:flex;align-items:center;gap:14px;flex-wrap:wrap;font-size:11.5px;
+  color:var(--faint)}
+.qmleg{display:inline-flex;align-items:center;gap:6px}
+.qmleg .qmk{position:static;transform:none;flex:0 0 auto}
+.qmapname{margin-left:auto;font-family:var(--panel-font);font-size:10.5px;letter-spacing:.08em;
+  text-transform:uppercase}
+
+/* The hover panel. One element reused by every card. */
+.qpeek{position:fixed;z-index:60;width:330px;padding:11px;pointer-events:none;
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:0 10px 30px rgba(0,0,0,.35)}
+.qpeek[hidden]{display:none}
+.qpeek .qmapwrap{margin:0}
+.qpeekhead{margin-bottom:8px;min-width:0}
+.qpeekhead b{display:block;font-family:var(--game-font);font-size:14px;color:var(--gold);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qpeekhead i{font-style:normal;font-size:11.5px;color:var(--faint)}
+/* The way in. Not a thing you do — a door you pass through — so it takes the rift entrance's
+   own colour from the map page rather than the red/green of an objective. */
+.qmk-portal{width:15px;height:15px;border-radius:50%;
+  background:radial-gradient(circle at 50% 50%,#e8dcff 0%,#8b5cf6 45%,#4c1d95 100%);
+  border:1.5px solid rgba(0,0,0,.6);box-shadow:0 0 7px rgba(139,92,246,.75)}
+.compact .qmk-portal{width:12px;height:12px}
+
+/* ---- quest work panel -----------------------------------------------------
+   A person's quests as a filter over their map. Choosing one lights its places and dims the
+   rest rather than hiding them: "these six, in the middle of that whole field" is the shape
+   of the answer, and removing the field would throw half of it away. */
+.qwork{display:flex;flex-direction:column;gap:9px;margin-bottom:14px}
+.qwork .qmapwrap{margin:0}
+/* A row that both selects and drills in. The chevron is the only part that opens the quest;
+   the rest of the row picks it out on the map above. */
+.qrow.pick{cursor:pointer}
+.qrow.pick:focus-visible{outline:2px solid var(--gold);outline-offset:-2px}
+.qrow.pick.on{border-color:var(--gold);
+  background:color-mix(in oklab,var(--gold) 9%,transparent)}
+.qrow.pick.on .qname{color:var(--gold)}
+.qopen{margin-left:6px;padding:2px 8px;border:0;background:transparent;color:var(--line);
+  font-size:17px;line-height:1;border-radius:var(--radius);flex:0 0 auto}
+.qrow.pick:hover .qopen{color:var(--faint)}
+.qopen:hover{color:var(--gold) !important;background:var(--panel2)}
+/* The hint sits with the count, so the row's second job is stated once and never repeated. */
+.sshint{margin-left:auto;font-family:var(--game-font);font-size:11.5px;letter-spacing:0;
+  text-transform:none;color:var(--faint)}
+/* A roster row that is lighting the map says so. */
+.qrow:hover{border-color:var(--gold)}
+/* Unfocused marks stay on the map at a fraction of their weight. */
+.qmap.focused .qmk{opacity:.16;filter:saturate(.35)}
+.qmap.focused .qmk.lit{opacity:1;filter:none}
+.qmap.focused .qmk-giver.lit,.qmap.focused .qmk-turnin.lit,.qmap.focused .qmk-portal.lit{
+  z-index:2}
+/* What you are actually looking for, named and counted — the legend only ever managed
+   "kill or loot", which is a category, not an answer. */
+.qtally{display:flex;gap:7px;flex-wrap:wrap}
+.qtarget{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:99px;
+  border:1px solid var(--line);font-size:11.5px;color:var(--dim)}
+.qtarget .qmk{position:static;transform:none;flex:0 0 auto}
+.qtarget b{font-variant-numeric:tabular-nums;color:var(--faint);font-weight:500}
+.qtarget.more{color:var(--faint);border-style:dashed}
+
+/* ---- planner: team run planner (debug) ------------------------------------ */
+.teamdlg{width:min(680px,94vw)}
+.dbgtag{font-family:var(--panel-font);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+  padding:2px 7px;border-radius:99px;border:1px dashed var(--line);color:var(--faint);
+  align-self:center}
+/* One chip per saved build: click the name to add a member, the minus to take one away.
+   A column of steppers was three times the height for the same two decisions. */
+.teampick{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px}
+.teamchip{display:inline-flex;align-items:stretch;border:1px solid var(--line);
+  border-radius:999px;overflow:hidden;transition:border-color .12s}
+.teamchip.on{border-color:var(--gold)}
+.teamadd{border:0;border-radius:0;padding:5px 12px;font-size:12.5px;background:transparent;
+  color:var(--dim)}
+.teamadd:hover:not(:disabled){color:var(--gold);background:var(--panel2)}
+.teamchip.on .teamadd{color:var(--gold)}
+.teamn{display:flex;align-items:center;padding:0 8px;font-size:11.5px;font-weight:600;
+  color:var(--gold-ink);background:var(--gold);font-variant-numeric:tabular-nums}
+.teamless{border:0;border-radius:0;padding:5px 9px;font-size:13px;line-height:1;
+  background:transparent;color:var(--faint)}
+.teamless:hover{color:var(--bad);background:var(--panel2)}
+
+/* A member's gear as a strip rather than eleven rows. The two slowest carry their run count;
+   the rest are there to be seen, not read. */
+.gearstrip{display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 4px}
+.gearcell{position:relative;display:inline-flex;flex:0 0 auto}
+.gearcell.slow .framed{outline:1.5px solid var(--gold);outline-offset:-1px;border-radius:4px}
+.gearcell.never{opacity:.35}
+.gearruns{position:absolute;right:-3px;bottom:-4px;font-style:normal;font-size:9.5px;
+  font-weight:600;line-height:1;padding:2px 4px;border-radius:99px;background:var(--gold);
+  color:var(--gold-ink);font-variant-numeric:tabular-nums;pointer-events:none}
+.teamrows{display:flex;flex-direction:column}
+.teamrows .riftrow{padding:6px 0}
+.teamrows .riftrow .rhp{color:var(--ink);font-size:15px}
+.teamdlg .splead{margin:0 0 12px}
+.teamdlg .dbody{padding-top:14px}
+/* Per-member blocks: a name, how many are running it, and the two run figures whose gap is
+   the whole argument for going as a party. */
+.teamhead{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;
+  margin:14px 0 6px;padding-bottom:6px;border-bottom:1px solid var(--line-soft)}
+.teamhead:first-child{margin-top:2px}
+.note.dim{color:var(--faint);font-size:11px;margin:2px 0 0}
+.teamhead .th{min-width:0}
+.teamhead .th b{display:block;font-family:var(--game-font);font-size:15px;color:var(--gold)}
+.teamhead .thn{font-size:11.5px;color:var(--faint)}
+.thnums{display:flex;gap:18px;margin-left:auto}
+.thnums .tstat b{font-size:15px}
+.thnums .tstat span{font-size:9px}
+.teamhead .th b{font-size:14px}
+.riftrow.dimmed{opacity:.5}
+.teamdlg .tabstrip{margin-bottom:12px}
+
+/* The instability preview: four figures the tier buys or costs, read across in one line.
+   Auto-fit rather than four fixed columns so it folds to two rows in the narrow panel
+   instead of squeezing the numbers to unreadable. */
+.riftprev {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 8px 12px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel2, var(--panel));
+}
+.riftprev .prevcell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.riftprev .lab {
+  font-size: 11px; letter-spacing: .6px; text-transform: uppercase;
+  color: var(--faint); white-space: nowrap;
+}
+.riftprev b { font-size: 15px; font-variant-numeric: tabular-nums; }
+
+/* Proficiency rows. Built like the buff rows next to them — name and explanation on the
+   left, the number that matters on the right — so the two modals read as one panel. */
+.profrows { display: flex; flex-direction: column; gap: 6px; }
+.profrow {
+  display: grid;
+  grid-template-columns: 1fr auto minmax(94px, auto);
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel2, var(--panel));
+}
+/* The one the main hand is training. A left edge rather than a fill, so a long list still
+   reads as a list. */
+.profrow.on { border-color: var(--gold); box-shadow: inset 3px 0 0 var(--gold); }
+/* A skill with no weapon in the game yet: dimmed, but still settable. */
+.profrow.none { opacity: .55; }
+.profrow .pm { min-width: 0; }
+.profrow .pn { font-weight: 600; }
+.profrow .pl { font-size: 11px; color: var(--faint); }
+.profrow input { width: 82px; text-align: right; font-variant-numeric: tabular-nums; }
+.profrow .pb {
+  text-align: right; font-variant-numeric: tabular-nums;
+  font-size: 13px; color: var(--dim); white-space: nowrap;
+}
+.profrow.on .pb { color: var(--gold); font-weight: 600; }
+
+/* ---- scaling page -------------------------------------------------------- */
+
+.lede{max-width:74ch;margin:-6px 2px 22px;color:var(--dim);line-height:1.55}
+
+.scard{margin:0 0 34px;padding:20px 20px 8px;border:1px solid var(--line);
+  border-radius:12px;background:var(--panel)}
+.shead h2{margin:0 0 4px;font-family:var(--game-font);font-size:19px;letter-spacing:.2px}
+.sblurb{margin:0 0 14px;max-width:78ch;color:var(--dim);font-size:13px;line-height:1.55}
+
+/* Controls in one row above the charts they scope, never inside a chart card. */
+.sctl{display:flex;flex-wrap:wrap;gap:10px 22px;align-items:center;
+  padding:12px 14px;margin:0 0 18px;border:1px solid var(--line);border-radius:9px;
+  background:var(--panel2)}
+.sl{display:flex;align-items:center;gap:10px;font-size:12px}
+.sl .sllab{color:var(--faint);letter-spacing:.5px;text-transform:uppercase;white-space:nowrap}
+.sl input[type=range]{width:170px;accent-color:var(--gold)}
+.sl select{min-width:110px}
+.sl .slval{min-width:3.2em;font-variant-numeric:tabular-nums;color:var(--ink)}
+
+/* One column by default; a section that holds a pair says so. auto-fit was wrong here -
+   it lays out as many tracks as FIT rather than as many as there are, so a lone chart sat
+   in a third of the row with two empty columns beside it. */
+.sbody{display:grid;grid-template-columns:minmax(0,1fr);gap:18px}
+.sbody.pair,.pair.sub{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.pair.sub{grid-column:1/-1}
+.sbody .readout{grid-column:1/-1}
+@media (max-width:860px){ .sbody.pair,.pair.sub{grid-template-columns:minmax(0,1fr)} }
+
+/* Capped: the plot is 700x250, so an unbounded column makes it 430px tall on a wide
+   screen and the shape stops being readable at a glance. */
+.chart{min-width:0;max-width:900px}
+.chartcap{display:flex;align-items:baseline;justify-content:space-between;
+  gap:12px;flex-wrap:wrap;margin:0 0 2px}
+.chartcap h3{margin:0;font-size:13.5px;font-weight:600;letter-spacing:.2px}
+.legend{display:flex;gap:12px;flex-wrap:wrap}
+.legitem{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--dim)}
+.legline{width:16px;height:8px;flex:none}
+.formula{display:block;margin:0 0 8px;font-size:11px;color:var(--faint);
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.5}
+
+.plot{position:relative}
+.plotsvg{display:block;width:100%;height:auto;overflow:visible}
+.plotsvg .grid{stroke:var(--plot-grid);stroke-width:1}
+.plotsvg .axis{stroke:var(--line);stroke-width:1}
+.plotsvg .tick{fill:var(--faint);font-size:10px;font-variant-numeric:tabular-nums}
+.plotsvg .tickr{text-anchor:end}
+.plotsvg .tickc{text-anchor:middle}
+.plotsvg .axlabel{fill:var(--faint);font-size:10px;letter-spacing:.4px}
+/* Threshold annotations: the same hairline weight as the grid, in ink rather than colour,
+   because a soft cap is chrome telling you where to look and not a third series. */
+.plotsvg .markline{stroke:var(--faint);stroke-width:1;opacity:.55}
+.plotsvg .marklabel{fill:var(--dim);font-size:10px}
+.plotsvg .hair{stroke:var(--faint);stroke-width:1}
+/* The 2px surface ring that keeps a dot legible where it crosses its own line. */
+.plotsvg .dotring{fill:var(--panel)}
+
+.charttip{position:absolute;top:6px;pointer-events:none;z-index:2;
+  min-width:130px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;
+  background:var(--panel2);box-shadow:0 6px 18px var(--shadow)}
+.charttip .ttx{font-size:10.5px;color:var(--faint);letter-spacing:.4px;margin-bottom:3px}
+.charttip .ttrow{display:flex;align-items:center;gap:6px;font-size:12px;line-height:1.7}
+.charttip .ttrow b{font-variant-numeric:tabular-nums;color:var(--ink)}
+.charttip .ttrow span{color:var(--dim);font-size:11px}
+
+.readout{margin:14px 2px 6px;max-width:88ch;color:var(--dim);font-size:12.5px;line-height:1.65}
+.readout b{color:var(--ink)}
+
+.numbers{margin:8px 0 4px}
+.numbers summary{cursor:pointer;font-size:11.5px;color:var(--faint);letter-spacing:.3px}
+.numbers summary:hover{color:var(--dim)}
+.numtable{width:100%;margin-top:8px;border-collapse:collapse;font-size:11.5px;
+  font-variant-numeric:tabular-nums}
+.numtable th{text-align:right;padding:4px 8px;color:var(--faint);font-weight:600;
+  border-bottom:1px solid var(--line)}
+.numtable th:first-child,.numtable td:first-child{text-align:left}
+.numtable td{text-align:right;padding:4px 8px;color:var(--dim);
+  border-bottom:1px solid var(--line-soft)}
+
+@media (max-width:640px){
+  .sl input[type=range]{width:130px}
+  .sctl{gap:8px 14px}
+}
