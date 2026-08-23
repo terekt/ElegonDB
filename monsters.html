@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Elegon DB — Monsters</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=7d34b5bd">
+<link rel="stylesheet" href="style.css?v=dd79f3df">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -59,8 +59,8 @@
   </div>
 </div>
 
-<script src="data.js?v=7d34b5bd"></script>
-<script src="app.js?v=7d34b5bd"></script>
+<script src="data.js?v=dd79f3df"></script>
+<script src="app.js?v=dd79f3df"></script>
 <script>
 const S = {q:"", lo:null, hi:null, aggressive:false, tier:0, sort:{key:"lvl", desc:false}};
 
@@ -84,6 +84,7 @@ const SOURCE_BY_ENEMY = new Map(DROP.sources.filter(s => !s.node).map(s => [s.id
 
 const COLS = [
   {key:"name", label:"Monster", left:true},
+  {key:"where", label:"Where", left:true},
   {key:"lvl", label:"Level"},
   {key:"hp", label:"Health"},
   {key:"dmg", label:"Attack"},
@@ -97,6 +98,13 @@ const COLS = [
 ];
 
 const fmt = fmtNum;
+
+/* Where a creature lives, from the walk log. Unknown rather than blank when nothing has
+   seen it: two of the seventy-four have never been recorded anywhere, and an empty cell
+   would read as "the overworld" - which is itself a real answer for a dozen others. */
+const MAP_NAMES_M = D.mapNames || {};
+const placeOf = m => m.map === undefined || m.map === null
+  ? "—" : (MAP_NAMES_M[m.map] || m.map || "Overworld");
 
 function draw() {
   const hpMul = enemyHealthMult(S.tier), dmgMul = enemyDamageMult(S.tier);
@@ -112,6 +120,8 @@ function draw() {
       return {...m, src, drops: src ? dropsOf(src).length : 0,
               hp: Math.round(m.hp * hpMul), dmg: Math.round(m.dmg * dmgMul),
               dps: Math.round(m.dmg * dmgMul / (D.attackInterval || 3)),
+              // The sort reads the row, not the cell, so the place has to be on it as text.
+              where: placeOf(m),
               xp: xpAt(m), kills: killsPerLevel(m)};
     });
 
@@ -125,9 +135,14 @@ function draw() {
   if (!rows.length) emptyRow(body, COLS.length, "No monsters match these filters.");
   for (const m of rows) {
     const tr = el("tr");
-    const td = nameCell("monsters", m.id, m.icon, m.name, m.src && m.src.boss ? "boss" : null);
+    /* The boss mark reads the creature's own flag rather than its loot source: a rift's
+       bosses exist in the enemy table the moment it ships, and their drop tables only
+       arrive once someone has been inside. Keyed on the source, Ashenroot's three were
+       unmarked for exactly as long as nobody had walked it. */
+    const td = nameCell("monsters", m.id, m.icon, m.name, m.boss ? "boss" : null);
     if (m.aggressive) td.firstChild.appendChild(el("span", "tag", "aggressive"));
     tr.appendChild(td);
+    tr.appendChild(el("td", "dim", placeOf(m)));
     tr.appendChild(el("td", null, m.lvl));
     tr.appendChild(el("td", null, fmt(m.hp)));
     tr.appendChild(el("td", null, fmt(m.dmg)));
