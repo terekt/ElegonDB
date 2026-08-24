@@ -1345,20 +1345,35 @@ function sourceHero(src) {
    a WEAPON is restricted by its type regardless - a greatsword is Knight-only because no
    other class may hold that type at all. Shields and tomes are off-hands and belong to
    everyone, which is why the type test comes first. */
-const CLASS_WEAPONS_APP = D.classWeapons || {};
-const ANY_WEAPON_APP = new Set([].concat(...Object.values(CLASS_WEAPONS_APP)));
-const CLASS_NAME_APP = id => ((D.classes || {})[String(id)] || {}).name || "";
+const CLASS_WEAPONS = D.classWeapons || {};
+const ANY_WEAPON = new Set([].concat(...Object.values(CLASS_WEAPONS)));
+const CLASS_NAME = id => ((D.classes || {})[String(id)] || {}).name || "";
+const CLASS_IDS = Object.keys(D.classes || {}).sort((a, b) => a - b);
 
+/**
+ * May this class equip this item? The client's ClassWeaponRestrictions.CanUse, plus the
+ * item's own class flag.
+ *
+ * Lives here rather than in a page because three of them ask now - the planner filters its
+ * picker with it, the items list filters on it, and the item sheet words it - and three
+ * copies of a rule is three places to miss when a weapon type is added or cut.
+ */
+function usableBy(item, cls) {
+  if (!item) return false;
+  if (item.cls && String(item.cls) !== String(cls)) return false;
+  if (!item.sub || !ANY_WEAPON.has(item.sub)) return true;    // not a weapon: anyone may
+  return (CLASS_WEAPONS[String(cls)] || []).includes(item.sub);
+}
+
+/** The same rule as a phrase, or "" when nothing is actually restricted. */
 function classNote(item) {
   if (!item) return "";
-  if (item.cls) return CLASS_NAME_APP(item.cls) + " only";
-  if (!item.sub || !ANY_WEAPON_APP.has(item.sub)) return "";
-  const who = Object.keys(CLASS_WEAPONS_APP)
-    .filter(c => CLASS_WEAPONS_APP[c].includes(item.sub))
-    .map(CLASS_NAME_APP).filter(Boolean);
+  if (item.cls) return CLASS_NAME(item.cls) + " only";
+  if (!item.sub || !ANY_WEAPON.has(item.sub)) return "";
+  const who = CLASS_IDS.filter(c => (CLASS_WEAPONS[c] || []).includes(item.sub))
+                       .map(CLASS_NAME).filter(Boolean);
   // Every class can hold it: not a restriction, so not worth a word.
-  return who.length && who.length < Object.keys(CLASS_WEAPONS_APP).length
-    ? who.join(" and ") + " only" : "";
+  return who.length && who.length < CLASS_IDS.length ? who.join(" and ") + " only" : "";
 }
 
 

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Elegon DB — Items</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=7a0b9d61">
+<link rel="stylesheet" href="style.css?v=11501a71">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -53,6 +53,11 @@
     <!-- Everything that only applies to equipment is grouped so it can step aside when a
          material or quest item is being listed. -->
     <div class="barrow">
+      <!-- "What can my Mage actually wear" is a different question from "what exists", and
+           the second is no use when you are gearing one character. -->
+      <span id="clsWrap" class="grpline">
+        <label for="cls">Usable by</label><select id="cls"></select>
+      </span>
       <span id="statWrap" class="grpline">
         <label for="hasStat">Has stat</label><select id="hasStat"></select>
       </span>
@@ -74,10 +79,10 @@
   <p class="note" id="note"></p>
 </div>
 
-<script src="data.js?v=7a0b9d61"></script>
-<script src="app.js?v=7a0b9d61"></script>
+<script src="data.js?v=11501a71"></script>
+<script src="app.js?v=11501a71"></script>
 <script>
-const S = {q:"", slot:"", type:"", sub:"", hasStat:"", source:"", quality:1, tier:0,
+const S = {q:"", slot:"", type:"", sub:"", hasStat:"", source:"", cls:"", quality:1, tier:0,
            sort:{key:"vitality", desc:true}};
 
 /* Accuracy is listed even though no equipment grants it: it is one of the character's
@@ -151,6 +156,15 @@ const SOURCE_FILTERS = [
   // happens to come from a monster, which is the opposite of what it says.
   ...(DROP.ready ? [{v:"none", label:"Unknown"}] : []),
 ];
+/* Usable by: the item's own class flag AND the weapon-type restriction, both from
+   usableBy in app.js. Armour is open to everyone, so this narrows weapons and the handful
+   of class-locked pieces rather than splitting the catalogue three ways. */
+const clsSel = document.getElementById("cls");
+clsSel.appendChild(Object.assign(el("option", null, "Any class"), {value: ""}));
+for (const id of Object.keys(D.classes || {}).sort((a, b) => a - b))
+  clsSel.appendChild(Object.assign(el("option", null, D.classes[id].name), {value: id}));
+clsSel.onchange = e => { S.cls = e.target.value; draw(); };
+
 const srcSel = document.getElementById("source");
 for (const o of SOURCE_FILTERS)
   srcSel.appendChild(Object.assign(el("option", null, o.label), {value: o.v}));
@@ -283,8 +297,11 @@ function draw() {
   // Switching column sets can strand the sort on a column that is no longer there.
   if (!cols.some(c => c.key === S.sort.key)) S.sort = {key: "name", desc: false};
 
-  // Rarity, instability and "has stat" only mean something for equipment.
-  for (const id of ["statWrap", "rarWrap", "instWrap"])
+  // Rarity, instability, "has stat" and "usable by" only mean something for equipment.
+  // Left set rather than reset when hidden, because usableBy passes anything without a
+  // sub type or a class flag - so it is a no-op on materials rather than a filter working
+  // invisibly, and the choice is still there when you switch back.
+  for (const id of ["statWrap", "rarWrap", "instWrap", "clsWrap"])
     document.getElementById(id).hidden = !!S.type;
 
   const rows = D.items.filter(i =>
@@ -293,6 +310,7 @@ function draw() {
       (!S.type || i.type === S.type) &&
       (!S.sub || i.sub === S.sub) &&
       (!S.hasStat || (i[S.hasStat] || 0) > 0) &&
+      (!S.cls || usableBy(i, S.cls)) &&
       matchesSource(i))
     .map(i => {
       const o = {...i, info: DROP_INFO.get(i.id) || null};
