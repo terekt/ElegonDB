@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Elegon DB — Maps</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=d9e3cf9e">
+<link rel="stylesheet" href="style.css?v=19e88916">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -98,8 +98,8 @@
   <p class="note" id="note"></p>
 </div>
 
-<script src="data.js?v=d9e3cf9e"></script>
-<script src="app.js?v=d9e3cf9e"></script>
+<script src="data.js?v=19e88916"></script>
+<script src="app.js?v=19e88916"></script>
 <script>
 /* The interactive map.
    Markers live inside a stage sized to the capture in image pixels, so a marker's position
@@ -402,11 +402,75 @@ function syncPanel() {
   for (const [key, row] of Object.entries(speciesRows))
     row.classList.toggle("off", !shownBy.has(key));
 }
+/* ---- terrain overlay ------------------------------------------------------
+   The overworld capture is a photograph looking straight down: it says what the ground looks
+   like and nothing about its shape, so a cliff and a meadow are the same green.
+   tools/pck/depthmap.py reads the game's own Terrain3D heights out of the pack and shades
+   them, projected onto exactly this image.
 
-/* The stage is rebuilt whenever the map changes, so the overlay has to be re-added with it.
-   A hook rather than a direct call: everything terrain is staging only and is cut from the
-   release, and build() must not throw when it is gone. */
-let addTerrainLayer = () => {};
+   Hillshade at soft light is what ships, chosen by comparing all nine derived layers against
+   every sensible blend mode. It wins because it is the only one that adds the shape of the
+   land without making a claim: no threshold, no colour, nothing hidden underneath - the map
+   still reads as the map, with the ground now legible. The layers that DO make claims - past
+   45 degrees you cannot walk, this edge is a drop - are sharper but they paint over the
+   picture, and that is a trade for a tool rather than for a map.
+
+   The comparison rig that chose it is staging only, below.                                */
+const TERRAIN_MAP = "";                      /* only the overworld has Terrain3D data */
+let terrain = {layer: "relief", blend: "soft-light", alpha: 85};
+let terrainImg = null;
+
+let addTerrainLayer = function (m) {
+  terrainImg = null;
+  const on = m.id === TERRAIN_MAP;
+  const head = document.getElementById("terrainHead");
+  const ctl = document.getElementById("terrainCtl");
+  if (head) head.hidden = !on;
+  if (ctl) ctl.hidden = !on;
+  if (!on) return;
+  const img = el("img", "mapimg terrainlay");
+  img.alt = "";
+  img.draggable = false;
+  stage.appendChild(img);
+  terrainImg = img;
+  applyTerrain();
+};
+
+function applyTerrain() {
+  if (!terrainImg) return;
+  const note = document.getElementById("terrainNote");
+  if (!terrain.layer) {
+    terrainImg.hidden = true;
+    if (note) note.textContent = "";
+    return;
+  }
+  terrainImg.hidden = false;
+  terrainImg.src = "maps/terrain-" + terrain.layer + ".png";
+  terrainImg.style.mixBlendMode = terrain.blend;
+  terrainImg.style.opacity = (terrain.alpha / 100).toFixed(2);
+  if (note) note.textContent = TERRAIN_NOTES[terrain.layer] || "";
+}
+
+/* Shown under the control in staging; production has no control, so nothing reads these
+   there - they are declared outside the staging block only because applyTerrain is. */
+const TERRAIN_NOTES = {
+  relief:   "Hillshade from the game's own Terrain3D heights, sun in the north-west. It "
+          + "carries no threshold and claims nothing about what is passable.",
+  barrier:  "Ground that rises sharply within 3 units in warm, ground that falls away in "
+          + "cool. The two are different problems: one you walk round, the other you fall off.",
+  blocked:  "Slope past 45°, which is where the player stops being able to walk. Not a "
+          + "guess: the player is a CharacterBody3D and player.scn sets no floor_max_angle, "
+          + "so it runs at Godot's default.",
+  edges:    "Only the boundary of the too-steep areas, so the map underneath stays readable.",
+  wall:     "How far the ground rises within 3 units — something to go round.",
+  drop:     "How far the ground falls away within 3 units — a cliff edge.",
+  slope:    "The gradient in degrees, from 15° up. Below that almost the whole world "
+          + "qualifies and colouring it buries the part that matters.",
+  depth:    "Raw height. The least useful on its own — a plateau and a valley floor are both "
+          + "walkable — but it is what the others are derived from.",
+  contour:  "A line every 10 world units of height.",
+};
+
 
 
 /* ---- building the stage -------------------------------------------------- */
