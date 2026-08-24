@@ -1340,6 +1340,28 @@ function sourceHero(src) {
   return box;
 }
 
+/* Who may actually equip a thing.
+   Two rules, and neither was shown anywhere: an item can name a class outright (37 do), and
+   a WEAPON is restricted by its type regardless - a greatsword is Knight-only because no
+   other class may hold that type at all. Shields and tomes are off-hands and belong to
+   everyone, which is why the type test comes first. */
+const CLASS_WEAPONS_APP = D.classWeapons || {};
+const ANY_WEAPON_APP = new Set([].concat(...Object.values(CLASS_WEAPONS_APP)));
+const CLASS_NAME_APP = id => ((D.classes || {})[String(id)] || {}).name || "";
+
+function classNote(item) {
+  if (!item) return "";
+  if (item.cls) return CLASS_NAME_APP(item.cls) + " only";
+  if (!item.sub || !ANY_WEAPON_APP.has(item.sub)) return "";
+  const who = Object.keys(CLASS_WEAPONS_APP)
+    .filter(c => CLASS_WEAPONS_APP[c].includes(item.sub))
+    .map(CLASS_NAME_APP).filter(Boolean);
+  // Every class can hold it: not a restriction, so not worth a word.
+  return who.length && who.length < Object.keys(CLASS_WEAPONS_APP).length
+    ? who.join(" and ") + " only" : "";
+}
+
+
 /* ---- item sheet: every source that yields one item ------------------------ */
 
 function itemSheet(itemId) {
@@ -1422,7 +1444,8 @@ function itemSheet(itemId) {
       key: "i" + itemId,
       title: it.name,
       titleCls: eq ? "r" + SCALE.quality : null,
-      sub: eq ? [eq.sub, eq.slot, eq.lvl ? "level " + eq.lvl : ""].filter(Boolean).join(" · ")
+      sub: eq ? [eq.sub, eq.slot, eq.lvl ? "level " + eq.lvl : "", classNote(eq)]
+                  .filter(Boolean).join(" · ")
               : it.type,
       hero: itemHeadline(it),
       filters: null,

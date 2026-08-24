@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Elegon DB — Character planner</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=5e3a3698">
+<link rel="stylesheet" href="style.css?v=7a0b9d61">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -232,9 +232,9 @@
   </div>
 </dialog>
 
-<script src="data.js?v=5e3a3698"></script>
+<script src="data.js?v=7a0b9d61"></script>
 <!-- Written by the mod when you log in; absent until then. -->
-<script src="app.js?v=5e3a3698"></script>
+<script src="app.js?v=7a0b9d61"></script>
 <script>
 /* The game's slot set and order, from InGameUi.EnumerateCharacterPanelSlots:
    main weapon, off hand, head, neck, shoulder, back, chest, waist, leg, foot, hands. */
@@ -406,6 +406,9 @@ function loadBuild() {
   // This one sets level directly rather than through setLevel, so it has to trim itself -
   // and every build saved before the points were halved needs it.
   trimToPoints();
+  // Anything saved before the class weapon rules were enforced may hold gear its class
+  // cannot lift; the same is true of a build shared from another class.
+  dropUnusable();
 }
 
 const two = () => {
@@ -827,8 +830,44 @@ function openPicker(slot) {
 const RIFT_ITEMS = new Set(D.riftItems || []);
 
 /** Items that can go in a slot. Main Hand accepts two-handers and one-handers alike. */
+/* ---- what this class may actually hold ------------------------------------
+   Two separate gates, and the planner enforced neither: a Mage could be handed a greatsword
+   and 68 other weapons its class cannot lift.
+
+     1. The item's own class requirement. 37 items carry one.
+     2. ClassWeaponRestrictions - a Knight may hold nine weapon types, a Mage and a Cleric
+        three each. Only WEAPONS are restricted; shields and tomes are off-hands anyone may
+        carry, which is why the test asks whether the sub type is a weapon at all first.
+
+   The set of weapons is the union of the three class lists rather than a fourth list to
+   keep: every weapon type in the game is usable by somebody, so the union is exactly the
+   client's own IsWeapon range and cannot fall out of step with it. */
+const CLASS_WEAPONS = D.classWeapons || {};
+const ANY_WEAPON = new Set([].concat(...Object.values(CLASS_WEAPONS)));
+
+function usableBy(item, cls) {
+  if (item.cls && String(item.cls) !== String(cls)) return false;
+  if (!item.sub || !ANY_WEAPON.has(item.sub)) return true;      // not a weapon: always fine
+  return (CLASS_WEAPONS[String(cls)] || []).includes(item.sub);
+}
+
+/** Clear anything the current class cannot hold. Returns what it took off. */
+function dropUnusable() {
+  const gone = [];
+  // SLOTS, not SLOT_ORDER: that is declared several hundred lines below this and would be
+  // in its temporal dead zone if anything ever called this during setup.
+  for (const s of SLOTS) {
+    const slot = s.k, st = build[slot];
+    if (st.item && !usableBy(st.item, charClass)) {
+      gone.push(st.item.name);
+      build[slot] = {item: null, quality: 1, tier: 0};
+    }
+  }
+  return gone;
+}
+
 function candidates(slot) {
-  let list = D.items.filter(i => i.slot === slot);
+  let list = D.items.filter(i => i.slot === slot && usableBy(i, charClass));
   if (P.tier > 0 && RIFT_ITEMS.size) list = list.filter(i => RIFT_ITEMS.has(i.id));
   return list;
 }
@@ -1100,7 +1139,17 @@ for (const [id, c] of Object.entries(CLASSES)) {
   classSel.appendChild(Object.assign(el("option", null, c.name), {value: id}));
 }
 classSel.value = charClass;
-classSel.onchange = () => { charClass = classSel.value; render(); };
+classSel.onchange = () => {
+  charClass = classSel.value;
+  /* A build does not survive every class change: switch a greatsword Knight to a Mage and
+     the weapon is simply not liftable any more. Taking it off and saying so beats leaving
+     an impossible build on screen, and beats refusing the class change. */
+  const gone = dropUnusable();
+  if (gone.length)
+    Log(`${className()} cannot use ${gone.join(", ")}, so ${gone.length === 1
+        ? "it was" : "they were"} unequipped.`);
+  render();
+};
 
 const rankInput = document.getElementById("spellRank");
 rankInput.oninput = () => {
@@ -1317,8 +1366,11 @@ function drawProf() {
 
   section("In use", mh ? `Main hand: ${mh.name}` : "Nothing equipped in the main hand",
           [SKILL_BY_ID_P.get(DEFENSE_SKILL), live].filter(Boolean));
-  section("Other weapons", "Kept, but doing nothing until you equip one",
-          PROF_SKILLS.filter(sk => sk.id !== DEFENSE_SKILL && (!live || sk.id !== live.id)));
+  const others = PROF_SKILLS.filter(sk => sk.id !== DEFENSE_SKILL && (!live || sk.id !== live.id));
+  // Usable first: what a reader might actually train belongs above what it never can.
+  others.sort((a, b) => (trainableBy(b, charClass) ? 1 : 0) - (trainableBy(a, charClass) ? 1 : 0));
+  section("Other weapons", `Kept, but doing nothing until you equip one · ${className()} can `
+          + `hold ${(CLASS_WEAPONS[String(charClass)] || []).length} weapon types`, others);
 
   document.getElementById("pSummary").textContent = summaryText();
   document.getElementById("pNote").textContent =
@@ -1346,13 +1398,26 @@ function summaryText() {
           d ? `${(d * 100).toFixed(1)}% less damage taken` : null].filter(Boolean).join(" · ");
 }
 
+/** Can this class ever hold the weapon a proficiency trains on? Defense is not a weapon. */
+const CLASS_NAME_BY_ID = {1: "Knight", 2: "Mage", 3: "Cleric"};
+const trainableBy = (sk, cls) =>
+  !sk.classes || !sk.classes.length || sk.classes.includes(Number(cls));
+
 function profRow(sk, isLive) {
-  const row = el("div", "profrow" + (isLive ? " on" : "") + (sk.armed === false ? " none" : ""));
+  /* A Mage sees ten weapon rows it can never train, and no amount of levelling any of them
+     does anything for the build - the bonus only applies while that weapon is held. Said in
+     the row rather than hidden, because the levels are real and survive a class change: the
+     reader may be planning the Knight next. */
+  const usable = trainableBy(sk, charClass);
+  const row = el("div", "profrow" + (isLive ? " on" : "")
+                        + (sk.armed === false || !usable ? " none" : ""));
   const mid = el("div", "pm");
   mid.appendChild(el("div", "pn", sk.name));
   mid.appendChild(el("div", "pl",
     sk.armed === false ? "No weapon of this type exists yet"
     : sk.id === DEFENSE_SKILL ? "Always active — rises from damage taken"
+    : !usable ? `${sk.sub} — ${(sk.classes || []).map(c => CLASS_NAME_BY_ID[c])
+                                 .filter(Boolean).join(" and ")} only`
     : isLive ? "Active — your main hand trains this"
     : `Weapons: ${sk.sub}`));
   row.appendChild(mid);
@@ -1619,6 +1684,7 @@ function decodeBuild(code) {
   spellRank = Math.min(5, Math.max(0, rank));
   document.getElementById("spellRank").value = String(spellRank);
   spellRanksByIdx = null;
+  dropUnusable();                 // the code may carry gear this class cannot hold
   setLevel(lvl || 80);
   return true;
 }
