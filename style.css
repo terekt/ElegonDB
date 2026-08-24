@@ -794,27 +794,34 @@ dialog.sheet{width:min(940px,94vw)}
 .mk-quest{--c:#4f9d69}
 .mk-mine{--c:#c98f3b}
 
-/* A boss is the reason you entered the rift, and at 25px it was the same dot as the fourteen
-   Ashscale Prowlers standing around it. Three cues, because one is never enough at the
-   zoom-out where a whole map fits the screen: half again the size, a second ring in the
-   site's amber outside the family colour, and the level badge pulled up to match. Not
-   animated - the same argument as the portal below, that movement draws the eye to whichever
-   marker moves rather than whichever matters. */
+/* A boss is the reason you entered the rift, and at 25px in its family's own colour it was
+   the same dot as the fourteen Ashscale Prowlers standing around it. Gold, and only bosses
+   are gold: half again the size, the site's amber for the ring and a soft glow of it around
+   the whole marker, and the level badge in amber too so the three cues agree. The colour is
+   named here rather than through --c, which maps.html sets inline per creature and would win.
+   Not animated - the same argument as the portal below, that movement draws the eye to
+   whichever marker moves rather than whichever matters. */
 .mk-mob.boss{width:37px;height:37px;z-index:2;
-  box-shadow:0 0 0 2.5px var(--c,#e2683c),
-             0 0 0 4px rgba(0,0,0,.6),
-             0 0 0 6px var(--gold),
-             0 0 0 7px rgba(0,0,0,.55),
-             0 2px 7px rgba(0,0,0,.55)}
+  background-color:color-mix(in oklab,var(--gold) 22%,#0d0a04);
+  box-shadow:0 0 0 3px var(--gold),
+             0 0 0 4.5px rgba(0,0,0,.72),
+             0 0 11px 2px color-mix(in oklab,var(--gold) 50%,transparent),
+             0 2px 7px rgba(0,0,0,.5)}
 .mk-mob.boss[data-lvl]::after{right:-6px;bottom:-3px;padding:0 4px;
-  font-size:10.5px;line-height:14px}
+  font-size:10.5px;line-height:14px;
+  /* Not --gold-ink: that pairs with gold for ::selection, but in the light theme it is white
+     on a mid gold, which is 3.7:1 - fine for a block of selected text, not for 9.5px bold.
+     A fixed near-black clears AA against both themes' golds (11.9:1 and 5.0:1). */
+  background:var(--gold);color:#17120a;
+  border-color:color-mix(in oklab,#000 45%,transparent)}
 /* The portrait is framed for a 25px circle; at 37px the same 152% leaves the model swimming
    in its disc, so it is zoomed to keep the head roughly the size it is on every other marker. */
 .mk-mob.boss.mkart{background-size:135%}
 /* In the panel the rows are 11px dots in a list - size there would only break the column, so
-   the amber ring does the whole job. */
+   the gold does the whole job. */
 .panelrow .mk-mob.boss{width:11px;height:11px;
-  box-shadow:0 0 0 1.5px var(--c,#e2683c),0 0 0 3px var(--gold)}
+  background-color:color-mix(in oklab,var(--gold) 30%,#0d0a04);
+  box-shadow:0 0 0 2px var(--gold)}
 
 /* A rift entrance is a hole in the world, so it is drawn as one: three spiral arms wound
    in to a bright core. Still, deliberately — a conic gradient is uniform along each radius

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Elegon DB — Character planner</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=3a1febd0">
+<link rel="stylesheet" href="style.css?v=e04e2de9">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -156,6 +156,10 @@
       <div id="spellRows"></div>
       <p class="note" id="spellNote" style="margin:10px 0 0"></p>
     </div>
+    <!-- What this build has to survive: a rift roster, with damage put through your
+         Fortitude and health scaled by that rift's own instability. The panels build
+         themselves, one per rift shown. -->
+    <div id="riftPanels"></div>
 
   </div>
 </div>
@@ -232,9 +236,9 @@
   </div>
 </dialog>
 
-<script src="data.js?v=3a1febd0"></script>
+<script src="data.js?v=e04e2de9"></script>
 <!-- Written by the mod when you log in; absent until then. -->
-<script src="app.js?v=3a1febd0"></script>
+<script src="app.js?v=e04e2de9"></script>
 <script>
 /* The game's slot set and order, from InGameUi.EnumerateCharacterPanelSlots:
    main weapon, off hand, head, neck, shoulder, back, chest, waist, leg, foot, hands. */
@@ -705,10 +709,9 @@ function slotButton(s) {
   return btn;
 }
 
-/* The rift panel ships in staging only, so the page calls into it through a hook that does
-   nothing when the panel is not there. render() runs on every change and would otherwise
-   throw on a missing function, taking the whole planner down with it. */
-let drawRift = () => {};
+/* Filled in below, one entry per rift panel built. A list rather than the single hook this
+   was, because there are now two panels and render() must reach both. */
+const riftPanels = [];
 
 function render() {
   const byKey = Object.fromEntries(SLOTS.map(s => [s.k, s]));
@@ -763,7 +766,7 @@ function render() {
   const itemLevel = equippedItemLevel();
   document.getElementById("ilvlValue").textContent = itemLevel.toLocaleString();
 
-  drawRift(totals.fortitude, maxHealth(totals.vitality));
+  for (const draw of riftPanels) draw(totals.fortitude, maxHealth(totals.vitality));
   /* Before the spells, because drawSpells needs the buff list to know what to leave out -
      and the badge has to track class and level, not only the last time the modal opened. */
   drawBuffs();
@@ -912,6 +915,149 @@ function drawPicker() {
 
 /* The figure is exported from the game; until that has been run, say so plainly
    instead of leaving a broken image in the middle of the panel. */
+/* ---- rift panels ---------------------------------------------------------
+   What the build has to survive. Enemy health and damage scale with instability on
+   BreachInstability's soft-capped curve - full rate to tier 10, a much gentler one after -
+   and the hit you actually take is that damage after Fortitude mitigation:
+   min(0.60, F / (F + 500)).
+
+   One panel per rift, each with its own instability dial, because the two level-80 rifts
+   are different fights and a single shared tier would describe neither. The panel builds its
+   own markup rather than filling in a fixed block of HTML, which is what lets a second one
+   exist at all: the first version owned #riftRows and #riftNote outright.               */
+
+const mitigationFor = fortitude => GAME.mitigation(fortitude);
+
+/* What actually reaches you: Fortitude first, then the buff on what is left, then Defense
+   on what is left of that. Three independent reductions applied in turn, so they multiply -
+   adding them would let 60% mitigation and an 80% Stonewall cancel damage entirely. */
+const takenFraction = fortitude =>
+  (1 - mitigationFor(fortitude)) * (1 - mitBonus()) * (1 - defenseReduction());
+
+/* Measured, not listed: the enemy catalogue has no attack-interval column and the client
+   never reads the server's next_attack_time_unix. See ATTACK_INTERVAL in build_site.py. */
+const ATTACK_INTERVAL = D.attackInterval || 3;
+
+function riftPanel(rift) {
+  if (!rift || !(rift.ids || []).length) return;
+  let tier = 0;
+
+  const panel = el("div", "attrs rift");
+  const head = el("div", "rifthead");
+  head.appendChild(el("h3", null, rift.name));
+  const line = el("div", "grpline");
+  line.append(el("label", null, "Instability"),
+              instabilityInput(0, v => { tier = v; render(); }));
+  head.appendChild(line);
+
+  const prev = el("div", "riftprev");
+  prev.hidden = true;
+  const rows = el("div");
+  const note = el("p", "note");
+  note.style.margin = "10px 0 0";
+  panel.append(head, el("div", "divider"), prev, rows, note);
+  document.getElementById("riftPanels").appendChild(panel);
+  enhanceNumberInputs(panel);
+
+  riftPanels.push(function (fortitude, myHp) {
+    rows.replaceChildren();
+
+    const mit = mitigationFor(fortitude);
+    const hpMul = enemyHealthMult(tier);
+    const dmgMul = enemyDamageMult(tier);
+
+    /* BreachPanel.BuildPreviewText, same four figures in the same order. Instability is a
+       trade, and the cost half was the only half the site showed: past tier 10 the monsters
+       grow slowly while loot power keeps climbing and Flawless goes from 1% to 10%, which is
+       the whole reason to push a tier at all. */
+    prev.hidden = !tier;
+    if (tier) {
+      prev.replaceChildren(...[
+        ["Enemy health", `×${big(hpMul)}`],
+        ["Enemy damage", `×${big(dmgMul)}`],
+        ["Loot power", `+${Math.round((instabilityMult(tier) - 1) * 100)}%`],
+        ["Flawless chance", `${flawlessChancePercent(tier).toFixed(1)}%`],
+      ].map(([lab, val]) => {
+        const cell = el("div", "prevcell");
+        cell.append(el("span", "lab", lab), el("b", null, val));
+        return cell;
+      }));
+    }
+
+    const roster = rift.ids
+      .map(id => D.monsters.find(m => m.id === id))
+      .filter(Boolean)
+      .sort((a, b) => a.lvl - b.lvl || a.hp - b.hp);
+
+    if (!roster.length) {
+      rows.appendChild(el("p", "note", "Rift roster unavailable."));
+      return;
+    }
+
+    for (const m of roster) {
+      const boss = (rift.bosses || []).includes(m.id);
+      const hp = Math.round(m.hp * hpMul);
+      const raw = Math.round(m.dmg * dmgMul);
+      const taken = Math.round(raw * takenFraction(fortitude));
+
+      const row = el("div", "riftrow" + (boss ? " boss" : ""));
+      row.appendChild(icon("monsters", m.id, m.icon));   // sized by CSS
+
+      const mid = el("div", "rm");
+      mid.appendChild(el("div", "rn", m.name));
+      mid.appendChild(el("div", "rl", `Level ${m.lvl}${boss ? " · boss" : ""}`));
+      row.appendChild(mid);
+
+      /* Per hit AND per second. A 148 hit means nothing on its own - what decides whether you
+         can hold a pull is how fast it arrives, and every creature measured swings on the same
+         3s cycle. Health over DPS is then a time to live, which is the question actually
+         being asked. */
+      const dps = taken / ATTACK_INTERVAL;
+      const num = el("div", "rv");
+      num.appendChild(el("div", "rhp", fmtNum(hp)));
+      num.appendChild(el("div", "rdmg", fmtNum(taken) + " dmg"));
+      num.appendChild(el("div", "rdps", fmtNum(Math.round(dps)) + "/s"));
+      row.appendChild(num);
+
+      attachTip(row,
+        `<b>${m.name}</b><i>level ${m.lvl}${boss ? " · boss" : ""} · instability ${tier}</i>`
+        + `Health <b>${fmtNum(hp)}</b>`
+        + (tier ? ` (${fmtNum(m.hp)} × ${big(hpMul)})` : "")
+        + `<br>Its hit <b>${fmtNum(raw)}</b>`
+        + (tier ? ` (${fmtNum(m.dmg)} × ${big(dmgMul)})` : "")
+        + `<br>Swings every <b>${ATTACK_INTERVAL}s</b> for <b>${fmtNum(Math.round(taken / ATTACK_INTERVAL))}</b> a second`
+        + (myHp ? ` — ${fmtNum(Math.round(myHp / (taken / ATTACK_INTERVAL)))}s to kill you unhealed` : "")
+        + `<br>You take <b>${fmtNum(taken)}</b> after ${(mit * 100).toFixed(1)}% mitigation`
+        + ` from ${fortitude} Fortitude`
+        + (mitBonus() ? ` and a further ${Math.round(mitBonus() * 100)}% from your buff` : "")
+        + (defenseReduction() ? ` and ${(defenseReduction() * 100).toFixed(1)}% from Defense `
+                               + `${profLevel(DEFENSE_SKILL)}` : "")
+        + `.`);
+
+      rows.appendChild(row);
+    }
+
+    const total = 1 - takenFraction(fortitude);
+    note.innerHTML =
+      `Damage shown is what reaches you: <b>${(total * 100).toFixed(1)}%</b> stopped — `
+      + `${(mit * 100).toFixed(1)}% from ${fortitude} Fortitude`
+      + (mit >= 0.5999 ? " (at the 60% cap)" : "")
+      + (mitBonus() ? `, then ${Math.round(mitBonus() * 100)}% of the remainder by your buff` : "")
+      + (defenseReduction()
+          ? `, then ${(defenseReduction() * 100).toFixed(1)}% of what is left by Defense `
+            + `${profLevel(DEFENSE_SKILL)}` : "")
+      + `.`;
+    /* The Fortitude curve is measured - 1,843 recorded hits sit on min(60%, F/(F+500)) to
+       within a third of a point. Defense is the client's stated -0.02% a point, applied
+       independently: it does not care what Fortitude is doing and the 60% cap does not reach
+       it, so the two multiply and the total stopped can pass 60%. Hence "of the remainder". */
+  });
+}
+
+/* Ashenroot Grotto ships everywhere. Embermaw is staging only, so its one call sits inside
+   the markers below - the factory above is shared and must stay outside them, or cutting the
+   block would take the released panel with it. */
+riftPanel((D.rifts || {})["ashenroot-breach"]);
 
 /* ---- spell panel ---------------------------------------------------------
    Shows what this build's spells actually do. Damage scales on Strength, healing on
