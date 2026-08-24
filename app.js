@@ -1379,6 +1379,29 @@ function classNote(item) {
 
 /* ---- item sheet: every source that yields one item ------------------------ */
 
+/**
+ * The rifts whose reward table names this item, with whether it is a boss material.
+ *
+ * D.riftDrops is the game's own per-map table: reward_kind 1 is the three materials named
+ * after that rift's bosses, kind 2 the equipment pool. It has no chance column - which is
+ * the whole reason it can be shown in every build where the measured drop rates are not.
+ */
+let RIFT_SOURCE = null;
+function riftsDropping(itemId) {
+  if (!RIFT_SOURCE) {
+    RIFT_SOURCE = new Map();
+    const names = D.mapNames || {};
+    for (const [mapId, sets] of Object.entries(D.riftDrops || {}))
+      for (const [bucket, ids] of Object.entries(sets))
+        for (const id of ids) {
+          if (!RIFT_SOURCE.has(id)) RIFT_SOURCE.set(id, []);
+          RIFT_SOURCE.get(id).push({name: names[mapId] || mapId, boss: bucket === "boss"});
+        }
+  }
+  return RIFT_SOURCE.get(itemId) || [];
+}
+
+
 function itemSheet(itemId) {
   const st = {sort: {key: "chance", desc: true}};
 
@@ -1443,6 +1466,26 @@ function itemSheet(itemId) {
     if (wantedBy.length)
       wrap.appendChild(questChips(wantedBy, "Asked for by " + (wantedBy.length === 1
         ? "a quest" : wantedBy.length + " quests")));
+
+    /* Which rift gives it, from the game's own per-map reward table. Kept apart from the
+       drop table above and shown in every build: that table is a list of enemies with a
+       chance beside each, and this is neither - the reward table names the item and carries
+       no probability at all, so the line says where and stops. For Ashenroot it is the only
+       source there is: its seven creatures have three loot_table_entries between them. */
+    const fromRifts = riftsDropping(itemId);
+    if (fromRifts.length) {
+      const line = el("p", "riftsource");
+      line.append(el("span", "riftsourcelabel", "Drops in"));
+      for (const r of fromRifts) {
+        const chip = el("span", "chip riftchip" + (r.boss ? " boss" : ""), r.name);
+        chip.title = r.boss
+          ? `A boss material in ${r.name}. The game lists one per boss and gives no chance.`
+          : `In ${r.name}'s reward pool. The game's table names the item and not how often `
+            + `it comes, so the rate is not known.`;
+        line.appendChild(chip);
+      }
+      wrap.appendChild(line);
+    }
 
     /* The drop table only when the build carries one. Without it the section still built
        itself - a "Sources" heading over a Source/Level/Qty/Chance table with nothing in it -
