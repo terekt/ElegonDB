@@ -1386,6 +1386,16 @@ function classNote(item) {
  * after that rift's bosses, kind 2 the equipment pool. It has no chance column - which is
  * the whole reason it can be shown in every build where the measured drop rates are not.
  */
+/* "Ashenroot Grotto" -> "AG". Articles are dropped, so "The First Breach" is FB rather than
+   TFB - the T carries nothing and the column is two characters wide by design. */
+const RIFT_STOPWORDS = new Set(["the", "of", "and"]);
+function riftInitials(name) {
+  const parts = String(name || "").split(/[\s-]+/)
+    .filter(w => w && !RIFT_STOPWORDS.has(w.toLowerCase()));
+  const letters = parts.map(w => w[0].toUpperCase()).join("");
+  return letters || String(name || "?").slice(0, 2).toUpperCase();
+}
+
 let RIFT_SOURCE = null;
 function riftsDropping(itemId) {
   if (!RIFT_SOURCE) {

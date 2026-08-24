@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Elegon DB — Items</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=656847f4">
+<link rel="stylesheet" href="style.css?v=fadb758d">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -79,8 +79,8 @@
   <p class="note" id="note"></p>
 </div>
 
-<script src="data.js?v=656847f4"></script>
-<script src="app.js?v=656847f4"></script>
+<script src="data.js?v=fadb758d"></script>
+<script src="app.js?v=fadb758d"></script>
 <script>
 const S = {q:"", slot:"", type:"", sub:"", hasStat:"", source:"", cls:"", quality:1, tier:0,
            sort:{key:"vitality", desc:true}};
@@ -252,8 +252,16 @@ function sourceCell(i) {
       + (info.count > 1 ? ` — ${info.count} sources in all` : "");
     box.appendChild(tag);
   }
+  /* The rift's mark and its initials, not its name: five rifts share this column with
+     Monster, Quest and Merchant, and "Ashenroot Grotto" spelt out pushed the rest of the
+     row off. The full name is on the badge's tooltip, and the Source filter names them in
+     full where there is room for it. */
   for (const r of riftsDropping(i.id)) {
-    const tag = el("span", "srcflag srcrift" + (r.boss ? " boss" : ""), r.name);
+    const tag = el("span", "srcflag srcrift" + (r.boss ? " boss" : ""));
+    const mark = el("img", "riftico");
+    mark.src = "icons/ui/portal.png";
+    mark.alt = "";
+    tag.append(mark, el("span", null, riftInitials(r.name)));
     tag.title = r.boss
       ? `A boss material in ${r.name}.`
       : `In ${r.name}'s reward pool. The game names the item and not how often it comes.`;

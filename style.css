@@ -2097,3 +2097,8 @@ button:disabled:hover{border-color:var(--line);color:var(--ink)}
 /* Two pictures of the same ground, chosen by chip. Staging only. */
 .srcwrap{display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 6px}
 .srcwrap .chip{font-size:12px;padding:4px 10px}
+
+/* The rift badge is a mark and two letters: the From column carries four kinds of source
+   and a spelt-out rift name crowded the other three out. */
+.srcrift{display:inline-flex;align-items:center;gap:4px;font-variant-numeric:tabular-nums}
+.riftico{width:12px;height:12px;flex:0 0 auto;object-fit:contain;opacity:.9}
