@@ -2082,3 +2082,14 @@ button:disabled:hover{border-color:var(--line);color:var(--ink)}
 .riftsourcelabel{color:var(--faint);font-size:10.5px;letter-spacing:.6px;text-transform:uppercase}
 .riftchip{cursor:help;font-size:12px;padding:3px 10px}
 .riftchip.boss{border-color:var(--gold);color:var(--gold)}
+
+/* Where a piece of gear comes from, named on the row that offers it. */
+.rifttag{border-color:color-mix(in oklab,var(--gold) 45%,transparent);
+  color:color-mix(in oklab,var(--gold) 88%,var(--ink))}
+.rifttag.boss{border-color:var(--gold);color:var(--gold)}
+
+/* A rift is a source like a merchant or a quest, and reads as one. Gold for the three boss
+   materials, which is the same language the maps and the planner use. */
+.srcrift{border-color:color-mix(in oklab,var(--gold) 40%,transparent);
+  color:color-mix(in oklab,var(--gold) 85%,var(--ink))}
+.srcrift.boss{border-color:var(--gold);color:var(--gold)}

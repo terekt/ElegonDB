@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Elegon DB — Character planner</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=d7f53fe9">
+<link rel="stylesheet" href="style.css?v=c1b31ef2">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -210,6 +210,7 @@
       <label>Has stat</label><select id="dStat"></select>
       <span id="dRar"></span>
       <label>Instability</label><span id="dInst"></span>
+      <label for="dRift">Drops in</label><select id="dRift"></select>
       <span class="count" id="dScope"></span>
     </div>
   </div>
@@ -236,9 +237,9 @@
   </div>
 </dialog>
 
-<script src="data.js?v=d7f53fe9"></script>
+<script src="data.js?v=c1b31ef2"></script>
 <!-- Written by the mod when you log in; absent until then. -->
-<script src="app.js?v=d7f53fe9"></script>
+<script src="app.js?v=c1b31ef2"></script>
 <script>
 /* The game's slot set and order, from InGameUi.EnumerateCharacterPanelSlots:
    main weapon, off hand, head, neck, shoulder, back, chest, waist, leg, foot, hands. */
@@ -778,7 +779,7 @@ function render() {
 const dlg = document.getElementById("picker");
 /* Columns are sorted by clicking their header, like every other table on the site, so the
    picker no longer needs a "sort by" dropdown. */
-const P = {q:"", stat:"", quality:1, tier:0, sort:{key:"vitality", desc:true}};
+const P = {q:"", stat:"", quality:1, tier:0, rift:"", sort:{key:"vitality", desc:true}};
 
 /* Accuracy is listed even though no equipment grants it: the column is part of the
    character's attribute set, and its absence on gear is itself worth seeing. */
@@ -832,6 +833,29 @@ function openPicker(slot) {
    the items that actually drop there - anything else could never exist at that tier. */
 const RIFT_ITEMS = new Set(D.riftItems || []);
 
+/* Which rift's reward table names each item, from the game's own per-map list. An item can
+   appear in more than one, so this is a list rather than a single answer. */
+const RIFT_BY_ITEM = new Map();
+for (const [mapId, sets] of Object.entries(D.riftDrops || {}))
+  for (const [bucket, ids] of Object.entries(sets))
+    for (const id of ids) {
+      if (!RIFT_BY_ITEM.has(id)) RIFT_BY_ITEM.set(id, []);
+      RIFT_BY_ITEM.get(id).push({id: mapId, name: (D.mapNames || {})[mapId] || mapId,
+                                 boss: bucket === "boss"});
+    }
+
+{
+  const sel = document.getElementById("dRift");
+  sel.appendChild(el("option", null, "Anywhere")).value = "";
+  for (const mapId of Object.keys(D.riftDrops || {})
+         .sort((a, b) => ((D.mapNames || {})[a] || a).localeCompare((D.mapNames || {})[b] || b))) {
+    const o = el("option", null, (D.mapNames || {})[mapId] || mapId);
+    o.value = mapId;
+    sel.appendChild(o);
+  }
+  sel.onchange = () => { P.rift = sel.value; drawPicker(); };
+}
+
 /** Items that can go in a slot. Main Hand accepts two-handers and one-handers alike. */
 /* ---- what this class may actually hold ------------------------------------
    Two separate gates, and the planner enforced neither: a Mage could be handed a greatsword
@@ -863,6 +887,8 @@ function dropUnusable() {
 function candidates(slot) {
   let list = D.items.filter(i => i.slot === slot && usableBy(i, charClass));
   if (P.tier > 0 && RIFT_ITEMS.size) list = list.filter(i => RIFT_ITEMS.has(i.id));
+  if (P.rift)
+    list = list.filter(i => (RIFT_BY_ITEM.get(i.id) || []).some(r => r.id === P.rift));
   return list;
 }
 
@@ -896,6 +922,14 @@ function drawPicker() {
     const tr = el("tr");
     const td = nameCell("items", r.id, r.icon, r.name, "r" + P.quality, 0, P.quality);
     if (r.hand) td.firstChild.appendChild(el("span", "tag", r.hand));
+    for (const src of RIFT_BY_ITEM.get(r.id) || []) {
+      const tag = el("span", "tag rifttag" + (src.boss ? " boss" : ""), src.name);
+      tag.title = src.boss
+        ? `A boss material in ${src.name}.`
+        : `In ${src.name}'s reward pool. The game's table names the item and not how `
+          + `often it comes.`;
+      td.firstChild.appendChild(tag);
+    }
     tr.appendChild(td);
     tr.appendChild(el("td", "l", r.sub));
     tr.appendChild(el("td", null, r.lvl || "·"));
@@ -981,8 +1015,7 @@ function riftPanel(rifts) {
   const rows = el("div");
   const note = el("p", "note");
   note.style.margin = "10px 0 0";
-  const dropsBox = el("div", "riftdrops");
-  panel.append(head, el("div", "divider"), prev, rows, note, dropsBox);
+  panel.append(head, el("div", "divider"), prev, rows, note);
 
   document.getElementById("riftPanels").appendChild(panel);
   enhanceNumberInputs(panel);
@@ -1072,45 +1105,6 @@ function riftPanel(rifts) {
      the per-enemy chances that used to cover rift gear went with v3492098. A number here
      would have to be invented or measured by grinding, and the point of this data is that
      neither is necessary. */
-    const drops = (D.riftDrops || {})[rift.id];
-    dropsBox.replaceChildren();
-    if (drops) {
-    const head = el("div", "dropshead");
-    head.append(el("b", null, "Drops"),
-                el("span", "dropscount",
-                   `${drops.boss.length + drops.gear.length} items`));
-    dropsBox.appendChild(head);
-
-    const byId = new Map(D.items.map(i => [i.id, i]));
-    const group = (label, ids, note) => {
-      if (!ids.length) return;
-      const g = el("div", "dropgroup");
-      const cap = el("div", "dropcap", label);
-      if (note) cap.title = note;
-      g.appendChild(cap);
-      const grid = el("div", "dropgrid");
-      for (const id of ids) {
-        const it = byId.get(id);
-        if (!it) continue;
-        const cell = el("div", "dropitem q" + (it.quality || 0));
-        cell.appendChild(icon("items", id, !!it.icon, 30));
-        cell.appendChild(el("span", "dropname", it.name));
-        attachTip(cell,
-          `<b>${it.name}</b><i>${[it.sub || it.type, it.slot, it.lvl ? "level " + it.lvl : ""]
-            .filter(Boolean).join(" · ")}</i>`
-          + (it.cls ? `Usable by <b>${(D.classes[it.cls] || {}).name || "one class"}</b><br>` : "")
-          + `Drops in <b>${rift.name}</b>. The reward table names the item and not its `
-          + `chance, so how often is not known.`);
-        grid.appendChild(cell);
-      }
-      g.appendChild(grid);
-      dropsBox.appendChild(g);
-    };
-    group("From the bosses", drops.boss,
-          "One material per boss, named after it. reward_kind 1 in the game's table.");
-    group("Gear", drops.gear, "reward_kind 2: the rift's equipment pool.");
-  }
-
     const total = 1 - takenFraction(fortitude);
     note.innerHTML =
       `Damage shown is what reaches you: <b>${(total * 100).toFixed(1)}%</b> stopped — `

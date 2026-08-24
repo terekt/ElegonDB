@@ -1395,7 +1395,8 @@ function riftsDropping(itemId) {
       for (const [bucket, ids] of Object.entries(sets))
         for (const id of ids) {
           if (!RIFT_SOURCE.has(id)) RIFT_SOURCE.set(id, []);
-          RIFT_SOURCE.get(id).push({name: names[mapId] || mapId, boss: bucket === "boss"});
+          RIFT_SOURCE.get(id).push({id: mapId, name: names[mapId] || mapId,
+                                    boss: bucket === "boss"});
         }
   }
   return RIFT_SOURCE.get(itemId) || [];

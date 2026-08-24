@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Elegon DB — Monsters</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=d7f53fe9">
+<link rel="stylesheet" href="style.css?v=c1b31ef2">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -46,6 +46,7 @@
     <input type="number" id="lo" placeholder="min" style="width:80px">
     <input type="number" id="hi" placeholder="max" style="width:80px">
     <span id="flags"></span>
+    <label for="area">Area</label><select id="area"></select>
     <label for="mylvl">Your level</label><span id="mylvl"></span>
     <label>Instability</label><span id="inst"></span>
   </div>
@@ -58,10 +59,11 @@
   </div>
 </div>
 
-<script src="data.js?v=d7f53fe9"></script>
-<script src="app.js?v=d7f53fe9"></script>
+<script src="data.js?v=c1b31ef2"></script>
+<script src="app.js?v=c1b31ef2"></script>
 <script>
-const S = {q:"", lo:null, hi:null, aggressive:false, tier:0, sort:{key:"lvl", desc:false}};
+const S = {q:"", lo:null, hi:null, aggressive:false, area:"", tier:0,
+           sort:{key:"lvl", desc:false}};
 
 document.getElementById("mylvl").appendChild(levelPicker());
 document.addEventListener("levelchange", draw);
@@ -69,6 +71,24 @@ document.addEventListener("levelchange", draw);
 const flags = document.getElementById("flags");
 const agg = el("span", "chip", "Aggressive only");
 agg.onclick = () => { S.aggressive = !S.aggressive; agg.classList.toggle("on", S.aggressive); draw(); };
+
+/* Where a creature lives, from its home map. Built from what the monsters themselves carry
+   rather than from a list of areas, so a rift added by a patch appears the first time one of
+   its creatures is walked past. "Anywhere" leads; the overworld is named rather than left as
+   the empty string it really is. */
+{
+  const sel = document.getElementById("area");
+  const names = D.mapNames || {};
+  const seen = [...new Set(D.monsters.map(m => m.map == null ? "" : m.map))]
+    .sort((a, b) => (names[a] || "Overworld").localeCompare(names[b] || "Overworld"));
+  sel.appendChild(el("option", null, "Anywhere")).value = "";
+  for (const id of seen) {
+    const o = el("option", null, names[id] || (id ? id : "Overworld"));
+    o.value = id === "" ? "__overworld" : id;
+    sel.appendChild(o);
+  }
+  sel.onchange = () => { S.area = sel.value; draw(); };
+}
 flags.appendChild(agg);
 
 document.getElementById("q").oninput = e => { S.q = e.target.value.toLowerCase(); draw(); };
@@ -112,7 +132,8 @@ function draw() {
       (!S.q || m.name.toLowerCase().includes(S.q)) &&
       (S.lo === null || m.lvl >= S.lo) &&
       (S.hi === null || m.lvl <= S.hi) &&
-      (!S.aggressive || m.aggressive))
+      (!S.aggressive || m.aggressive) &&
+      (!S.area || (S.area === "__overworld" ? !m.map : m.map === S.area)))
     .map(m => {
       const src = SOURCE_BY_ENEMY.get(m.id) || null;
       // Sorting has to see the same number the column prints, so the scaling happens here

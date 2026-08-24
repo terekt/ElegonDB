@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Elegon DB — Items</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=d7f53fe9">
+<link rel="stylesheet" href="style.css?v=c1b31ef2">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -79,8 +79,8 @@
   <p class="note" id="note"></p>
 </div>
 
-<script src="data.js?v=d7f53fe9"></script>
-<script src="app.js?v=d7f53fe9"></script>
+<script src="data.js?v=c1b31ef2"></script>
+<script src="app.js?v=c1b31ef2"></script>
 <script>
 const S = {q:"", slot:"", type:"", sub:"", hasStat:"", source:"", cls:"", quality:1, tier:0,
            sort:{key:"vitality", desc:true}};
@@ -152,6 +152,11 @@ const SOURCE_FILTERS = [
   // Only offered once the shop export has actually found a merchant.
   ...(SOLD_BY.size ? [{v:"buy", label:"Sold by a merchant"}] : []),
   ...(QUEST_REWARDS.size ? [{v:"quest", label:"Quest reward"}] : []),
+  // One entry per rift. The game's reward table is per map, so "which rift drops this" is
+  // a question it can answer exactly - unlike how often, which it does not record at all.
+  ...Object.keys(D.riftDrops || {})
+      .sort((a, b) => ((D.mapNames || {})[a] || a).localeCompare((D.mapNames || {})[b] || b))
+      .map(m => ({v: "rift:" + m, label: (D.mapNames || {})[m] || m})),
   // Same reasoning as the Unknown badge: without drops it would select every item that
   // happens to come from a monster, which is the opposite of what it says.
   ...(DROP.ready ? [{v:"none", label:"Unknown"}] : []),
@@ -221,6 +226,10 @@ function matchesSource(i) {
   if (!S.source) return true;
   if (S.source === "buy") return SOLD_BY.has(i.id);
   if (S.source === "quest") return QUEST_REWARDS.has(i.id);
+  if (S.source.startsWith("rift:")) {
+    const want = S.source.slice(5);
+    return riftsDropping(i.id).some(r => r.id === want);
+  }
   if (S.source === "drop") return DROP_INFO.has(i.id);
   // Unknown means no route at all, not merely "no loot table" — which used to lump in
   // everything a merchant or a quest hands over.
@@ -241,6 +250,13 @@ function sourceCell(i) {
     const tag = el("span", "srcflag srcdrop", "Monster");
     tag.title = `Best chance ${fmtPct(effChance(info.best))}, from ${info.best.src.name}`
       + (info.count > 1 ? ` — ${info.count} sources in all` : "");
+    box.appendChild(tag);
+  }
+  for (const r of riftsDropping(i.id)) {
+    const tag = el("span", "srcflag srcrift" + (r.boss ? " boss" : ""), r.name);
+    tag.title = r.boss
+      ? `A boss material in ${r.name}.`
+      : `In ${r.name}'s reward pool. The game names the item and not how often it comes.`;
     box.appendChild(tag);
   }
   if (rewards.length) {
