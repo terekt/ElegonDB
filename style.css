@@ -1987,3 +1987,16 @@ button:disabled:hover{border-color:var(--line);color:var(--ink)}
   .sl input[type=range]{width:130px}
   .sctl{gap:8px 14px}
 }
+
+/* The version stamp: which game build the data describes. Quiet on purpose - it is a
+   provenance note, not a feature - but present on every page, because a number is only
+   checkable against your own game if you know which patch it came from. */
+.sitever{
+  /* Same box as .wrap - 1560 wide with 26px sides - so its rule and its text line up with
+     the content above rather than sitting in a narrower column of their own. */
+  max-width:1560px;margin:38px auto 26px;padding:12px 26px 0;
+  border-top:1px solid var(--line-soft);
+  color:var(--faint);font-size:11.5px;letter-spacing:.3px;text-align:right;
+}
+.sitever b{color:var(--dim);font-weight:600;font-variant-numeric:tabular-nums}
+@media (max-width:640px){ .sitever{text-align:left;margin:26px auto 18px} }
