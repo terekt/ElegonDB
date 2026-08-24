@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Elegon DB — Character planner</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=9e66df23">
+<link rel="stylesheet" href="style.css?v=bbd7233b">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -232,9 +232,9 @@
   </div>
 </dialog>
 
-<script src="data.js?v=9e66df23"></script>
+<script src="data.js?v=bbd7233b"></script>
 <!-- Written by the mod when you log in; absent until then. -->
-<script src="app.js?v=9e66df23"></script>
+<script src="app.js?v=bbd7233b"></script>
 <script>
 /* The game's slot set and order, from InGameUi.EnumerateCharacterPanelSlots:
    main weapon, off hand, head, neck, shoulder, back, chest, waist, leg, foot, hands. */
@@ -1366,8 +1366,9 @@ function drawProf() {
   document.getElementById("pSummary").textContent = summaryText();
   document.getElementById("pNote").textContent =
     "A level is worth +0.025% damage and healing on a weapon proficiency, and -0.02% damage "
-    + "taken on Defense, so 400 is +10% and -8%. Defense works in parallel with Fortitude "
-    + "and the two multiply, so the -8% is 8% of whatever a hit had left after Fortitude. "
+    + "taken on Defense, so 400 is +10% and -8%. Defense works in parallel with Fortitude: "
+    + "the two multiply, so the -8% comes off whatever a hit had left after Fortitude, and "
+    + "the 60% Fortitude cap does not bind it - a capped build still gains the full 8%. "
     + "The weapon bonus is taken to cover everything you do while that weapon is held. "
     + "Levelling cost is known exactly — "
     + `ceil(3 + level × 0.12) per level, ${fmtNum(totalProfXp())} to reach 400 — but the xp `

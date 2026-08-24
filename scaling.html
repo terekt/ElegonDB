@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Elegon DB — Scaling</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=9e66df23">
+<link rel="stylesheet" href="style.css?v=bbd7233b">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -42,8 +42,8 @@
   <div id="sheet"></div>
 </div>
 
-<script src="data.js?v=9e66df23"></script>
-<script src="app.js?v=9e66df23"></script>
+<script src="data.js?v=bbd7233b"></script>
+<script src="app.js?v=bbd7233b"></script>
 <script>
 /* Interactive scaling curves.
 
@@ -492,7 +492,7 @@ function readoutLine(parent) {
     x: {min: 0, max: 1600, name: "Fortitude", label: "Fortitude"},
     y: {fmt: pct1, min: 0, max: 0.7},
     marks: [{x: CAP_AT, label: "cap binds at " + CAP_AT}],
-    hmarks: [{y: GAME.MITIGATION_CAP, label: "hard cap 60%"}],
+    hmarks: [{y: GAME.MITIGATION_CAP, label: "Fortitude caps at 60%"}],
     series: [{name: "Mitigation", f: f => GAME.mitigation(f)}],
     tableAt: [0, 100, 250, 500, 750, 1000, 1250, 1600],
   });
@@ -511,7 +511,8 @@ function readoutLine(parent) {
       (def ? ", and Defense " + def + " takes " + pct1(dr) + " off what is left" : "") +
       " — " + pct1(through) + " of the raw number reaches you. " +
       (fort >= CAP_AT
-        ? "You are past the cap: the next hundred Fortitude is worth nothing at all here."
+        ? "You are past the cap: the next hundred Fortitude is worth nothing at all here, "
+          + "though Defense is unaffected by it and keeps paying in full."
         : "The next hundred Fortitude is worth " + pct1(next) + " more, and the cap binds at " +
           CAP_AT + ".");
   };
