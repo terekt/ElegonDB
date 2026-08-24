@@ -794,6 +794,28 @@ dialog.sheet{width:min(940px,94vw)}
 .mk-quest{--c:#4f9d69}
 .mk-mine{--c:#c98f3b}
 
+/* A boss is the reason you entered the rift, and at 25px it was the same dot as the fourteen
+   Ashscale Prowlers standing around it. Three cues, because one is never enough at the
+   zoom-out where a whole map fits the screen: half again the size, a second ring in the
+   site's amber outside the family colour, and the level badge pulled up to match. Not
+   animated - the same argument as the portal below, that movement draws the eye to whichever
+   marker moves rather than whichever matters. */
+.mk-mob.boss{width:37px;height:37px;z-index:2;
+  box-shadow:0 0 0 2.5px var(--c,#e2683c),
+             0 0 0 4px rgba(0,0,0,.6),
+             0 0 0 6px var(--gold),
+             0 0 0 7px rgba(0,0,0,.55),
+             0 2px 7px rgba(0,0,0,.55)}
+.mk-mob.boss[data-lvl]::after{right:-6px;bottom:-3px;padding:0 4px;
+  font-size:10.5px;line-height:14px}
+/* The portrait is framed for a 25px circle; at 37px the same 152% leaves the model swimming
+   in its disc, so it is zoomed to keep the head roughly the size it is on every other marker. */
+.mk-mob.boss.mkart{background-size:135%}
+/* In the panel the rows are 11px dots in a list - size there would only break the column, so
+   the amber ring does the whole job. */
+.panelrow .mk-mob.boss{width:11px;height:11px;
+  box-shadow:0 0 0 1.5px var(--c,#e2683c),0 0 0 3px var(--gold)}
+
 /* A rift entrance is a hole in the world, so it is drawn as one: three spiral arms wound
    in to a bright core. Still, deliberately — a conic gradient is uniform along each radius
    and cannot wind inward, so the earlier attempt read as a glossy button, and animating it
@@ -1377,6 +1399,9 @@ dialog.sheet{width:min(940px,94vw)}
 @media (max-width:760px){
   .mapview{min-height:250px;max-height:calc(100vh / var(--zoom) - var(--header-h) - 220px)}
   .mk-mob,.mk-npc,.mk-quest,.mk-mine{width:19px;height:19px}
+  /* Kept to the same ratio the wide layout uses, so a boss stays obvious without eating a
+     phone screen; the rings are unchanged, since they read at any size. */
+  .mk-mob.boss{width:28px;height:28px}
   .mk-portal{width:18px;height:18px}
   .mk-respawn{width:15px;height:17px}
   .mapctl{top:8px;right:8px;gap:4px}

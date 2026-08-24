@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Elegon DB — Maps</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=199f2a9f">
+<link rel="stylesheet" href="style.css?v=3a1febd0">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -98,8 +98,8 @@
   <p class="note" id="note"></p>
 </div>
 
-<script src="data.js?v=199f2a9f"></script>
-<script src="app.js?v=199f2a9f"></script>
+<script src="data.js?v=3a1febd0"></script>
+<script src="app.js?v=3a1febd0"></script>
 <script>
 /* The interactive map.
    Markers live inside a stage sized to the capture in image pixels, so a marker's position
@@ -185,6 +185,7 @@ function describe(code, id) {
     const m = MONSTER_BY_ID.get(id);
     const src = SOURCE_BY_ENEMY.get(id);
     return {kind: "mob", name: m ? m.name : "Enemy " + id, lvl: m ? m.lvl : 0,
+            boss: !!(m && m.boss),
             note: m && m.aggressive ? "aggressive" : "", colour: creatureColour(id, "tint"),
             disc: creatureColour(id, "disc"), badge: creatureColour(id, "badge"),
             art: {kind: "monsters", id, has: !!(m && m.icon)}, monster: m,
@@ -237,6 +238,12 @@ const mapsel = document.getElementById("mapsel");
 for (const m of D.maps) {
   const chip = el("span", "chip", m.name + (m.img ? "" : " ·"));
   if (!m.img) chip.title = m.name + " has no terrain to draw — shown as a grid";
+  // A drawn plan and a photograph of the ground are different kinds of claim, so the one
+  // that was derived says so rather than passing itself off as a picture of the place.
+  else if (m.plan)
+    chip.title = m.name + " is drawn from the rift's collision mesh, not photographed: the "
+               + "game's own capture of a breach looks straight down onto the rock that "
+               + "closes over it. Lighter ground is higher.";
   chip.onclick = () => showMap(m.id);
   chip.dataset.map = m.id;
   mapsel.appendChild(chip);
@@ -519,6 +526,9 @@ function draw() {
       mk.dataset.lvl = p.lvl;
       mk.style.setProperty("--b", p.badge);
     }
+    // Three of a rift's roster are the reason you are in it, and at the same 25px as the
+    // fourteen Ashscale Prowlers around them they were impossible to pick out.
+    if (p.boss) mk.classList.add("boss");
     // The creature itself, cropped into the circle. Without a portrait the marker falls
     // back to the plain tinted disc, which is what the colour was doing on its own before.
     if (p.art && p.art.has) {
