@@ -2031,3 +2031,7 @@ button:disabled:hover{border-color:var(--line);color:var(--ink)}
 }
 .sitever b{color:var(--dim);font-weight:600;font-variant-numeric:tabular-nums}
 @media (max-width:640px){ .sitever{text-align:left;margin:26px auto 18px} }
+
+/* The rift chooser sits where the panel's title was, so it carries the title's weight rather
+   than reading as a row of filters: the game's own face, and the same size the h3 used. */
+.riftpick .chip{font-family:var(--game-font);font-size:15px;letter-spacing:.2px;padding:5px 12px}

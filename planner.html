@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Elegon DB — Character planner</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=e04e2de9">
+<link rel="stylesheet" href="style.css?v=cac2ae72">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -236,9 +236,9 @@
   </div>
 </dialog>
 
-<script src="data.js?v=e04e2de9"></script>
+<script src="data.js?v=cac2ae72"></script>
 <!-- Written by the mod when you log in; absent until then. -->
-<script src="app.js?v=e04e2de9"></script>
+<script src="app.js?v=cac2ae72"></script>
 <script>
 /* The game's slot set and order, from InGameUi.EnumerateCharacterPanelSlots:
    main weapon, off hand, head, neck, shoulder, back, chest, waist, leg, foot, hands. */
@@ -938,13 +938,39 @@ const takenFraction = fortitude =>
    never reads the server's next_attack_time_unix. See ATTACK_INTERVAL in build_site.py. */
 const ATTACK_INTERVAL = D.attackInterval || 3;
 
-function riftPanel(rift) {
-  if (!rift || !(rift.ids || []).length) return;
-  let tier = 0;
+function riftPanel(rifts) {
+  rifts = (rifts || []).filter(r => r && (r.ids || []).length);
+  if (!rifts.length) return;
+  let sel = 0, tier = 0;
 
   const panel = el("div", "attrs rift");
   const head = el("div", "rifthead");
-  head.appendChild(el("h3", null, rift.name));
+
+  /* One panel with a chooser rather than one panel each. The two level-80 rifts are the same
+     fight numerically - all seven creatures pair off on level, health and damage - so showing
+     both at once spent a screen restating the same table. The tier carries across the switch
+     for the same reason: you are changing which roster you are reading, not the fight. */
+  if (rifts.length === 1) {
+    head.appendChild(el("h3", null, rifts[0].name));
+  } else {
+    const pick = el("div", "chipset riftpick");
+    rifts.forEach((r, i) => {
+      const c = el("button", "chip" + (i === sel ? " on" : ""), r.name);
+      c.type = "button";
+      c.setAttribute("aria-pressed", i === sel ? "true" : "false");
+      c.onclick = () => {
+        sel = i;
+        [...pick.children].forEach((x, j) => {
+          x.classList.toggle("on", j === sel);
+          x.setAttribute("aria-pressed", j === sel ? "true" : "false");
+        });
+        render();
+      };
+      pick.appendChild(c);
+    });
+    head.appendChild(pick);
+  }
+
   const line = el("div", "grpline");
   line.append(el("label", null, "Instability"),
               instabilityInput(0, v => { tier = v; render(); }));
@@ -960,6 +986,7 @@ function riftPanel(rift) {
   enhanceNumberInputs(panel);
 
   riftPanels.push(function (fortitude, myHp) {
+    const rift = rifts[sel];
     rows.replaceChildren();
 
     const mit = mitigationFor(fortitude);
@@ -1054,10 +1081,13 @@ function riftPanel(rift) {
   });
 }
 
-/* Ashenroot Grotto ships everywhere. Embermaw is staging only, so its one call sits inside
-   the markers below - the factory above is shared and must stay outside them, or cutting the
-   block would take the released panel with it. */
-riftPanel((D.rifts || {})["ashenroot-breach"]);
+/* Only the rifts at the level ceiling: the lower four are levelling content whose numbers a
+   level 80 build has no use for, and picked by their own level rather than by name so a new
+   top rift joins the chooser the first time it is walked. */
+const RIFTS = Object.values(D.rifts || {});
+const TOP_LEVEL = RIFTS.reduce((n, r) => Math.max(n, r.level || 0), 0);
+riftPanel(RIFTS.filter(r => r.level === TOP_LEVEL)
+               .sort((a, b) => a.name.localeCompare(b.name)));
 
 /* ---- spell panel ---------------------------------------------------------
    Shows what this build's spells actually do. Damage scales on Strength, healing on
