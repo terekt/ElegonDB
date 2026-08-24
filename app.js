@@ -447,29 +447,29 @@ function lootItem(id) {
 }
 
 /**
- * What the site shows is what the game actually gives you, which is not what its loot table
- * says. Across 2,695 recorded kills in the level 80 rift, 3,197 items dropped where the
- * listed rates predict 6,369: a factor of 0.502, 95% interval 0.490 to 0.514.
+ * The site shows the game's own listed drop chances.
  *
- * Flat across the whole range, which is what makes it a rule rather than a fluke — entries
- * listed at 100% came out at 0.483, at 35-80% at 0.496, at 10-15% at 0.544 and under 10% at
- * 0.501, every one overlapping a half. Even the "guaranteed" boss materials drop about half
- * the time.
+ * It did not always. Across 2,695 recorded kills in the level 80 rift, 3,197 items dropped
+ * where the listed rates predicted 6,369 - a factor of 0.502, 95% interval 0.490 to 0.514,
+ * and flat across the whole range rather than concentrated anywhere: entries listed at 100%
+ * came out at 0.483, at 35-80% at 0.496, at 10-15% at 0.544, under 10% at 0.501. Even the
+ * "guaranteed" boss materials dropped about half the time. Nor was it the log missing drops:
+ * every kill row carries the server's own count of what that kill produced, and the recorded
+ * rows matched it on 2,675 of 2,695. So the site halved what it displayed.
  *
- * Not the log missing drops: every kill row carries the server's own count of what that kill
- * produced, and the recorded rows match it on 2,675 of 2,695 kills.
+ * That measurement is no longer about this game. Every one of those kills was recorded
+ * between 9 and 15 August; v3492098 landed on the 22nd and replaced rift loot outright -
+ * the gear moved to a per-map reward table and each rift enemy kept a single 2.5% row for a
+ * caster weapon. The rates that were halved are among the 407 rows build_site now holds back
+ * as retired. Applying a factor measured on a system the game has removed, in caves it has
+ * since rebuilt, is the same mistake as quoting those retired rates.
  *
- * Applied to what MONSTERS drop, though only that rift has been measured in any depth — 29
- * kills elsewhere is too few to say anything (0.34, interval 0.24-0.45). The listed figure
- * stays in every cell's tooltip, so the game's own number is never out of reach.
- *
- * Not applied to gathering nodes. The measurement is 2,695 kills and says nothing about
- * mining, which does not roll a kill's loot table at all: a vein is a cast that completes
- * or is interrupted, and its ore is inserted straight into a bag slot rather than into
- * current_chunk_loot. Halving it would have printed "50%" beside four ores the game lists —
- * and, being a gather rather than a roll, almost certainly gives — at 100%.
+ * So dropFactor is 1 and the listed number is what you see. It can be settled again whenever
+ * it matters: turn LogKills on, kill things on the current build, and compare. The factor
+ * and the measurement that produced it are kept in build_site rather than deleted, so
+ * re-applying is a one-line change and not a re-derivation.
  */
-const DROP_RATE = {factor: D.dropFactor === undefined ? 0.502 : D.dropFactor};
+const DROP_RATE = {factor: D.dropFactor === undefined ? 1 : D.dropFactor};
 
 const dropFactorFor = e => (e.src && e.src.node) ? 1 : DROP_RATE.factor;
 
@@ -1037,9 +1037,9 @@ function lootNote(src) {
   const parts = [src.node
     ? "Harvested from the world rather than killed, so chances are per harvest."
     : "Chances are per kill, and every entry is rolled independently."];
-  // The measured factor is 2,695 kills. It says nothing about gathering, so a node's
-  // figures are the game's own and are labelled as such rather than quietly halved.
-  if (src.node) {
+  // Only says anything when a factor is actually being applied. With none, every figure on
+  // the page is the game's own and there is nothing to explain.
+  if (src.node && DROP_RATE.factor !== 1) {
     parts.push("Shown as the game's table lists them: the measured drop rate applied to "
              + "the rest of the site comes from kills, and gathering was not part of it.");
   } else if (DROP_RATE.factor !== 1) {
