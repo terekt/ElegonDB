@@ -2035,3 +2035,16 @@ button:disabled:hover{border-color:var(--line);color:var(--ink)}
 /* The rift chooser sits where the panel's title was, so it carries the title's weight rather
    than reading as a row of filters: the game's own face, and the same size the h3 used. */
 .riftpick .chip{font-family:var(--game-font);font-size:15px;letter-spacing:.2px;padding:5px 12px}
+
+/* The terrain overlay sits inside the stage, so it inherits the pan and zoom transform and
+   stays registered with the picture underneath at every scale. isolation:isolate on the
+   stage keeps a blend mode from reaching past the map into the page behind it. */
+.mapstage{isolation:isolate}
+.terrainlay{position:absolute;top:0;left:0}
+.terrainctl{display:grid;gap:8px;margin:2px 0 4px}
+.terrainctl select{width:100%;padding:6px 8px;border-radius:8px;font-size:12.5px;
+  background:var(--panel2);color:var(--ink);border:1px solid var(--line)}
+.terrainop{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:8px}
+.terrainop span{color:var(--faint);font-size:11px;letter-spacing:.6px;text-transform:uppercase}
+.terrainop input[type=range]{width:100%}
+.terrainctl .note{margin:2px 0 0;font-size:11.5px;line-height:1.5}
