@@ -1912,7 +1912,6 @@ button:disabled:hover{border-color:var(--line);color:var(--ink)}
 .scard{margin:0 0 34px;padding:20px 20px 8px;border:1px solid var(--line);
   border-radius:12px;background:var(--panel)}
 .shead h2{margin:0 0 4px;font-family:var(--game-font);font-size:19px;letter-spacing:.2px}
-.sblurb{margin:0 0 14px;max-width:78ch;color:var(--dim);font-size:13px;line-height:1.55}
 
 /* Controls in one row above the charts they scope, never inside a chart card. */
 .sctl{display:flex;flex-wrap:wrap;gap:10px 22px;align-items:center;

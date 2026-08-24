@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Elegon DB — Scaling</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=11501a71">
+<link rel="stylesheet" href="style.css?v=9e66df23">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -39,16 +39,11 @@
   <div class="hero">
     <h1>Scaling</h1>
   </div>
-  <p class="lede">How each number the game runs on answers to its input — where a stat keeps
-    paying, where it quietly stops, and what it costs to get there. Drag a control to pin a
-    reading; hover a curve for any point on it.</p>
-
   <div id="sheet"></div>
-  <p class="note" id="foot"></p>
 </div>
 
-<script src="data.js?v=11501a71"></script>
-<script src="app.js?v=11501a71"></script>
+<script src="data.js?v=9e66df23"></script>
+<script src="app.js?v=9e66df23"></script>
 <script>
 /* Interactive scaling curves.
 
@@ -322,11 +317,10 @@ function lineChart(opts) {
 const sheet = document.getElementById("sheet");
 
 /** A titled block: one control row above the charts that row scopes. */
-function section(title, blurb) {
+function section(title) {
   const s = el("section", "scard");
   const h = el("div", "shead");
   h.appendChild(el("h2", null, title));
-  if (blurb) h.appendChild(el("p", "sblurb", blurb));
   const ctl = el("div", "sctl");
   const body = el("div", "sbody");
   s.append(h, ctl, body);
@@ -366,10 +360,7 @@ function readoutLine(parent) {
   const RANGE_MAX = (typeof INSTABILITY_UI_LIMIT === "number") ? INSTABILITY_UI_LIMIT : 2000;
   let range = 60, tier = 20;
 
-  const s = section("Rift instability",
-    "One dial raises everything in a rift at once, and nothing caps it — a portal offers one " +
-    "tier above your best clear, forever. It is also the only mechanic in the game with a " +
-    "soft cap: past tier 10 the monsters slow down, and past about tier 40 the rewards stop.");
+  const s = section("Rift instability");
 
   const out = readoutLine(null);
   let enemies, loot, flaw, rewards;
@@ -492,9 +483,7 @@ function readoutLine(parent) {
 
 /* ---- mitigation ---------------------------------------------------------- */
 {
-  const s = section("Fortitude and Defense",
-    "The two ways damage is taken off a hit. Fortitude saturates and then stops dead at a " +
-    "hard 60% — the only true ceiling on the page — while Defense is flat all the way up.");
+  const s = section("Fortitude and Defense");
 
   const CAP_AT = GAME.mitigationCapAt();
   const chart = lineChart({
@@ -534,9 +523,7 @@ function readoutLine(parent) {
 
 /* ---- alacrity ------------------------------------------------------------ */
 {
-  const s = section("Alacrity",
-    "Cast speed, on the same saturating shape as Fortitude but with the character's level " +
-    "in the denominator — so the identical stat is worth steadily less as you level.");
+  const s = section("Alacrity");
 
   let lvl = 80, ala = 200;
   const chart = lineChart({
@@ -572,9 +559,7 @@ function readoutLine(parent) {
 
 /* ---- health -------------------------------------------------------------- */
 {
-  const s = section("Health",
-    "Flat and unbounded, which makes it the one stat on the page that never disappoints — " +
-    "and the reason a point of Vitality is worth more than a level.");
+  const s = section("Health");
 
   let cls = Object.keys(D.classes || {})[0] || "1", vit = 100, lvl = 80;
   const base = () => (D.classes[cls] || {}).health_base || 162;
@@ -638,9 +623,7 @@ if (D.levelXp && Object.keys(D.levelXp).length) {
   let run = 0;
   for (let L = 1; L <= top; L++) { run += xp[L] || 0; cum[L] = run; }
 
-  const s = section("Character levelling",
-    "Nine orders of magnitude between the first level and the last, which is why this one " +
-    "is drawn on a log scale — on a linear axis every level below 70 is a flat line on zero.");
+  const s = section("Character levelling");
 
   const chart = lineChart({
     title: "Experience to finish a level",
@@ -682,9 +665,7 @@ if ((D.skills || []).some(sk => sk.group === "Combat")) {
   };
   const total = cumXp(MAXL);
 
-  const s = section("Weapon proficiency",
-    "Added in v3489988. The payoff is perfectly flat — 0.025% a point, all the way — while " +
-    "the cost per level keeps rising, so the curve you are really buying is the cost one.");
+  const s = section("Weapon proficiency");
 
   const chart = lineChart({
     title: "Experience to reach a proficiency level",
@@ -714,11 +695,6 @@ if ((D.skills || []).some(sk => sk.group === "Combat")) {
   sl.sync();
 }
 
-document.getElementById("foot").textContent =
-  "Every curve here is the client's own arithmetic, drawn from the same functions the " +
-  "planner uses. Where a formula is not in the client at all — how much experience a hit " +
-  "awards, how many points a level grants — it was measured from recorded play and is " +
-  "marked as such on the page that uses it.";
 </script>
 </body>
 </html>
