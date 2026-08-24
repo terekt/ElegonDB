@@ -2093,3 +2093,7 @@ button:disabled:hover{border-color:var(--line);color:var(--ink)}
 .srcrift{border-color:color-mix(in oklab,var(--gold) 40%,transparent);
   color:color-mix(in oklab,var(--gold) 85%,var(--ink))}
 .srcrift.boss{border-color:var(--gold);color:var(--gold)}
+
+/* Two pictures of the same ground, chosen by chip. Staging only. */
+.srcwrap{display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 6px}
+.srcwrap .chip{font-size:12px;padding:4px 10px}
