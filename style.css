@@ -2102,3 +2102,16 @@ button:disabled:hover{border-color:var(--line);color:var(--ink)}
    and a spelt-out rift name crowded the other three out. */
 .srcrift{display:inline-flex;align-items:center;gap:4px;font-variant-numeric:tabular-nums}
 .riftico{width:12px;height:12px;flex:0 0 auto;object-fit:contain;opacity:.9}
+
+/* A rift filter wears the rift's own mark. Only on the control: the option list is drawn by
+   the operating system and will not take an image, so the initials in each label are what
+   carry the rift inside the list - the same two letters the From column shows. */
+select.riftsel{padding-left:30px;
+  background-image:url("icons/ui/portal.png"),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%23a3a3a3' stroke-width='1.6' stroke-linecap='round'/></svg>");
+  background-repeat:no-repeat,no-repeat;
+  background-position:left 9px center,right 10px center;
+  background-size:14px,11px}
+select.riftsel:hover{
+  background-image:url("icons/ui/portal.png"),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%23eaeaea' stroke-width='1.6' stroke-linecap='round'/></svg>")}
