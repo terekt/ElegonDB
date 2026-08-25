@@ -338,7 +338,7 @@ button.gold:hover{filter:brightness(1.08);color:var(--gold-ink)}
    at Normal, exactly as ItemQuality.GetBorderColor returns null there), and
    Modern Antiqua labels. */
 /* paperdoll · attributes · rift · spells, collapsing as the viewport narrows */
-.plan{display:grid;grid-template-columns:auto 300px 340px 340px;gap:16px;
+.plan{display:grid;grid-template-columns:auto 300px 400px 340px;gap:16px;
   align-items:start;justify-content:start}
 
 /* Sized to its contents rather than stretched: the panel is 256px wide in game, so a
@@ -519,6 +519,9 @@ td .framed{margin:-7px 0}
 .riftrow .rn{font-size:14.5px;line-height:1.3;white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis}
 .riftrow .rl{font-size:11.5px;color:var(--faint);letter-spacing:.3px}
+/* The class proc, named on the spell that lights it and the spell it pays for. Amber,
+   because it is a thing that happens to you rather than a number you chose. */
+.riftrow .rproc{font-size:11.5px;color:var(--gold);line-height:1.35;margin-top:2px}
 .riftrow .rfx{font-size:11.5px;color:var(--parchment);line-height:1.35;
   white-space:normal;margin-top:2px}
 .riftrow .rv{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -612,6 +615,10 @@ td.chance{width:104px;min-width:76px;padding-right:14px;text-align:right}
 .c-often{color:var(--good)}
 .c-mid{color:color-mix(in oklab,var(--ink) 55%,transparent)}
 .c-rare{color:var(--gold)}
+/* A rate nobody has measured. Quieter than the three that are known, and its meter
+   track is left empty rather than drawn at zero - zero would say "never". */
+.c-unknown{color:var(--faint)}
+.c-unknown .cval{font-weight:400}
 .muted{color:var(--dim)}
 .boss{color:var(--gold)}
 
@@ -916,7 +923,7 @@ dialog.sheet{width:min(940px,94vw)}
 }
 
 @media (max-width:1800px){
-  .plan{grid-template-columns:auto 300px 340px}
+  .plan{grid-template-columns:auto 300px 400px}
 }
 @media (max-width:1500px){
   .plan{grid-template-columns:auto 320px}
@@ -1683,7 +1690,7 @@ button:disabled:hover{border-color:var(--line);color:var(--ink)}
 /* ---- planner: spell rows and the spell tooltip ---------------------------- */
 /* The meta line under a spell's name. Three facts of two kinds: what sort of spell it is
    (a category, so a tag) and what it costs in time (numbers, so they read as numbers). */
-.spellmeta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.spellmeta{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;min-width:0}
 .dtag{font-family:var(--panel-font);font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;
   padding:2px 7px;border-radius:99px;border:1px solid var(--line);color:var(--faint);
   white-space:nowrap}
@@ -2044,7 +2051,9 @@ button:disabled:hover{border-color:var(--line);color:var(--ink)}
 
 /* The rift chooser sits where the panel's title was, so it carries the title's weight rather
    than reading as a row of filters: the game's own face, and the same size the h3 used. */
-.riftpick .chip{font-family:var(--game-font);font-size:15px;letter-spacing:.2px;padding:5px 12px}
+/* The breach chooser wears the game's face because it names a place in the game, the
+   same way the panel heading it replaces did. */
+select.riftpick{font-family:var(--game-font);font-size:15px;letter-spacing:.2px}
 
 /* The terrain overlay sits inside the stage, so it inherits the pan and zoom transform and
    stays registered with the picture underneath at every scale. isolation:isolate on the

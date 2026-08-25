@@ -1,0 +1,422 @@
+/* ============================================================================
+   Elegon DB — visual identity redesign
+   Drop-in override. Load it AFTER style.css and change nothing in that file:
+
+     <link rel="stylesheet" href="style.css?v=841cbcc2">
+     <link rel="stylesheet" href="elegon-redesign.css?v=1">
+
+   Every rule here targets a selector that already exists in style.css. Nothing
+   is renamed, nothing is deleted, and no specificity war is needed — later
+   wins at equal weight, which is why the selectors below are copied verbatim
+   from the original rather than made more specific.
+
+   Three of the redesign's changes CANNOT be done from CSS. They are markup and
+   are listed as tasks 3, 5 and 6 in README.md. This file is the other 90%.
+   ============================================================================ */
+
+/* ---------------------------------------------------------------------------
+   1. THE SUBSTRATE, WARMED
+   The whole redesign turns on this block. Every surface token in style.css is
+   chroma 0 — a cold grey — under a game lit by lava, autumn woods and
+   torchlight. Each one below is the SAME LIGHTNESS as the value it replaces,
+   moved to hue 52–58 with chroma at or below 0.018. Nothing is saturated; the
+   warmth is only obvious beside the old grey, which is the point.
+
+   The amber, the quality colours, the panel-dump colours and the two chart
+   series are NOT touched. Those are the game's own numbers and are already
+   correct.
+   --------------------------------------------------------------------------- */
+:root{
+  --bg:        oklch(0.152 0.011 58);   /* was oklch(0.145 0 0) */
+  --panel:     oklch(0.198 0.013 56);   /* was oklch(0.205 0 0) */
+  --panel2:    oklch(0.232 0.014 55);   /* was oklch(0.269 0 0) — also pulled down a step */
+  --line:      oklch(0.312 0.014 52);   /* was oklch(0.269 0 0) — lifted, it was too close to panel2 */
+  --line-soft: oklch(0.248 0.012 54);   /* was oklch(0.235 0 0) */
+  --ink:       oklch(0.935 0.008 70);   /* was oklch(0.922 0 0) */
+  --dim:       oklch(0.715 0.012 66);   /* was oklch(0.708 0 0) */
+  --faint:     oklch(0.575 0.013 62);   /* was oklch(0.556 0 0) */
+  --strong:    oklch(0.98 0.006 84);    /* was #fff — pure white is colder than the page it sits on */
+  --shadow:    rgba(0,0,0,.6);          /* unchanged */
+
+  /* New. Three tokens the redesign adds; nothing in style.css defines these. */
+
+  /* The raised surface a dialog and the sticky header sit on: one step above
+     --panel so a header over a panel still reads as in front of it. */
+  --panel-raised: oklch(0.178 0.013 56);
+
+  /* The sunk surface: inputs, wells, the inside of a meter. style.css uses
+     oklch(0.145 0 0) inline for these; this is its warm counterpart. */
+  --sunk: oklch(0.128 0.010 58);
+
+  /* The zero step. A stat column 20 wide is mostly noughts, and a column of
+     them drowns the three figures that matter — so a zero is a dot in this
+     colour rather than a 0. See task 7. */
+  --ghost: oklch(0.40 0.010 58);
+
+  /* The second warm. Used ONLY to light a masthead — never for text, never for
+     a border, never for a fill behind content. */
+  --ember: oklch(0.66 0.15 46);
+
+  /* The light-fall: one warm source off the top-left corner and a colder amber
+     glance off the right. This is the identity's most portable element — it
+     needs no asset, works at any width, and never competes with a screenshot. */
+  --light-fall:
+    radial-gradient(120% 180% at 6% -60%, color-mix(in oklab, var(--ember) 30%, transparent), transparent 62%),
+    radial-gradient(70% 140% at 88% -30%, color-mix(in oklab, var(--gold) 10%, transparent), transparent 70%);
+
+  /* The hairline that closes a masthead: amber at the left edge, gone by two thirds. */
+  --gold-hairline: linear-gradient(90deg, var(--gold) 0%,
+    color-mix(in oklab, var(--gold) 18%, transparent) 34%, transparent 72%);
+
+  /* The brandmark tile. See task 3. */
+  --gold-tile: linear-gradient(165deg, oklch(0.92 0.16 96), oklch(0.76 0.18 82));
+}
+
+/* Light theme, same treatment: same lightness, warm hue. The amber, the
+   darkened quality colours and the re-stepped chart series stay as they are. */
+:root[data-theme="light"]{
+  --bg:        oklch(0.975 0.008 82);   /* was oklch(0.978 0 0) */
+  --panel:     oklch(1 0.002 84);       /* was oklch(1 0 0) */
+  --panel2:    oklch(0.952 0.008 78);   /* was oklch(0.955 0 0) */
+  --line:      oklch(0.878 0.010 76);   /* was oklch(0.878 0 0) */
+  --line-soft: oklch(0.925 0.008 76);   /* was oklch(0.928 0 0) */
+  --ink:       oklch(0.28 0.012 60);    /* was oklch(0.26 0 0) */
+  --dim:       oklch(0.46 0.012 60);    /* was oklch(0.45 0 0) */
+  --faint:     oklch(0.575 0.012 60);   /* was oklch(0.57 0 0) */
+  --strong:    oklch(0.22 0.014 60);    /* was oklch(0.18 0 0) */
+
+  --panel-raised: oklch(1 0.002 84);
+  --sunk:      oklch(0.985 0.004 84);
+  --ghost:     oklch(0.78 0.008 76);
+  --ember:     oklch(0.80 0.13 68);
+}
+
+/* ---------------------------------------------------------------------------
+   2. THE MASTHEAD
+   style.css gives .hero 18px of bottom margin and nothing else. It becomes the
+   band that carries the identity: the light-fall painted behind it, the title
+   in Alice at 38px, and the amber hairline closing it.
+
+   The negative margins pull the band out to the edges of .wrap's 26px padding
+   so it reads as a full-width band rather than a card. .wrap has no overflow
+   rule, so this is safe.
+   --------------------------------------------------------------------------- */
+.wrap > .hero{
+  position:relative;
+  width:auto;
+  margin:-26px -26px 18px;
+  padding:30px 26px 24px;
+  background:var(--light-fall);
+  border-bottom:1px solid var(--line);
+}
+.wrap > .hero::after{
+  content:"";position:absolute;left:0;right:0;bottom:-1px;height:1px;
+  background:var(--gold-hairline);
+}
+/* 27px was too quiet for the one thing on the page that says where you are. */
+.wrap > .hero h1{
+  font-family:var(--panel-font);
+  font-size:38px;line-height:1.1;margin:0;letter-spacing:0;
+}
+
+/* The descriptive paragraph under every page title is deleted, not restyled —
+   see task 4. This rule is the safety net for any that survive: it keeps them
+   from sitting on the hairline. If task 4 is done properly no element matches. */
+.wrap > .hero p{margin:8px 0 0;max-width:66ch}
+
+/* ---------------------------------------------------------------------------
+   3. THE HEADER
+   Structure is already right — brand, nav, theme switch hard right. What
+   changes is the surface it sits on and the lockup, which needs the markup in
+   task 3. These rules style that new markup and are inert until it lands.
+   --------------------------------------------------------------------------- */
+header{
+  background:color-mix(in oklab, var(--panel-raised) 88%, transparent);
+  padding:13px 26px;
+}
+
+/* The lockup. A gold tile carrying a serif E and a smaller db, beside the
+   wordmark — a sibling to the game's own E tile rather than a copy of it, and
+   the db lives INSIDE the mark so the mark alone still says what the site is. */
+header .brand{
+  display:flex;align-items:center;gap:11px;
+  font-size:20px;text-decoration:none;line-height:1;
+}
+header .brand .mark{
+  /* The E and the db sit SIDE BY SIDE on one baseline with a 1px gap, which is how the
+     design system's own Brandmark builds them. The rule as shipped said place-items:center
+     on a two-child grid, and a two-child grid flows in rows - so the db stacked under the
+     E and the tile read as a two-line monogram. */
+  display:inline-grid;grid-auto-flow:column;
+  align-items:baseline;justify-content:center;align-content:center;gap:1px;
+  flex:0 0 auto;
+  width:34px;height:34px;border-radius:8px;background:var(--gold-tile);
+}
+header .brand .mark b,
+header .brand .mark i{
+  font-family:var(--panel-font);font-weight:400;font-style:normal;
+  color:oklch(0.16 0.01 60);line-height:1;
+}
+header .brand .mark b{font-size:18px}
+header .brand .mark i{font-size:10px;opacity:.72}
+/* 4px, not a word space plus a gap: at 20px Alice the two together read as a typo. */
+header .brand .word{
+  display:flex;align-items:center;gap:4px;white-space:nowrap;color:var(--strong);
+}
+header .brand .word em{font-style:normal;color:var(--gold)}
+
+/* style.css colours .brand span gold, which was ELEGON. The wordmark now puts
+   the amber on DB instead, so that rule has to be neutralised for the new
+   markup. Harmless if the old markup is still in place on some pages. */
+header .brand .mark,
+header .brand .word{color:inherit}
+
+/* ---------------------------------------------------------------------------
+   4. TABLES
+   Density and structure are unchanged — they were right. The head moves onto
+   the new, darker --panel2 and the sorted column is named in amber.
+   --------------------------------------------------------------------------- */
+th{background:var(--panel2);letter-spacing:.75px}
+
+/* An item or creature NAME belongs in the client's own face — this is the
+   single strongest tie to the game in the whole redesign. A table whose names
+   are set in the game's type reads as part of the game rather than as a page
+   about it. Requires the class in task 6. */
+.iname,.mname{
+  font-family:var(--game-font);font-weight:400;font-size:16px;line-height:1.2;
+}
+
+/* A zero is a dot in the ghost step, never a 0 and never blank: an empty cell
+   reads as missing data. Requires task 7. */
+.z{color:var(--ghost)}
+
+/* ---------------------------------------------------------------------------
+   5. PANELS
+   .attrs, .mappanel and .rift are three near-identical rules in style.css.
+   All three get the raised surface and the panel-dump heading treatment.
+   --------------------------------------------------------------------------- */
+.attrs,.mappanel,.rift{background:var(--panel);border-color:var(--line)}
+
+/* The section label inside a side panel: a rule and a whisper, not a heading.
+   style.css already has .panelhead; this only warms and quietens it. */
+.panelhead{
+  font-family:var(--ui-font,inherit);
+  font-size:10.5px;letter-spacing:.9px;text-transform:uppercase;
+  color:var(--faint);
+}
+
+/* A kind row's swatch is 11px because it names a CATEGORY, not a creature.
+   style.css already gets this right (.panelrow .mk) — this only stops the
+   glyph versions in task 8 from inheriting the disc treatment. */
+.panelrow .mk.glyph{
+  background-color:transparent;box-shadow:none;border:0;border-radius:0;
+  width:17px;height:17px;background-size:contain;background-position:center;
+  background-repeat:no-repeat;
+}
+
+/* ---------------------------------------------------------------------------
+   6. INPUTS AND CONTROLS
+   --------------------------------------------------------------------------- */
+input,select,textarea{background-color:var(--sunk)}
+button{transition:border-color .12s,color .12s,background .12s}
+button:hover{border-color:var(--faint);color:var(--ink)}
+button.gold:hover{filter:brightness(1.06)}
+
+/* ---------------------------------------------------------------------------
+   7. OVERLAYS
+   The page keeps its light-fall under the scrim so an overlay still feels lit
+   from the same source. A solid fill is what makes a modal feel like a
+   different site.
+   --------------------------------------------------------------------------- */
+dialog::backdrop{background:rgba(0,0,0,.55);backdrop-filter:blur(2px)}
+dialog{background:var(--panel-raised);border-color:var(--line)}
+.dhead{background:var(--panel-raised);border-bottom-color:var(--line)}
+
+/* The map tooltip: the family tint becomes the card's top accent, so the card
+   and the dot you pointed at are visibly the same object. Set --c per marker
+   in JS, which maps.html already does. */
+.tip{
+  background:color-mix(in oklab, var(--panel) 92%, var(--bg));
+  border-color:var(--line);overflow:hidden;
+}
+
+/* ---------------------------------------------------------------------------
+   8. THE OPTIMIZER
+   Its headline moves into the masthead — see task 9. These rules restyle the
+   figure once it is there. Until then they are inert.
+   --------------------------------------------------------------------------- */
+.hero .answer{display:flex;align-items:flex-end;gap:34px;flex-wrap:wrap}
+/* A figure and the word for it, stacked. optimizer.html's own <style> block does this for
+   .headline .big and .headline .sub, and moving the block into the masthead renamed the
+   container - so those rules stopped matching and every figure ran straight into its own
+   label on one line: "9 304damage per second". */
+.hero .answer .big,
+.hero .answer .sub{display:flex;flex-direction:column;gap:2px}
+.hero .answer .big b{
+  font-family:var(--game-font);font-weight:400;font-size:46px;line-height:1;
+  color:var(--gold);font-variant-numeric:tabular-nums;
+}
+.hero .answer .sub b{
+  font-family:var(--game-font);font-weight:400;font-size:19px;line-height:1.1;
+  color:var(--ink);font-variant-numeric:tabular-nums;
+}
+.hero .answer span{
+  font-size:10.5px;letter-spacing:.9px;text-transform:uppercase;color:var(--faint);
+}
+
+/* An action's colour is keyed to its PLACE on the priority list, so the list
+   and the timeline are two views of one object. optimizer.html already does
+   this; the numbered pip is new and makes the tie visible in the list itself. */
+.prow .num{
+  display:grid;place-items:center;width:26px;height:26px;border-radius:50%;
+  border:1px solid currentColor;font-family:var(--game-font);font-size:13px;
+}
+
+/* ---------------------------------------------------------------------------
+   9. SCROLLBARS
+   Firefox takes the two standard properties; WebKit needs its own pseudo-
+   elements, so both are declared rather than leaving one browser a light
+   scrollbar on a dark page.
+   --------------------------------------------------------------------------- */
+*{scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+::-webkit-scrollbar{width:12px;height:12px}
+::-webkit-scrollbar-track{background:color-mix(in oklab, var(--bg) 60%, black)}
+::-webkit-scrollbar-thumb{
+  background:var(--line);border-radius:999px;
+  border:3px solid transparent;background-clip:padding-box;
+}
+::-webkit-scrollbar-thumb:hover{background:var(--dim);background-clip:padding-box}
+::-webkit-scrollbar-thumb:active{background:var(--gold);background-clip:padding-box}
+
+/* ---------------------------------------------------------------------------
+   10. THE MAPS LEGEND — the art behind task 8
+   The rule in section 5 strips the disc treatment off a .glyph row; these say
+   what goes in its place. Every image here is already in the repo except the
+   skull, which the project owner supplied because the export carries no
+   generic creature glyph.
+   --------------------------------------------------------------------------- */
+
+/* The export's skull is dark on transparent. The filter is a tint, not a
+   recolour: it inverts to light and then walks the hue to the panel's amber. */
+.panelrow .mk-mob.glyph{
+  background-image:url("icons/ui/skull.png");
+  filter:invert(1) sepia(1) saturate(2.2) hue-rotate(-14deg) brightness(1.05);
+}
+
+/* Literally the Mining skill's own icon. */
+.panelrow .mk-mine.glyph{background-image:url("icons/ui/pickaxe.png")}
+
+/* The portal already wears the game's portal art inside its own disc and blue
+   ring, and the gravestone is already the gothic ring cross. Neither is
+   redrawn — they are only brought up to the glyph rows' size. */
+.panelrow .mk-portal{width:17px;height:17px}
+.panelrow .mk-respawn{width:15px;height:17px}
+
+/* A person has no glyph in the export, so the mark is built rather than drawn:
+   a tapered stem over a dot, both in the amber, which is the one shape a game
+   map can use for "someone to talk to" without borrowing anything. */
+.panelrow .mk-npc.glyph{
+  display:grid;justify-items:center;align-content:center;gap:2px;
+  filter:drop-shadow(0 1px 1px rgba(0,0,0,.5));
+}
+.panelrow .mk-npc.glyph i{
+  display:block;
+  background:linear-gradient(180deg, var(--gold),
+             color-mix(in oklab, var(--gold) 60%, black));
+}
+.panelrow .mk-npc.glyph .stem{width:3.5px;height:9px;border-radius:2px}
+.panelrow .mk-npc.glyph .dot{width:3.5px;height:3.5px;border-radius:50%}
+
+/* ---------------------------------------------------------------------------
+   11. WHY SECTION 2 IS SCOPED TO `.wrap > .hero`
+   As shipped, section 2 targeted a bare `.hero`. The class does double duty in
+   style.css and the collision showed up twice:
+
+   1. style.css carries TWO `.hero` rules. Line 218 is the page masthead; line
+      1019 is the SHEET hero — the icon-and-text block at the top of a monster
+      or item dialog, which reuses the class. The later rule wins for both, and
+      it sets `width:100%`. A block with width:100% and a negative margin does
+      not widen, it SLIDES: the band's left edge went out to the window and its
+      right edge stayed on the content box, 52px short, taking the border and
+      the amber hairline with it. Hence `width:auto`.
+
+   2. The band itself was landing inside every dialog. `.dhero` has 2px of
+      padding, so -26px margins pushed the sheet hero past the dialog's own
+      inner edge on the left and left it short on the right, with a light-fall
+      glow and a border across the middle of the sheet.
+
+   The page masthead is always a direct child of `.wrap`; the sheet hero never
+   is. The child combinator separates them without editing style.css.
+   --------------------------------------------------------------------------- */
+
+/* ---------------------------------------------------------------------------
+   12. THE MASTHEAD'S FIGURES
+   The counts that replace the page description. .herorow is style.css's own
+   title row — the h1 grows, so anything after it sits hard right on the
+   title's baseline.
+   --------------------------------------------------------------------------- */
+.wrap > .hero .herocounts{
+  font-size:12px;letter-spacing:.2px;color:var(--faint);
+  font-variant-numeric:tabular-nums;
+}
+
+/* ---------------------------------------------------------------------------
+   13. THE MASTHEAD AT NARROW WIDTHS
+   Section 2's band breaks out of .wrap by pulling exactly as far as .wrap
+   pads, so the two numbers have to agree at every breakpoint. style.css line
+   978 drops that padding to 16px at 760px and under; a -26px pull there is
+   10px too far on each side, which is a horizontal scrollbar on a phone.
+   --------------------------------------------------------------------------- */
+@media (max-width:760px){
+  .wrap > .hero{margin:-16px -16px 18px;padding:22px 16px 20px}
+}
+
+/* ---------------------------------------------------------------------------
+   14. LARGE SCREENS
+   .wrap is a centred column - 1560px, stepping to 1800/1900/2000 on the widest
+   displays - while <header> has always run the full width of the window. With
+   the masthead added as a third width, a 2560px display showed three different
+   left edges stacked on top of each other: the lockup hard against the glass,
+   the band starting 330px in, and the page title inside that again. The band
+   read as a floating card and the header as though it belonged to another page.
+
+   So there are two edges now instead of three, and they agree:
+
+     the BAND goes edge to edge, because a band that stops is a card;
+     its TEXT, and the header's, line up with the column the page is in.
+
+   The band's own width comes from the classic pair: pull each side out by the
+   difference between half the viewport and half the column, then pad it back.
+   Two corrections to that:
+
+   `/ var(--zoom)`, because style.css zooms the whole page on a wide screen -
+   1.15 past 1700px, 1.35 past 2200 - and vw does not account for zoom, while
+   the percentage does. Without it the two halves of the calc are in different
+   units and the band overhangs by hundreds of pixels. style.css already keeps
+   the token in step with the zoom for its own 100vh sums; this is the same
+   correction applied to the same problem.
+
+   `overflow-x:clip` on the ROOT, because 100vw counts the scrollbar and the
+   document does not, so a few pixels still hang off the edge. On the root
+   rather than the body: on the body it is propagated to the viewport and
+   Chrome kept the overflow scrollable. Clip rather than hidden, so no scroll
+   container is created and the sticky panels on the planner and the maps page
+   keep working.
+   --------------------------------------------------------------------------- */
+:root{overflow-x:clip}
+
+.wrap > .hero{
+  margin-inline:calc(50% - 50vw / var(--zoom));
+  padding-inline:calc(50vw / var(--zoom) - 50%);
+}
+
+/* The header's inner edge follows .wrap's, so the lockup and the page title stand
+   on the same line. .wrap's max-width steps three times and the header steps with it. */
+header{padding-inline:max(26px, calc((100% - 1560px) / 2 + 26px))}
+@media (min-width:1700px){header{padding-inline:max(26px, calc((100% - 1800px) / 2 + 26px))}}
+@media (min-width:2200px){header{padding-inline:max(26px, calc((100% - 1900px) / 2 + 26px))}}
+@media (min-width:3000px){header{padding-inline:max(26px, calc((100% - 2000px) / 2 + 26px))}}
+
+@media (max-width:760px){
+  header{padding-inline:16px}
+}

@@ -495,6 +495,9 @@ const dropFactorFor = e => (e.src && e.src.node) ? 1 : DROP_RATE.factor;
    100%. Everything the site shows and sorts on is this combined figure, so a two-roll
    entry cannot look rarer than it is; the per-roll number stays visible in the tooltip. */
 function effChance(e) {
+  // A breach pool entry has no rate at all - see spreadBreachPools. Null rather than 0:
+  // "we do not know" and "it never drops" are opposite claims and must not share a number.
+  if (e.chance === null || e.chance === undefined) return null;
   const p = e.chance * dropFactorFor(e);
   return e.rolls > 1 ? (1 - Math.pow(1 - p / 100, e.rolls)) * 100 : p;
 }
@@ -526,7 +529,8 @@ function big(v) {
   return (parts[0] === "1.0" ? "" : parts[0] + "×") + "10" + exp;
 }
 
-const fmtPct = p => p >= 99.95 ? "100%"
+const fmtPct = p => (p === null || p === undefined) ? "?"
+  : p >= 99.95 ? "100%"
   : p >= 10 ? Math.round(p) + "%"
   : (Math.round(p * 10) / 10).toString().replace(/\.0$/, "") + "%";
 
@@ -551,6 +555,20 @@ const qtyLabel = e => e.maxQ > 1 ? "×" + e.minQ + "–" + e.maxQ
  */
 function chanceCell(e) {
   const p = effChance(e);
+  if (p === null) {
+    /* An empty track, not a missing one: the column still has to line up, and a bar of
+       zero width would read as "never" - which is the one thing it does not mean. */
+    const td = el("td", "chance c-unknown");
+    const cell = el("span", "cwrap");
+    cell.appendChild(el("b", "cval", "?"));
+    cell.appendChild(el("span", "cmeter"));
+    td.appendChild(cell);
+    const where = (D.mapNames || {})[e.breach] || "The breach";
+    td.title = `${where} names this in its reward table, which carries no rate and no `
+             + `creature. Nothing in the client publishes one, so this is unmeasured `
+             + `rather than rare.`;
+    return td;
+  }
   const td = el("td", "chance " + (p >= 50 ? "c-often" : p >= 15 ? "c-mid" : "c-rare"));
 
   const cell = el("span", "cwrap");
@@ -595,6 +613,67 @@ for (const [mapId, points] of Object.entries(D.spawns || {}))
     const list = SPAWN_POINTS.get(key);
     if (list) list.push([x, z]); else SPAWN_POINTS.set(key, [[x, z]]);
   }
+
+/* ---- the breach pools, spread over the creatures that stand in them --------
+ * D.riftDrops is the game's own per-map reward table, and it names what a breach can give
+ * and nothing else: no rate, no creature. The server rolls it against the MAP rather than
+ * off any loot table, which is why the whole equipment pool of five breaches - a hundred
+ * and eighty-eight items that plainly drop somewhere - had no route back to a creature you
+ * could go and kill.
+ *
+ * So the pool is hung on the creatures of the breach that names it. The equipment pool goes
+ * on every creature in it; the three boss materials go on its bosses, which is as far as
+ * the table's own two buckets let us say. It is deliberately no finer than that: two of
+ * Ashenroot's three materials are named after the boss that presumably carries them
+ * - Vulkara, Obsidian Broodqueen and "Broodqueen Obsidian" - but the third is not, and
+ * assigning it by elimination would be a guess printed as a fact.
+ *
+ * The rate is left UNKNOWN rather than invented. It is in no table the client subscribes
+ * to, measuring one is a few thousand kills per item, and a number we made up would sit in
+ * the same column, in the same type, as the ones we measured. It reads as "?" everywhere a
+ * rate would be.
+ */
+(function spreadBreachPools() {
+  const pools = D.riftDrops || {};
+  if (!Object.keys(pools).length) return;
+
+  const monsters = new Map((D.monsters || []).map(m => [m.id, m]));
+  const byId = new Map();
+  for (const src of DROP.sources) if (!src.node) byId.set(src.id, src);
+
+  const push = (map, key, v) => {
+    const list = map.get(key);
+    if (list) list.push(v); else map.set(key, [v]);
+  };
+
+  for (const [mapId, sets] of Object.entries(pools)) {
+    const rows = (D.spawns || {})[mapId] || [];
+    const here = [...new Set(rows.filter(r => r[0] === SPAWN_ENEMY).map(r => r[1]))]
+      .map(id => monsters.get(id)).filter(Boolean);
+    if (!here.length) continue;                 // a breach nobody has walked yet
+    const bosses = here.filter(m => m.boss);
+
+    for (const [bucket, ids] of Object.entries(sets)) {
+      // If a breach has no boss recorded, the materials go on the whole roster rather
+      // than nowhere - the item still has to be reachable from something.
+      const targets = bucket === "boss" && bosses.length ? bosses : here;
+      for (const m of targets) {
+        let src = byId.get(m.id);
+        if (!src) {
+          // A creature with no measured loot of its own still needs a row to hang on.
+          src = {i: DROP.sources.length, id: m.id, name: m.name, node: false};
+          DROP.sources.push(src);
+          byId.set(m.id, src);
+        }
+        for (const item of ids) {
+          const e = {src, item, chance: null, minQ: 1, maxQ: 1, rolls: 1, breach: mapId};
+          push(DROP.bySource, src.i, e);
+          push(DROP.byItem, item, e);
+        }
+      }
+    }
+  }
+})();
 
 /** Every exported map that has recorded spawns for this thing, with the points. */
 function spawnsFor(type, dataId) {
@@ -968,7 +1047,6 @@ function monsterSheet(src) {
     const cols = [
       {key: "name", label: "Item", left: true},
       {key: "kind", label: "Type", left: true},
-      {key: "slot", label: "Slot", left: true},
       {key: "qty", label: "Qty"},
       {key: "chance", label: "Chance"},
     ];
@@ -976,10 +1054,9 @@ function monsterSheet(src) {
     const table = sheetTable(cols, rows, st, r => {
       const tr = el("tr");
       tr.appendChild(nameCell("items", r.it.id, r.it.icon, r.name,
-                              r.it.equip ? null : "muted", 0,
+                              r.it.equip ? "iname" : "iname muted", 0,
                               r.it.equip ? SCALE.quality : 1));
       tr.appendChild(el("td", "l muted", r.kind || "·"));
-      tr.appendChild(el("td", "l muted", r.slot || "·"));
       tr.appendChild(el("td", "muted", qtyLabel(r.e) || "·"));
       tr.appendChild(chanceCell(r.e));
       return clickableRow(tr, "Where else " + r.name + " drops",
@@ -1452,7 +1529,7 @@ function itemSheet(itemId) {
     const table = sheetTable(cols, rows, st, r => {
       const tr = el("tr");
       const td = nameCell("monsters", r.src.id, r.src.icon, r.name,
-                          r.src.boss ? "boss" : null, 52);
+                          r.src.boss ? "mname boss" : "mname", 52);
       if (r.src.node) td.firstChild.appendChild(el("span", "tag", "gathering"));
       tr.appendChild(td);
       tr.appendChild(el("td", "muted", r.src.node ? "·" : r.lvl));
@@ -1572,7 +1649,7 @@ function npcSheet(npcId) {
     const table = sheetTable(cols, rows, st, r => {
       const tr = el("tr");
       tr.appendChild(nameCell("items", r.id, r.it.icon, r.name,
-                              r.it.equip ? null : "muted", 0,
+                              r.it.equip ? "iname" : "iname muted", 0,
                               r.it.equip ? SCALE.quality : 1));
       tr.appendChild(el("td", "l muted", r.kind || "·"));
       tr.appendChild(el("td", "muted", r.lvl || "·"));

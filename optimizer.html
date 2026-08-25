@@ -4,8 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Elegon DB — Optimizer</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=e7700fc1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2032%2032%27%3E%3Cdefs%3E%3ClinearGradient%20id%3D%27t%27%20x1%3D%270%27%20y1%3D%270%27%20x2%3D%27.45%27%20y2%3D%271%27%3E%3Cstop%20offset%3D%270%27%20stop-color%3D%27%23ffe455%27%2F%3E%3Cstop%20offset%3D%271%27%20stop-color%3D%27%23e9a200%27%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D%2732%27%20height%3D%2732%27%20rx%3D%277%27%20fill%3D%27url%28%23t%29%27%2F%3E%3Cg%20fill%3D%27%23110c09%27%20font-family%3D%27Alice%2CGeorgia%2Cserif%27%3E%3Ctext%20x%3D%276.5%27%20y%3D%2723%27%20font-size%3D%2717%27%3EE%3C%2Ftext%3E%3Ctext%20x%3D%2717.5%27%20y%3D%2723%27%20font-size%3D%279%27%20opacity%3D%27.72%27%3Edb%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fsvg%3E">
+<link rel="stylesheet" href="style.css?v=09b3d93f">
+<link rel="stylesheet" href="elegon-redesign.css?v=09b3d93f">
 <script>
 (function () {
   var saved = null;
@@ -282,7 +283,10 @@
 </head>
 <body>
 <header>
-  <div class="brand"><span>ELEGON</span> DB</div>
+  <a class="brand" href="index.html">
+    <span class="mark" aria-hidden="true"><b>E</b><i>db</i></span>
+    <span class="word">ELEGON<em>DB</em></span>
+  </a>
   <nav>
     <a href="index.html">Items</a>
     <a href="monsters.html">Monsters</a>
@@ -299,8 +303,12 @@
 </header>
 
 <div class="wrap">
-  <div class="hero">
+  <div class="hero herorow">
     <h1>Optimizer</h1>
+    <!-- The page opens on the answer rather than on the setup that produced it.
+         drawHeadline() fills this; the card that used to hold it below the setup bar is
+         gone, and .herorow is the same title-plus-figures row the changelog uses. -->
+    <div class="answer" id="headline"></div>
   </div>
 
   <div class="bar setup">
@@ -382,9 +390,7 @@
     </div>
 
     <div>
-      <div class="headline" id="headline"></div>
-
-      <div class="attrs" style="margin-top:16px">
+      <div class="attrs">
         <div class="rifthead">
           <div class="opthead">
             <h3 id="prioTitle">Priority</h3>
@@ -482,7 +488,6 @@
         </div>
       </div>
 
-      <p class="note" id="assumptions"></p>
     </div>
   </div>
 </div>
@@ -575,9 +580,9 @@
        id="fightBody"></div>
 </dialog>
 
-<script src="data.js?v=e7700fc1"></script>
-<script src="app.js?v=e7700fc1"></script>
-<script src="sim.js?v=e7700fc1"></script>
+<script src="data.js?v=09b3d93f"></script>
+<script src="app.js?v=09b3d93f"></script>
+<script src="sim.js?v=09b3d93f"></script>
 <script>
 /* ---- the optimizer page --------------------------------------------------
    The arithmetic lives in sim.js so it can be tested outside a browser; this
@@ -2030,38 +2035,6 @@ function solveAndDraw() {
   document.getElementById("prioNote").textContent =
     "top to bottom — cast the first one you can";
 
-  const M = sol.model;
-  if (S.survival) {
-    /* The tank panel says what it assumed in the places the assumption is made
-       — the enemy in Fight settings, the stacking rule on the either/or card —
-       rather than restating all of it in a paragraph nobody asked for. */
-    document.getElementById("assumptions").textContent = "";
-    window.__sol = sol;
-    saveState();
-    return;
-  }
-  document.getElementById("assumptions").innerHTML = [
-    `Energy caps at <b>${FIGHT.resourceMax}</b> (measured in game), opening at `
-    + `${FIGHT.resourceStart}.`,
-    M.autoOn ? `Weapon swings every ${M.autoInterval}s are counted; Auto Attack reaches `
-      + `${M.autoRange} units, so only a character standing in melee gets them.`
-      : `No weapon swings: Auto Attack reaches ${M.autoRange} units and this build is `
-      + `treated as fighting from range.`,
-    FIGHT.snapshot
-      ? `An effect over time keeps the buff that was up when it was cast for its whole `
-        + `duration.`
-      : `Each tick of an effect over time uses whatever buff is up as it lands.`,
-    `A cooldown starts when the cast finishes. Cast time and the global cooldown run together, `
-    + `so an action costs whichever is longer.`,
-    S.healing || FIGHT.targets === 1
-      ? `Nothing here models overhealing, movement or misses.`
-      : `${FIGHT.targets} enemies, all in range for the whole fight. A ground effect or `
-        + `an arc covers the lot; a chain reaches three beyond its target at 65% each; `
-        + `everything else hits one, and a single-target effect over time has to be `
-        + `applied to each enemy separately — one global cooldown each. Nothing here `
-        + `models movement or misses.`,
-  ].join(" ");
-
   window.__sol = sol;
   saveState();
 }
@@ -2393,14 +2366,6 @@ function drawFight() {
      get: () => FIGHT.inMelee == null ? String(S.cls) === "1" : FIGHT.inMelee,
      hint: "Auto Attack reaches 4 units, so only a character inside that range swings between "
          + "casts. Knights default to yes and casters to no."},
-    {k: "snapshot", label: "Effects keep the buff they were cast under",
-     get: () => FIGHT.snapshot,
-     hint: "Say you cast Ignite while Catalyze is up. <b>Yes</b>: Ignite locks in the +50% "
-         + "and every one of its 14 ticks is boosted, even after Catalyze has expired — so "
-         + "the right play is to re-apply your dots the instant a buff goes up. <b>No</b>: "
-         + "each tick is worth whatever buff happens to be running at the moment it lands, "
-         + "and applying dots under a buff buys you nothing extra. Most games do the first; "
-         + "the catalogue does not say which one Elegon does, so it is a switch."},
   ]) {
     if (t.only === "survival" && !S.survival) continue;
     const row = el("div", "statin");
@@ -2517,7 +2482,9 @@ function decodeState(frag) {
   FIGHT.duration = f[0] || 300; FIGHT.resourceMax = f[1] || 100;
   FIGHT.resourceStart = f[2] || 0; FIGHT.targets = f[3] || 1;
   FIGHT.inMelee = f[4] === -1 ? null : !!f[4];
-  FIGHT.snapshot = f[5] !== 0;
+  /* f[5] carried the snapshot switch and is still written, so older builds of the page can
+     read a link written by this one. It is no longer READ: an effect over time snapshots,
+     measured in game, and a link asking for the other model would be asking to be wrong. */
   const e = p.e || [];
   if (p.pk && p.pk.length) {
     const back = [];

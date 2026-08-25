@@ -4,8 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Elegon DB — Character planner</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=e7700fc1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2032%2032%27%3E%3Cdefs%3E%3ClinearGradient%20id%3D%27t%27%20x1%3D%270%27%20y1%3D%270%27%20x2%3D%27.45%27%20y2%3D%271%27%3E%3Cstop%20offset%3D%270%27%20stop-color%3D%27%23ffe455%27%2F%3E%3Cstop%20offset%3D%271%27%20stop-color%3D%27%23e9a200%27%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D%2732%27%20height%3D%2732%27%20rx%3D%277%27%20fill%3D%27url%28%23t%29%27%2F%3E%3Cg%20fill%3D%27%23110c09%27%20font-family%3D%27Alice%2CGeorgia%2Cserif%27%3E%3Ctext%20x%3D%276.5%27%20y%3D%2723%27%20font-size%3D%2717%27%3EE%3C%2Ftext%3E%3Ctext%20x%3D%2717.5%27%20y%3D%2723%27%20font-size%3D%279%27%20opacity%3D%27.72%27%3Edb%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fsvg%3E">
+<link rel="stylesheet" href="style.css?v=09b3d93f">
+<link rel="stylesheet" href="elegon-redesign.css?v=09b3d93f">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -20,7 +21,10 @@
 </head>
 <body>
 <header>
-  <div class="brand"><span>ELEGON</span> DB</div>
+  <a class="brand" href="index.html">
+    <span class="mark" aria-hidden="true"><b>E</b><i>db</i></span>
+    <span class="word">ELEGON<em>DB</em></span>
+  </a>
   <nav>
     <a href="index.html">Items</a>
     <a href="monsters.html">Monsters</a>
@@ -39,6 +43,36 @@
 <div class="wrap">
   <div class="hero">
     <h1>Character planner</h1>
+  </div>
+
+  <div class="bar setup saves">
+    <div class="grp">
+      <label for="saveList">Saved builds</label>
+      <div class="grpline">
+        <select id="saveList"></select>
+        <button type="button" id="delBtn" class="iconbtn" title="Delete the selected build"
+                aria-label="Delete the selected build">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13M10 10.5v6M14 10.5v6"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="grp grow">
+      <label for="saveName">Save this build as</label>
+      <div class="grpline">
+        <input type="text" id="saveName" placeholder="Rift tank, levelling, …" maxlength="40">
+        <button type="button" id="saveBtn" class="gold">Save</button>
+      </div>
+    </div>
+
+    <div class="grp">
+      <label>Share</label>
+      <div class="grpline">
+        <button type="button" id="linkBtn" title="Copy a link that rebuilds this exactly">Copy link</button>
+      </div>
+    </div>
+
+    <span class="savenote" id="saveNote"></span>
   </div>
 
   <!-- Character-wide settings, then the two bulk actions that apply to every slot. -->
@@ -76,35 +110,6 @@
     </div>
   </div>
 
-  <div class="bar setup saves">
-    <div class="grp">
-      <label for="saveList">Saved builds</label>
-      <div class="grpline">
-        <select id="saveList"></select>
-        <button type="button" id="delBtn" class="iconbtn" title="Delete the selected build"
-                aria-label="Delete the selected build">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13M10 10.5v6M14 10.5v6"/></svg>
-        </button>
-      </div>
-    </div>
-
-    <div class="grp grow">
-      <label for="saveName">Save this build as</label>
-      <div class="grpline">
-        <input type="text" id="saveName" placeholder="Rift tank, levelling, …" maxlength="40">
-        <button type="button" id="saveBtn" class="gold">Save</button>
-      </div>
-    </div>
-
-    <div class="grp">
-      <label>Share</label>
-      <div class="grpline">
-        <button type="button" id="linkBtn" title="Copy a link that rebuilds this exactly">Copy link</button>
-      </div>
-    </div>
-
-    <span class="savenote" id="saveNote"></span>
-  </div>
 
   <div class="plan">
     <div class="doll">
@@ -155,7 +160,6 @@
       </div>
       <div class="divider"></div>
       <div id="spellRows"></div>
-      <p class="note" id="spellNote" style="margin:10px 0 0"></p>
     </div>
     <!-- What this build has to survive: a rift roster, with damage put through your
          Fortitude and health scaled by that rift's own instability. The panels build
@@ -238,9 +242,9 @@
   </div>
 </dialog>
 
-<script src="data.js?v=e7700fc1"></script>
+<script src="data.js?v=09b3d93f"></script>
 <!-- Written by the mod when you log in; absent until then. -->
-<script src="app.js?v=e7700fc1"></script>
+<script src="app.js?v=09b3d93f"></script>
 <script>
 /* The game's slot set and order, from InGameUi.EnumerateCharacterPanelSlots:
    main weapon, off hand, head, neck, shoulder, back, chest, waist, leg, foot, hands. */
@@ -926,7 +930,7 @@ function drawPicker() {
     : "";
   for (const r of rows) {
     const tr = el("tr");
-    const td = nameCell("items", r.id, r.icon, r.name, "r" + P.quality, 0, P.quality);
+    const td = nameCell("items", r.id, r.icon, r.name, "iname r" + P.quality, 0, P.quality);
     if (r.hand) td.firstChild.appendChild(el("span", "tag", r.hand));
     for (const src of RIFT_BY_ITEM.get(r.id) || []) {
       const tag = el("span", "tag rifttag" + (src.boss ? " boss" : ""), src.name);
@@ -993,21 +997,18 @@ function riftPanel(rifts) {
   if (rifts.length === 1) {
     head.appendChild(el("h3", null, rifts[0].name));
   } else {
-    const pick = el("div", "chipset riftpick");
+    /* A list rather than a row of buttons. Two chips already competed with the panel
+       heading for one line, and every breach the game adds makes that worse - a chooser
+       that grows sideways is a chooser with a limit. */
+    const pick = el("select", "riftpick");
+    pick.setAttribute("aria-label", "Which breach");
     rifts.forEach((r, i) => {
-      const c = el("button", "chip" + (i === sel ? " on" : ""), r.name);
-      c.type = "button";
-      c.setAttribute("aria-pressed", i === sel ? "true" : "false");
-      c.onclick = () => {
-        sel = i;
-        [...pick.children].forEach((x, j) => {
-          x.classList.toggle("on", j === sel);
-          x.setAttribute("aria-pressed", j === sel ? "true" : "false");
-        });
-        render();
-      };
-      pick.appendChild(c);
+      const opt = el("option", null, r.name);
+      opt.value = String(i);
+      pick.appendChild(opt);
     });
+    pick.value = String(sel);
+    pick.onchange = () => { sel = +pick.value; render(); };
     head.appendChild(pick);
   }
 
@@ -1191,6 +1192,9 @@ function weaponArt() {
    every observed sample came back at its base value. Types 2 and 3 scale like direct
    damage and healing: on level, on Strength or Grace, and on talent rank. */
 const FX_DOT = 2, FX_HOT = 3, FX_REDUCE = 4, FX_POWER = 5, FX_STUN = 1;
+
+/* One proc per class, keyed by its id so either end of the chain can find it. */
+const PROC_BY_ID = new Map((D.procs || []).map(p => [p.id, p]));
 
 /* Over-time effects use the same +20%-per-rank talent factor and the same 0.01-per-point
    stat factor as direct values, but a DIFFERENT level curve: 0.024 per level rather than
@@ -1394,7 +1398,6 @@ function drawSpells(totals) {
     box.appendChild(el("p", "note", all.length
       ? `No spells for ${className()}.`
       : "No spells."));
-    document.getElementById("spellNote").textContent = "";
     return;
   }
 
@@ -1450,8 +1453,30 @@ function drawSpells(totals) {
     if (!num.children.length) num.appendChild(el("div", "rl", "—"));
     row.appendChild(num);
 
-    // The effect line reads under the name, as it does in the game's own tooltip.
-    if (s.fx) {
+    /* Every class opens with a free spell that generates energy, and casting it has a
+       chance to light the class's one proc - which makes the next cast of its 40-energy
+       spell free. Both ends are named on the two rows that take part, because a mechanic
+       that only shows up as a number in someone else's simulator is not documented. */
+    const proc = (PROC_BY_ID.get(s.procTrigger) || PROC_BY_ID.get(s.procConsumer));
+    if (proc) {
+      const trig = !!s.procTrigger;
+      const line = el("div", "rproc",
+        trig ? `${+proc.chance}% to light ${proc.name}`
+             : `Free under ${proc.name}`);
+      line.title = trig
+        ? `${proc.name}: each ${s.name} has a ${+proc.chance}% chance to light it, and it `
+          + `lasts ${+proc.dur}s. ${proc.desc}`
+        : `${proc.desc} ${proc.name} lasts ${+proc.dur}s and is lit by casting the spell `
+          + `above it at ${+proc.chance}% a cast.`;
+      mid.appendChild(line);
+    }
+
+    /* The effect line reads under the name, as it does in the game's own tooltip - but
+       only when it says something the row's own figures do not. For a damage or healing
+       effect it was a restatement: the tick and the total are already the two numbers on
+       the right, so the sentence spent a line repeating them. A stun, a damage reduction
+       or a cast-speed buff has no number in that column, and there the line IS the fact. */
+    if (s.fx && !isPeriodic(s)) {
       const txt = effectText(s, fxAmt);
       if (txt) mid.appendChild(el("div", "rfx", txt));
     }
@@ -1459,12 +1484,6 @@ function drawSpells(totals) {
     attachTip(row, spellTip(s, totals, dmg, heal, lm, tm, fxAmt, overTime));
     box.appendChild(row);
   }
-
-  document.getElementById("spellNote").innerHTML =
-    `Level ×${lm.toFixed(2)} (×${levelMulEffect().toFixed(2)} over time), `
-    + (spellRanksByIdx ? "ranks from the imported character, " : `talent rank ${spellRank}, `)
-    + `Strength +${(totals.strength / 100).toFixed(1)}× and Grace +${(totals.grace / 100).toFixed(1)}×`
-    + (ampBonus() ? `, with a +${Math.round(ampBonus() * 100)}% buff applied.` : ".");
 }
 
 /** A cooldown as a reader thinks of it: 300s is five minutes. */

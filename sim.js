@@ -348,6 +348,10 @@ function model(D, cfg) {
     duration: cfg.duration || 300,
     resourceMax: cfg.resourceMax || 100,
     resourceStart: cfg.resourceStart || 0,
+    /* An effect over time locks in the buff that was up when it was CAST and keeps it for
+       every tick, even after that buff has expired. Measured in game rather than read from
+       the catalogue, which carries no flag for it - so the right play is to re-apply a dot
+       the instant a buff goes up. Always on: it is what the game does, not a preference. */
     snapshot: cfg.snapshot !== false,
     round: cfg.round !== false,
     exclusive: exclusiveChoices(kept),
