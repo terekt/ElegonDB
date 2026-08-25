@@ -198,7 +198,12 @@ function makeAction(s, C) {
     land: landDelay(s, C.timing, C.range),
     isBuff: s.fx === FX_POWER,
     buffAmt: s.fx === FX_POWER ? s.fxAmt : 0,
-    buffDur: s.fx === FX_POWER ? s.fxDur : 0,
+    /* A rank buys DURATION here, not power. TalentClientLogic.DescribeRankScaling splits
+       the two: anything that deals a number or ticks gets +20% power a rank, while a stun
+       and the two buffs get +20% duration instead - their amount never moves. Rank 5 is
+       therefore an 80% longer window, which is a different build rather than a rounding
+       difference, and none of it was modelled until now. */
+    buffDur: s.fx === FX_POWER ? s.fxDur * tm : 0,
     isPeriodic: periodic,
     heals: !!heals,
     hot: hots,
@@ -208,8 +213,8 @@ function makeAction(s, C) {
     /* The survival side of a spell: how much of a hit it stops, how long it
        keeps the enemy from swinging, and what it puts back. */
     mit: s.fx === FX_REDUCE ? s.fxAmt : 0,
-    mitDur: s.fx === FX_REDUCE ? s.fxDur : 0,
-    stun: s.fx === FX_STUN ? s.fxDur : 0,
+    mitDur: s.fx === FX_REDUCE ? s.fxDur * tm : 0,
+    stun: s.fx === FX_STUN ? s.fxDur * tm : 0,
     /* A ground area or an arc puts its effect on the whole pack at once. A
        single-target effect has to be applied to each enemy separately, which is
        a global cooldown each — so it is tracked per target rather than once. */

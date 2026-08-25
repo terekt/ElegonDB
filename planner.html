@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Elegon DB — Character planner</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2032%2032%27%3E%3Cdefs%3E%3ClinearGradient%20id%3D%27t%27%20x1%3D%270%27%20y1%3D%270%27%20x2%3D%27.45%27%20y2%3D%271%27%3E%3Cstop%20offset%3D%270%27%20stop-color%3D%27%23ffe455%27%2F%3E%3Cstop%20offset%3D%271%27%20stop-color%3D%27%23e9a200%27%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D%2732%27%20height%3D%2732%27%20rx%3D%277%27%20fill%3D%27url%28%23t%29%27%2F%3E%3Cg%20fill%3D%27%23110c09%27%20font-family%3D%27Alice%2CGeorgia%2Cserif%27%3E%3Ctext%20x%3D%276.5%27%20y%3D%2723%27%20font-size%3D%2717%27%3EE%3C%2Ftext%3E%3Ctext%20x%3D%2717.5%27%20y%3D%2723%27%20font-size%3D%279%27%20opacity%3D%27.72%27%3Edb%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fsvg%3E">
-<link rel="stylesheet" href="style.css?v=9710a700">
-<link rel="stylesheet" href="elegon-redesign.css?v=9710a700">
+<link rel="stylesheet" href="style.css?v=58018153">
+<link rel="stylesheet" href="elegon-redesign.css?v=58018153">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -260,9 +260,9 @@
   </div>
 </dialog>
 
-<script src="data.js?v=9710a700"></script>
+<script src="data.js?v=58018153"></script>
 <!-- Written by the mod when you log in; absent until then. -->
-<script src="app.js?v=9710a700"></script>
+<script src="app.js?v=58018153"></script>
 <script>
 /* The game's slot set and order, from InGameUi.EnumerateCharacterPanelSlots:
    main weapon, off hand, head, neck, shoulder, back, chest, waist, leg, foot, hands. */
@@ -400,7 +400,8 @@ const pointsLeft = () => pointsTotal() - pointsSpent();
 const SAVE_KEY = "elegon.planner.v1";
 
 function saveBuild() {
-  const out = {slots: {}, alloc, level, prof, lens: {quality: P.quality, tier: P.tier}};
+  const out = {slots: {}, alloc, level, prof, talents: talentRanks,
+               lens: {quality: P.quality, tier: P.tier}};
   for (const s of SLOTS) {
     const st = build[s.k];
     out.slots[s.k] = {id: st.item ? st.item.id : null, quality: st.quality, tier: st.tier};
@@ -431,6 +432,10 @@ function loadBuild() {
   // Absent from anything saved before v3489988, which reads as zero and is correct.
   PROF_SKILLS.forEach(sk =>
     prof[sk.id] = Math.min(sk.max || 400, Math.max(0, ((saved.prof || {})[sk.id]) | 0)));
+  /* Absent from anything saved before the tree existed, which reads as an empty tree and
+     is correct - the grants are put back below. */
+  talentRanks = {};
+  for (const [id, r] of Object.entries(saved.talents || {})) talentRanks[id] = r | 0;
   // This one sets level directly rather than through setLevel, so it has to trim itself -
   // and every build saved before the points were halved needs it.
   trimToPoints();
@@ -1241,6 +1246,20 @@ const levelMulEffect = () => GAME.effectLevelMul(level);
 /* An effect type the client has no wording for (only Living Scripture, type 8). It has an
    amount and a tick, so it behaves like a periodic effect; the buff flag decides whether it
    is treated as healing or damage. Marked as inferred wherever it is shown. */
+/* A rank buys DURATION rather than power for a stun, a damage reduction and a cast-speed
+   buff - TalentClientLogic.DescribeRankScaling is explicit that those three get +20% a rank
+   on the window and nothing on the amount, which is the reverse of everything that deals a
+   number or ticks. Everywhere a duration is SHOWN has to ask for it through this, or the
+   panel says 8s while the game gives 14.4. */
+const DURATION_SCALES = new Set([1, 4, 5]);          // stun, damage reduction, cast speed
+const effectDur = s => DURATION_SCALES.has(s.fx)
+  ? s.fxDur * talentMul(rankFor(s))
+  : s.fxDur;
+const durLabel = s => {
+  const d = effectDur(s);
+  return (Math.round(d * 10) / 10) + "s";
+};
+
 const isPeriodic = s => s.fx === FX_DOT || s.fx === FX_HOT
                      || (s.fxAmt > 0 && s.fxTick > 0 && !KNOWN_FX.has(s.fx));
 const KNOWN_FX = new Set([FX_STUN, FX_DOT, FX_HOT, FX_REDUCE, FX_POWER]);
@@ -1256,7 +1275,7 @@ function effectAmount(s, totals) {
 
 /** The game's own phrasing for an active effect. */
 function effectText(s, amount) {
-  const dur = s.fxForever ? "while active" : `for ${s.fxDur}s`;
+  const dur = s.fxForever ? "while active" : `for ${durLabel(s)}`;
   const pct = v => +(v * 100).toFixed(1) + "%";
   switch (s.fx) {
     case FX_STUN:   return `Stuns ${dur}`;
@@ -1268,7 +1287,7 @@ function effectText(s, amount) {
       // The client prints only "Effect lasts Ns" here, so the amount is ours, not its.
       return isPeriodic(s)
         ? `${fmtNum(amount)} ${healsOverTime(s) ? "healing" : "damage"} every ${s.fxTick}s ${dur}*`
-        : (s.fxDur ? `Effect lasts ${s.fxDur}s` : "");
+        : (s.fxDur ? `Effect lasts ${durLabel(s)}` : "");
   }
 }
 
@@ -1339,7 +1358,7 @@ function drawBuffs() {
       const mid = el("div", "bm");
       mid.appendChild(el("div", "bn", s.name));
       mid.appendChild(el("div", "bl",
-        s.fxForever ? "While active" : `${s.fxDur}s · ${s.cd ? s.cd + "s cooldown" : "no cooldown"}`));
+        s.fxForever ? "While active" : `${durLabel(s)} · ${s.cd ? s.cd + "s cooldown" : "no cooldown"}`));
       row.appendChild(mid);
 
       const val = el("div", "bv" + (group.fx === FX_AMP ? " amp" : " mit"));
@@ -1974,6 +1993,10 @@ function Log(msg) {
    working across rebuilds unless the item itself is gone - and one that IS gone simply
    leaves its slot empty rather than failing the whole build. */
 const SLOT_ORDER = SLOTS.map(s => s.k);
+/* Opens the talent block at the end of a build code. No proficiency pair can begin with
+   this byte: they open with (skillId << 2) and the ids stop at 22. */
+const TALENT_MARK = 255;
+
 const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 /* Instability was packed into six bits while the field that feeds it accepts 2000, so every
@@ -2008,6 +2031,24 @@ function encodeBuild() {
   for (const sk of PROF_SKILLS) {
     const lvl = Math.min(1023, profLevel(sk.id));
     if (lvl) b.push(((sk.id & 63) << 2) | (lvl >> 8), lvl & 255);
+  }
+
+  /* Then the tree, behind a marker. The proficiency block above runs to the end of the
+     code, so a talent block cannot simply follow it - but a proficiency pair opens with
+     (skillId << 2), and ids stop at 22, so no such byte can reach 92. TALENT_MARK is 255,
+     which the old decoder never produced and the new one stops at. A link written before
+     the tree existed has no marker and decodes exactly as it always did.
+
+     One byte a node: four bits of position in the class tree, three of rank. A granted
+     rank rides along with the rest rather than being special-cased - the decoder puts the
+     grants back anyway, so a link that lost one still opens correct. */
+  const treeNodes = TALENT.forClass(charClass);
+  if (treeNodes.some(n => talentRanks[n.id])) {
+    b.push(TALENT_MARK);
+    treeNodes.forEach((n, i) => {
+      const r = Math.min(7, talentRanks[n.id] | 0);
+      if (r) b.push(((i & 31) << 3) | r);
+    });
   }
 
   let out = "";
@@ -2052,20 +2093,33 @@ function decodeBuild(code) {
   }
 
   PROF_SKILLS.forEach(sk => { prof[sk.id] = 0; });
-  while (p + 1 < b.length) {
+  while (p + 1 < b.length && b[p] !== TALENT_MARK) {
     const hi = b[p++], lo = b[p++];
     const sk = SKILL_BY_ID_P.get(hi >> 2);
     if (sk && sk.group === "Combat") prof[sk.id] = Math.min(sk.max || 400, ((hi & 3) << 8) | lo);
   }
+
+  /* The tree, if the link carries one. Read against the class the code just named, which
+     is why this sits after the class has been applied below - see the call there. */
+  talentRanks = {};
+  const treeBytes = (b[p] === TALENT_MARK) ? b.slice(p + 1) : null;
   if (CLASSES[String(cls)]) {
     charClass = String(cls);
     document.getElementById("charClass").value = charClass;
+  }
+  if (treeBytes) {
+    const nodes = TALENT.forClass(charClass);
+    for (const byte of treeBytes) {
+      const node = nodes[(byte >> 3) & 31];
+      if (node) talentRanks[node.id] = byte & 7;
+    }
   }
   spellRank = Math.min(5, Math.max(0, rank));
   document.getElementById("spellRank").value = String(spellRank);
   spellRanksByIdx = null;
   dropUnusable();                 // the code may carry gear this class cannot hold
   setLevel(lvl || 80);
+  syncTalents();                  // grants back, and anything the level cannot pay for out
   return true;
 }
 
@@ -2146,6 +2200,7 @@ const shared = (location.hash.match(/[#&]b=([A-Za-z0-9\-_]+)/) || [])[1];
 drawSaves();
 if (shared && decodeBuild(shared)) note("Loaded from the shared link.", true);
 
+syncTalents();          // whatever the save or the link left, made legal for this level
 drawAlloc();
 render();
 </script>
