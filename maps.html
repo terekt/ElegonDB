@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Elegon DB — Maps</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=0265486e">
+<link rel="stylesheet" href="style.css?v=e7700fc1">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -78,6 +78,9 @@
     <div class="mapview" id="view">
       <div class="mapstage" id="stage"></div>
       <div class="mapmarkers" id="markers"></div>
+      <!-- The markers being pointed at. A twin of the layer above that is never dimmed, so
+           the fade can be one property on one element instead of 1,555. -->
+      <div class="mapmarkers kinlayer" id="markersKin"></div>
       <!-- Your own position lives in its own layer: draw() empties the marker layer on
            every rebuild, and the map's controls sit above it. Neither should be able to
            hide where you are standing. -->
@@ -100,8 +103,8 @@
   <p class="note" id="note"></p>
 </div>
 
-<script src="data.js?v=0265486e"></script>
-<script src="app.js?v=0265486e"></script>
+<script src="data.js?v=e7700fc1"></script>
+<script src="app.js?v=e7700fc1"></script>
 <script>
 /* The interactive map.
    Markers live inside a stage sized to the capture in image pixels, so a marker's position
@@ -142,6 +145,7 @@ let setCoverLabel = () => {};
 const view = document.getElementById("view");
 const stage = document.getElementById("stage");
 const markers = document.getElementById("markers");
+const kinLayer = document.getElementById("markersKin");
 const liveLayer = document.getElementById("live");
 const empty = document.getElementById("empty");
 
@@ -602,6 +606,8 @@ function draw() {
   markers.replaceChildren();
   shownPoints = points.filter(passes);
 
+  kinLayer.replaceChildren();         // its nodes belong to the run being replaced
+  markers.classList.remove("dimmed");
   placedScale = null;                 // fresh nodes carry no scale yet
   for (const p of shownPoints) {
     const mk = el("i", "mk mk-" + p.kind);
@@ -656,9 +662,28 @@ function draw() {
    is not a circle came out as a rectangle around the gravestone. */
 const HIGHLIGHTS = new Set(["mob", "npc", "quest", "mine"]);
 
+/**
+ * Light every spawn of one creature and step the rest back.
+ *
+ * The lit ones are MOVED into their own layer rather than marked in place. Fading the rest
+ * used to be a class on the parent and an opacity rule on every marker under it, which made
+ * the browser recompute all 1,555 of them on entering a marker and again on leaving - 86ms
+ * each way, so crossing the map with the mouse was a slideshow. Now the parent's own opacity
+ * carries the fade, one composited property, and the handful being lit are lifted out of it.
+ */
 function highlight(key) {
-  for (const mk of markers.querySelectorAll(".mk"))
-    mk.classList.toggle("kin", key !== null && mk.dataset.key === key);
+  while (kinLayer.firstChild) {
+    const node = kinLayer.firstChild;
+    node.classList.remove("kin");
+    markers.appendChild(node);
+  }
+  if (key !== null) {
+    for (const p of shownPoints) {
+      if (!p.node || p.key !== key) continue;
+      p.node.classList.add("kin");
+      kinLayer.appendChild(p.node);
+    }
+  }
   markers.classList.toggle("dimmed", key !== null);
 }
 
@@ -700,6 +725,7 @@ function placeMarkers() {
   }
   const shift = `translate3d(${V.x}px, ${V.y}px, 0)`;
   markers.style.transform = shift;
+  kinLayer.style.transform = shift;
   liveLayer.style.transform = shift;
 }
 

@@ -849,14 +849,19 @@ dialog.sheet{width:min(940px,94vw)}
    back so the answer is the shape of that species' range rather than a search. Only the
    things there are several of take part — see HIGHLIGHTS in maps.html — so the ring is
    always drawn on a circle and never boxes in a gravestone. */
-.mapmarkers.dimmed .mk{opacity:.22}
-.mapmarkers.dimmed .mk.kin{opacity:1;z-index:2;
-  box-shadow:0 0 0 3px rgba(0,0,0,.55),0 0 0 6px var(--c,var(--gold))}
+/* The LAYER fades, not each marker in it. ".dimmed .mk{opacity}" reads as the obvious way
+   to write this and costs a style recalculation on all 1,555 markers every time the class
+   goes on or off - 86ms per hover, and again per un-hover, which is what made moving the
+   mouse across the map crawl. One opacity on the parent is a composited property on a single
+   element. The lit ones are moved into #markersKin, a twin layer that is never dimmed. */
+.mapmarkers.dimmed{opacity:.22}
+.mk.kin{z-index:2;box-shadow:0 0 0 3px rgba(0,0,0,.55),0 0 0 6px var(--c,var(--gold))}
 /* A boss keeps its gold while its kin are lit. The rule above rebuilds the ring from --c,
    the family colour maps.html sets inline, which quietly undid the one thing that marks a
    boss at the moment you point at it. */
-.mapmarkers.dimmed .mk-mob.boss.kin{
-  box-shadow:0 0 0 3px rgba(0,0,0,.55),0 0 0 6px var(--gold)}
+.mk-mob.boss.kin{box-shadow:0 0 0 3px rgba(0,0,0,.55),0 0 0 6px var(--gold)}
+/* Above the dimmed layer, and never dimmed itself. */
+.mapmarkers.kinlayer{z-index:3}
 
 
 .mapscale{position:absolute;left:12px;bottom:12px;z-index:4;display:flex;align-items:center;gap:8px;
