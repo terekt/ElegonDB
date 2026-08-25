@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Elegon DB — Optimizer</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2032%2032%27%3E%3Cdefs%3E%3ClinearGradient%20id%3D%27t%27%20x1%3D%270%27%20y1%3D%270%27%20x2%3D%27.45%27%20y2%3D%271%27%3E%3Cstop%20offset%3D%270%27%20stop-color%3D%27%23ffe455%27%2F%3E%3Cstop%20offset%3D%271%27%20stop-color%3D%27%23e9a200%27%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D%2732%27%20height%3D%2732%27%20rx%3D%277%27%20fill%3D%27url%28%23t%29%27%2F%3E%3Cg%20fill%3D%27%23110c09%27%20font-family%3D%27Alice%2CGeorgia%2Cserif%27%3E%3Ctext%20x%3D%276.5%27%20y%3D%2723%27%20font-size%3D%2717%27%3EE%3C%2Ftext%3E%3Ctext%20x%3D%2717.5%27%20y%3D%2723%27%20font-size%3D%279%27%20opacity%3D%27.72%27%3Edb%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fsvg%3E">
-<link rel="stylesheet" href="style.css?v=8e04e00e">
-<link rel="stylesheet" href="elegon-redesign.css?v=8e04e00e">
+<link rel="stylesheet" href="style.css?v=f7e9f63f">
+<link rel="stylesheet" href="elegon-redesign.css?v=f7e9f63f">
 <script>
 (function () {
   var saved = null;
@@ -439,7 +439,7 @@
       <div class="attrs" style="margin-top:16px">
         <div class="rifthead">
           <div class="opthead">
-            <h3>The fight, second by second</h3>
+            <h3>Simulation breakdown</h3>
             <p class="note" id="tlRange"></p>
           </div>
           <div class="grpline" id="tlBar">
@@ -447,6 +447,7 @@
             <button type="button" id="tlIn" aria-label="Zoom in">+</button>
             <button type="button" id="tlOpen">Opener</button>
             <button type="button" id="tlFit">Whole fight</button>
+            <button type="button" id="tlDense">Expand</button>
           </div>
         </div>
         <div class="divider"></div>
@@ -585,9 +586,9 @@
        id="fightBody"></div>
 </dialog>
 
-<script src="data.js?v=8e04e00e"></script>
-<script src="app.js?v=8e04e00e"></script>
-<script src="sim.js?v=8e04e00e"></script>
+<script src="data.js?v=f7e9f63f"></script>
+<script src="app.js?v=f7e9f63f"></script>
+<script src="sim.js?v=f7e9f63f"></script>
 <script>
 /* ---- the optimizer page --------------------------------------------------
    The arithmetic lives in sim.js so it can be tested outside a browser; this
@@ -1248,7 +1249,7 @@ function drawHeadline(sol) {
    you see here is the fight that produced the number at the top of the page,
    not an illustration of it.                                                 */
 const TL = {
-  cv: null, ctx: null, tip: null, data: null,
+  cv: null, ctx: null, tip: null, data: null, dense: false,
   view: {t0: 0, t1: 300}, hits: [], pointers: new Map(),
   pan: null, cursor: null,
 };
@@ -1291,6 +1292,30 @@ function buildTimeline(sol) {
   }
   energy.sort((a, b) => a.t - b.t);
 
+  /* The expanded view needs the casts split by ability and the abilities in priority
+     order, and a running total to draw the damage curve from. All three are folds over
+     what is already here rather than a second pass through the log. */
+  const castsById = {};
+  for (const c of casts) (castsById[c.id] = castsById[c.id] || []).push(c);
+  const seen = new Set();
+  const abilities = [];
+  for (const a of sol.order) {            // two entries can share a spell; one row each
+    if (seen.has(a.id) || !castsById[a.id]) continue;
+    seen.add(a.id);
+    abilities.push({id: a.id, name: a.name});
+  }
+
+  /* Everything that landed, in order, accumulated - the shape a log site opens on. */
+  const events = [];
+  for (const c of casts) if (c.amount) events.push({t: c.land, v: c.amount});
+  for (const lane of lanes.values())
+    for (const tk of lane.ticks) if (tk.amount) events.push({t: tk.t, v: tk.amount});
+  for (const a of autos) if (a.amount) events.push({t: a.t, v: a.amount});
+  events.sort((a, b) => a.t - b.t);
+  const damage = [];
+  let run = 0;
+  for (const e of events) { run += e.v; damage.push({t: e.t, v: run}); }
+
   /* Colour by position on the priority list, so the strip and the list read as
      the same object rather than two views that happen to share names. */
   const colour = new Map();
@@ -1299,6 +1324,7 @@ function buildTimeline(sol) {
 
   return {duration: res.duration, casts, autos, buffs, energy, colour,
           lanes: [...lanes.values()], energyMax: M.resourceMax,
+          castsById, abilities, damage,
           procName: M.proc ? M.proc.name : "",
           healing: M.cfg.healing,
           survival: !!M.survival, hits, hp, healthMax: res.health,
@@ -1306,7 +1332,10 @@ function buildTimeline(sol) {
           deathAt: res.deathAt};
 }
 
-const TL_GUT = 92, TL_RIGHT = 12;
+/* The gutter widens in the expanded view, where the labels carry a count as well as a
+   name. tlX and tlT read it, so it is set at the top of every draw rather than passed. */
+let TL_GUT = 92;
+const TL_RIGHT = 12;
 
 /* Where a pointer is, in the units the canvas draws in.
 
@@ -1346,12 +1375,24 @@ function drawTL() {
   const C = k => css.getPropertyValue(k).trim() || "#888";
 
   const W = cv.clientWidth || 800;
-  const AXIS = 22, BUFF = d.buffs.length ? 14 : 0, CAST = 30,
-        LANE = 16, AUTO = d.autos.length ? 13 : 0, EN = 62, GAP = 8;
-  const HITS = d.survival && d.hits.length ? 14 : 0;
-  const HP = d.survival && d.hp.length ? 62 : 0;
-  const H = AXIS + BUFF + CAST + d.lanes.length * LANE + AUTO + HITS
-          + GAP + EN + (HP ? GAP + HP : 0) + 10;
+  const big = !!TL.dense;
+  TL_GUT = big ? 152 : 92;
+
+  /* Two densities of the same strip. The compact one is the default and is meant to be read
+     at a glance - one row of casts, colour standing in for the name. The expanded one gives
+     every ability a row of its own, the way a log site does, so a rotation can be read down
+     the page instead of decoded from a colour key. */
+  const AXIS = 22, BUFF = d.buffs.length ? (big ? 20 : 14) : 0;
+  const CAST = big ? 26 : 30;                        // per row when expanded
+  const castRows = big ? (d.abilities || []).filter(a => (d.castsById[a.id] || []).length) : [];
+  const CASTAREA = big ? Math.max(CAST, castRows.length * CAST) : CAST;
+  const LANE = big ? 24 : 16, AUTO = d.autos.length ? (big ? 18 : 13) : 0;
+  const EN = big ? 92 : 62, GAP = 8;
+  const HITS = d.survival && d.hits.length ? (big ? 20 : 14) : 0;
+  const HP = d.survival && d.hp.length ? (big ? 92 : 62) : 0;
+  const DMG = big && d.damage.length ? 84 : 0;
+  const H = AXIS + BUFF + CASTAREA + d.lanes.length * LANE + AUTO + HITS
+          + GAP + EN + (HP ? GAP + HP : 0) + (DMG ? GAP + DMG : 0) + 10;
 
   /* The backing store carries the page zoom as well as the device ratio, or the
      strip is drawn at 1/zoom of the resolution it is displayed at. */
@@ -1433,42 +1474,65 @@ function drawTL() {
     y += BUFF;
   }
 
-  /* the casts */
-  label("casts", y + CAST / 2 - 2);
-  clipPlot(y, CAST);
-  for (const c of d.casts) {
-    const x0 = tlX(c.t, W), x1 = tlX(c.end, W);
-    if (x1 < PLOT_L || x0 > PLOT_R) continue;
-    const w = Math.max(1.5, x1 - x0 - 1);
-    const cx = Math.max(PLOT_L, x0);
-    g.fillStyle = C(d.colour.get(c.id) || "--faint");
-    g.globalAlpha = c.cast > 0 ? 1 : .82;
-    g.fillRect(cx, y + 3, w, CAST - 9);
-    g.globalAlpha = 1;
-    if (w > 30) {
-      /* Whatever fits, shortened rather than clipped mid-stroke. Zoom in and
-         the names fill out; at the whole-fight view the colour is the label,
-         which is why the priority list carries the same colours. */
-      let t = c.name;
-      const room = Math.min(w, PLOT_R - cx) - 10;
-      if (g.measureText(t).width > room) {
-        while (t.length > 2 && g.measureText(t + "\u2026").width > room) t = t.slice(0, -1);
-        t = t.length > 2 ? t + "\u2026" : "";
+  /* the casts - one row for all of them, or a row each when expanded */
+  const drawCasts = (list, top, height, named) => {
+    clipPlot(top, height);
+    for (const c of list) {
+      const x0 = tlX(c.t, W), x1 = tlX(c.end, W);
+      if (x1 < PLOT_L || x0 > PLOT_R) continue;
+      const w = Math.max(1.5, x1 - x0 - 1);
+      const cx = Math.max(PLOT_L, x0);
+      g.fillStyle = C(d.colour.get(c.id) || "--faint");
+      g.globalAlpha = c.cast > 0 ? 1 : .82;
+      g.fillRect(cx, top + 3, w, height - 9);
+      g.globalAlpha = 1;
+      /* A free cast is ringed rather than recoloured: it is the same spell doing the same
+         damage, and the only thing that differs is what paid for it. */
+      if (c.procFree) {
+        g.strokeStyle = C("--gold"); g.lineWidth = 1.5;
+        g.strokeRect(cx + .5, top + 3.5, Math.max(2, w - 1), height - 10);
       }
-      if (t) {
-        g.fillStyle = C("--bg");
-        g.fillText(t, cx + 5, y + CAST / 2 - 1);
+      if (w > 30) {
+        /* Whatever fits, shortened rather than clipped mid-stroke. Zoom in and the names
+           fill out; at the whole-fight view the colour is the label, which is why the
+           priority list carries the same colours. In a per-ability row the name is already
+           in the gutter, so the block spends its width on the number instead. */
+        let t = named ? c.name : (c.amount ? fmt(c.amount) : "");
+        const room = Math.min(w, PLOT_R - cx) - 10;
+        if (t && g.measureText(t).width > room) {
+          while (t.length > 2 && g.measureText(t + "\u2026").width > room) t = t.slice(0, -1);
+          t = t.length > 2 ? t + "\u2026" : "";
+        }
+        if (t) {
+          g.fillStyle = C("--bg");
+          g.fillText(t, cx + 5, top + height / 2 - 1);
+        }
       }
+      TL.hits.push({x: cx, y: top + 3, w: Math.max(Math.min(w, PLOT_R - cx), 4),
+                    h: height - 9, kind: "cast", d: c});
     }
-    TL.hits.push({x: cx, y: y + 3, w: Math.max(Math.min(w, PLOT_R - cx), 4), h: CAST - 9,
-                  kind: "cast", d: c});
+    g.restore();
+  };
+
+  if (big) {
+    for (const ab of castRows) {
+      const list = d.castsById[ab.id] || [];
+      label(ab.name + "  " + "\u00d7" + list.length, y + CAST / 2 - 1,
+            C(d.colour.get(ab.id) || "--faint"));
+      drawCasts(list, y, CAST, false);
+      y += CAST;
+    }
+    if (!castRows.length) y += CAST;
+  } else {
+    label("casts", y + CAST / 2 - 2);
+    drawCasts(d.casts, y, CAST, true);
+    y += CAST;
   }
-  g.restore();
-  y += CAST;
 
   /* one row per effect that ticks, so a gap in a row is uptime lost */
   for (const lane of d.lanes) {
-    label(lane.name, y + LANE / 2);
+    label(lane.name + (big ? "  " + "\u00d7" + lane.ticks.length : ""), y + LANE / 2,
+          big ? C(d.colour.get(lane.id) || "--faint") : null);
     TL.hits.push({x: 0, y: y + 1, w: TL_GUT - 6, h: LANE - 2, kind: "lane", d: lane, lane});
     clipPlot(y, LANE);
     g.fillStyle = C(d.colour.get(lane.id) || "--faint");
@@ -1608,6 +1672,44 @@ function drawTL() {
   g.lineTo(PLOT_R + 30, ey(last));
   g.stroke();
   g.restore();
+
+  /* Everything that has landed so far, which is the curve a log site opens on: it says
+     where the damage actually came from in the fight rather than only how much. Drawn as
+     an area, because the quantity is a total and the eye reads a total as a mass. */
+  if (DMG) {
+    y += GAP + EN;
+    const dTop = y + 12, dBot = y + DMG - 14;
+    const peak = d.damage[d.damage.length - 1].v || 1;
+    const dy = v => dBot - (v / peak) * (dBot - dTop);
+    g.strokeStyle = C("--line"); g.lineWidth = 1;
+    g.beginPath(); g.moveTo(PLOT_L, Math.round(dTop) + .5);
+    g.lineTo(PLOT_R, Math.round(dTop) + .5); g.stroke();
+    g.beginPath(); g.moveTo(PLOT_L, Math.round(dBot) + .5);
+    g.lineTo(PLOT_R, Math.round(dBot) + .5); g.stroke();
+    label(d.survival ? "damage dealt" : "damage done", (dTop + dBot) / 2);
+    g.fillStyle = C("--faint"); g.textAlign = "right";
+    g.fillText(fmt(peak), TL_GUT - 10, dTop - 6);
+    g.textAlign = "left";
+
+    clipPlot(dTop - 4, (dBot - dTop) + 8);
+    let carried = 0;
+    for (const pt of d.damage) { if (pt.t > TL.view.t0) break; carried = pt.v; }
+    g.beginPath();
+    g.moveTo(PLOT_L - 30, dy(carried));
+    for (const pt of d.damage) {
+      if (pt.t <= TL.view.t0) continue;
+      if (pt.t > TL.view.t1) break;
+      const x = tlX(pt.t, W);
+      g.lineTo(x, dy(carried));
+      g.lineTo(x, dy(pt.v));
+      carried = pt.v;
+    }
+    g.lineTo(PLOT_R + 30, dy(carried));
+    g.strokeStyle = C("--s2"); g.lineWidth = 1.5; g.stroke();
+    g.lineTo(PLOT_R + 30, dBot); g.lineTo(PLOT_L - 30, dBot); g.closePath();
+    g.globalAlpha = .14; g.fillStyle = C("--s2"); g.fill(); g.globalAlpha = 1;
+    g.restore();
+  }
 
   /* the cursor, so a reading in one lane can be lined up against another */
   if (TL.cursor != null && TL.cursor >= TL_GUT && TL.cursor <= W) {
@@ -1768,6 +1870,27 @@ function initTimeline() {
   document.getElementById("tlOut").onclick = () => tlZoom(TL.view.t0 + tlSpan() / 2, 1.5);
   document.getElementById("tlFit").onclick = () => tlSetView(0, TL.data.duration);
   document.getElementById("tlOpen").onclick = () => tlSetView(0, Math.min(45, TL.data.duration));
+
+  /* Compact by default, because that is the view most readings are taken from - but a
+     strip this dense is a wall to anyone who has not been staring at it, so the same data
+     is available a row per ability. The choice is remembered: it is a way of reading
+     rather than a property of the build, so it should not travel in a shared link. */
+  const denseBtn = document.getElementById("tlDense");
+  const paintDense = () => {
+    denseBtn.textContent = TL.dense ? "Compact" : "Expand";
+    denseBtn.classList.toggle("on", TL.dense);
+    denseBtn.title = TL.dense
+      ? "Back to one row for every cast"
+      : "A row per ability, with the numbers on the blocks and a damage curve";
+  };
+  try { TL.dense = localStorage.getItem("elegon-tl-dense") === "1"; } catch (e) { /* private */ }
+  paintDense();
+  denseBtn.onclick = () => {
+    TL.dense = !TL.dense;
+    try { localStorage.setItem("elegon-tl-dense", TL.dense ? "1" : "0"); } catch (e) { /* */ }
+    paintDense();
+    drawTL();
+  };
 
   new ResizeObserver(() => drawTL()).observe(cv.parentElement);
   new MutationObserver(() => drawTL())

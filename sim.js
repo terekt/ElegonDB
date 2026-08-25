@@ -725,7 +725,9 @@ function simulate(M, order, opts) {
       cast, occupies, end: t + occupies, landAt,
       energyBefore, resource, amp,
       cost, listedCost: pick.fullCost, gen: pick.gen,
-      procFree: cost === 0 && pick.cost > 0,
+      // Against the spell's real price: the proc-only entry lists 0, so comparing with
+      // its own cost would say no cast was ever free.
+      procFree: cost === 0 && pick.fullCost > 0,
       buffUntil: pick.isBuff ? ampUntil : 0,
       buffAmt: pick.isBuff ? pick.buffAmt : 0,
       periodicUntil: pick.tracksPeriodic ? landAt + pick.tickDur : 0,
