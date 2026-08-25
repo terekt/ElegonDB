@@ -2995,6 +2995,259 @@ function openChange(entry, cat, kind, e, old) {
 })();
 
 
+/* ---- the talent tree -------------------------------------------------------
+ * The rules and the drawing, once, because two pages want them: the planner's own panel
+ * and the standalone tree. Everything here is read out of the decompiled client rather
+ * than invented - TalentClientLogic for the states, TalentPanel for the measurements,
+ * TalentNodeButton for the colours - so a tree drawn from it is the panel the game shows,
+ * at the same size, with the same things lit.
+ *
+ * The caller owns the ranks: a plain {nodeId: rank} object it can save, load and hand
+ * back. Nothing is stored here.
+ */
+const TALENT = (() => {
+  const ST = {PLACEHOLDER: 0, LEVEL: 1, PREREQ: 2, RIVAL: 3, NOPOINTS: 4,
+              AVAILABLE: 5, MAXED: 6};
+  const POWER_PER_RANK = 0.2;                     // TalentClientLogic.SpellPowerPerRank
+
+  /* TalentPanel: TreeLeftMargin, TreeTopMargin, ColumnSpacing, RowSpacing, NodeSize, and
+     the 380px canvas that follows from three columns. */
+  const GRID = {left: 24, top: 16, colGap: 140, rowGap: 104, size: 52, width: 380};
+  const CONNECT_ON = "rgba(217,179,77,.9)";       // Color(0.85, 0.7, 0.3, 0.9)
+  const CONNECT_OFF = "rgba(255,255,255,.14)";
+
+  /* No file holds the point budgets - the server sends them in talent_points_state and the
+     client only prints them. Fitted to the characters the mod has read: at level 80 a
+     character has 39 attribute points and 40 spell points. */
+  const spellPointsAt = level => Math.max(0, Math.floor(level / 2));
+  const attrPointsAt = level => Math.max(0, Math.floor((level - 1) / 2));
+
+  const nodes = () => D.talents || [];
+  const forClass = cls => nodes().filter(n => n.cls === Number(cls));
+  const attrs = () => nodes().filter(n => n.cls === 0);
+  const spellOf = n => (D.spells || []).find(s => s.id === n.spell);
+
+  const rank = (ranks, id) => ranks[id] || 0;
+
+  /* A rival is the other half of a choice pair that already HAS a rank - not one that was
+     intended. Spend a point in the left half and the right half shuts. */
+  const rivalOf = (node, ranks) => !node.choice ? null
+    : forClass(node.cls).find(o => o.choice === node.choice && o.id !== node.id
+                                   && rank(ranks, o.id) >= 1);
+
+  /* One named node, or any node of a group - which is how a tier hangs off whichever half
+     of the pair above it was taken. An opening node hangs off nothing. */
+  function prereqMet(node, ranks) {
+    if (node.needs) return rank(ranks, node.needs) >= 1;
+    if (node.needsGroup)
+      return forClass(node.cls).some(o => o.choice === node.needsGroup
+                                          && rank(ranks, o.id) >= 1);
+    return true;
+  }
+
+  /* is_free_unlock is a GRANT: the opening spell is already at rank 1 when the character
+     is made, costs no point and cannot be given back. The Cleric is granted two. */
+  function grantFree(cls, level, ranks) {
+    for (const n of forClass(cls))
+      if (n.free && level >= n.lvl && rank(ranks, n.id) < 1) ranks[n.id] = 1;
+    return ranks;
+  }
+  const spent = (cls, ranks) => forClass(cls).reduce(
+    (t, n) => t + rank(ranks, n.id) - (n.free ? Math.min(1, rank(ranks, n.id)) : 0), 0);
+  const attrSpent = ranks => attrs().reduce((t, n) => t + rank(ranks, n.id), 0);
+
+  function stateOf(node, ranks, level, pointsLeft) {
+    const r = rank(ranks, node.id);
+    if (r >= node.max) return ST.MAXED;
+    if (level < node.lvl) return ST.LEVEL;
+    if (!prereqMet(node, ranks)) return ST.PREREQ;
+    if (rivalOf(node, ranks)) return ST.RIVAL;
+    if (pointsLeft <= 0) return ST.NOPOINTS;
+    return ST.AVAILABLE;
+  }
+
+  /** The parents TalentPanel draws a line from: the named node, and every node of the group. */
+  function parentsOf(node) {
+    const out = [];
+    if (node.needs) {
+      const p = nodes().find(n => n.id === node.needs);
+      if (p) out.push(p);
+    }
+    if (node.needsGroup)
+      out.push(...forClass(node.cls).filter(o => o.choice === node.needsGroup));
+    return out;
+  }
+
+  const at = n => ({x: GRID.left + n.col * GRID.colGap,
+                    y: GRID.top + (n.row - 1) * GRID.rowGap});
+
+  /** Spend one point, or as many as the budget allows. Returns whether anything moved. */
+  function add(node, ranks, level, all) {
+    let moved = false;
+    for (let guard = 0; guard < 64; guard++) {
+      const left = spellPointsAt(level) - spent(node.cls, ranks);
+      if (rank(ranks, node.id) >= node.max) break;
+      if (stateOf(node, ranks, level, left) !== ST.AVAILABLE) break;
+      ranks[node.id] = rank(ranks, node.id) + 1;
+      moved = true;
+      if (!all) break;
+    }
+    return moved;
+  }
+
+  /** Give one back, and anything downstream that now has nothing holding it up. */
+  function remove(node, ranks) {
+    if (rank(ranks, node.id) <= (node.free ? 1 : 0)) return false;
+    ranks[node.id] = rank(ranks, node.id) - 1;
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const n of forClass(node.cls))
+        if (rank(ranks, n.id) > 0 && !prereqMet(n, ranks)) { ranks[n.id] = 0; changed = true; }
+    }
+    return true;
+  }
+
+  /** Hand back whatever this level can no longer pay for or reach. */
+  function reconcile(cls, level, ranks) {
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const n of forClass(cls))
+        if (rank(ranks, n.id) > 0 && (level < n.lvl || !prereqMet(n, ranks))) {
+          ranks[n.id] = 0; changed = true;
+        }
+      while (spellPointsAt(level) - spent(cls, ranks) < 0) {
+        const deepest = forClass(cls).filter(n => rank(ranks, n.id) > (n.free ? 1 : 0))
+          .sort((a, b) => b.row - a.row)[0];
+        if (!deepest) break;
+        ranks[deepest.id] = rank(ranks, deepest.id) - 1;
+        changed = true;
+      }
+    }
+    grantFree(cls, level, ranks);
+    return ranks;
+  }
+
+  /** TalentClientLogic.DescribeRankScaling, which is not the same answer for every spell. */
+  function rankScaling(spell) {
+    if (!spell) return "";
+    const pct = Math.round(POWER_PER_RANK * 100);
+    // Power for anything that deals a number or ticks; DURATION for a stun and the two buffs.
+    const power = spell.base > 0 || [2, 3, 8].includes(spell.fx);
+    const duration = [1, 4, 5].includes(spell.fx);
+    if (power && duration)
+      return `Each rank increases this spell's power and effect duration by ${pct}%.`;
+    if (duration) return `Each rank increases this spell's effect duration by ${pct}%.`;
+    if (power) return `Each rank increases this spell's power by ${pct}%.`;
+    return "This spell has no per-rank scaling.";
+  }
+
+  /**
+   * Draw a class's tree into a host element.
+   * opts: {cls, level, ranks, onChange, onTip, onLeave}
+   */
+  function draw(host, opts) {
+    const cls = Number(opts.cls);
+    const list = forClass(cls);
+    if (!list.length) { host.replaceChildren(); return; }
+    const rows = Math.max(...list.map(n => n.row), 1);
+    const height = GRID.top + rows * GRID.rowGap;
+    host.style.width = GRID.width + "px";
+    host.style.height = height + "px";
+    host.replaceChildren();
+
+    const left = spellPointsAt(opts.level) - spent(cls, opts.ranks);
+
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", `0 0 ${GRID.width} ${height}`);
+    for (const n of list) {
+      const to = at(n);
+      for (const p of parentsOf(n)) {
+        const from = at(p);
+        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        line.setAttribute("x1", from.x + 26); line.setAttribute("y1", from.y + GRID.size);
+        line.setAttribute("x2", to.x + 26);   line.setAttribute("y2", to.y);
+        line.setAttribute("stroke-width", "2");
+        line.setAttribute("stroke", rank(opts.ranks, p.id) >= 1 ? CONNECT_ON : CONNECT_OFF);
+        svg.appendChild(line);
+      }
+    }
+    host.appendChild(svg);
+
+    for (const n of list) {
+      const pos = at(n), r = rank(opts.ranks, n.id);
+      const state = stateOf(n, opts.ranks, opts.level, left);
+      const spell = spellOf(n);
+
+      const btn = el("button", "tnode");
+      btn.type = "button";
+      btn.style.left = pos.x + "px";
+      btn.style.top = pos.y + "px";
+      /* TalentNodeButton.ApplyState: the Available border wins over the ranked one, which
+         is why a granted node still shows gold while it can take another rank. */
+      if (state === ST.AVAILABLE) btn.classList.add("available");
+      else if (r > 0) btn.classList.add("ranked");
+      if (state === ST.LEVEL || state === ST.PREREQ || (state === ST.NOPOINTS && r === 0))
+        btn.classList.add("locked");
+      if (state === ST.RIVAL) btn.classList.add("lockedout");
+      if (spell && spell.icon) {
+        const img = el("img");
+        img.src = `icons/spells/${spell.id}.png`;
+        img.loading = "lazy"; img.alt = "";
+        btn.appendChild(img);
+      } else {
+        btn.appendChild(el("span", null, (spell ? spell.name : "?").slice(0, 2)));
+      }
+      btn.onclick = e => {
+        if (add(n, opts.ranks, opts.level, e.shiftKey) && opts.onChange) opts.onChange();
+      };
+      btn.oncontextmenu = e => {
+        e.preventDefault();
+        if (remove(n, opts.ranks) && opts.onChange) opts.onChange();
+      };
+      if (opts.onTip) {
+        const info = () => ({node: n, spell, state, rank: rank(opts.ranks, n.id)});
+        btn.onmouseenter = e => opts.onTip(e, info());
+        btn.onmousemove = e => opts.onTip(e, info());
+        btn.onmouseleave = () => opts.onLeave && opts.onLeave();
+      }
+      host.appendChild(btn);
+
+      const cap = el("div", "trank" + (r > 0 ? " has" : ""), `${r}/${n.max}`);
+      cap.style.left = (pos.x - 30) + "px";
+      cap.style.top = (pos.y + GRID.size + 2) + "px";
+      host.appendChild(cap);
+
+      const name = el("div", "tname", spell ? spell.name : "");
+      name.style.left = (pos.x - 30) + "px";
+      name.style.top = (pos.y + GRID.size + 20) + "px";
+      host.appendChild(name);
+    }
+  }
+
+  /** Per-spell ranks, the shape the planner and the simulator already speak. */
+  function spellRanksOf(cls, ranks) {
+    const out = {};
+    for (const n of forClass(cls))
+      if (n.spell && rank(ranks, n.id) > 0) out[n.spell] = rank(ranks, n.id);
+    return out;
+  }
+
+  /** The reverse: seed a tree from an imported character's spell ranks. */
+  function fromSpellRanks(cls, bySpell, level) {
+    const ranks = {};
+    for (const n of forClass(cls))
+      if (n.spell && (bySpell || {})[n.spell]) ranks[n.id] = bySpell[n.spell];
+    grantFree(cls, level, ranks);
+    return ranks;
+  }
+
+  return {ST, POWER_PER_RANK, GRID, spellPointsAt, attrPointsAt, forClass, attrs, spellOf,
+          rivalOf, prereqMet, grantFree, spent, attrSpent, stateOf, parentsOf, at,
+          add, remove, reconcile, rankScaling, draw, spellRanksOf, fromSpellRanks};
+})();
+
 /* ---- the footer ----------------------------------------------------------
    Who made it. The build number used to live here too, and it has moved to the masthead's
    own line of figures on the Items page - said once, where a reader is already reading

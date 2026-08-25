@@ -2139,3 +2139,43 @@ select.riftsel:hover{
    point, and there are 1,555 of these on the overworld. */
 .mapmarkers,.maplive{will-change:transform}
 .mapmarkers .mk{contain:layout style}
+
+/* ---- the talent tree ------------------------------------------------------
+   At the game's own measurements, all of them read out of TalentPanel: nodes are 52px on a
+   140x104 grid inset (24, 16), the canvas is 380 wide, the rank caption is a 112x16 box
+   30px left of the node and 2px under it, and the connectors are 2px lines from a parent's
+   bottom centre to a child's top centre.
+
+   The colours are TalentNodeButton's: a gold border on a node that can take a point, green
+   once it has one, white at 25% otherwise, and the icon greys when locked or goes red-grey
+   when the other half of its pair was taken. Faithful to the panel, so a reader does not
+   have to translate between the two. */
+.tree{position:relative;flex:0 0 auto}
+.tree svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.tnode{position:absolute;width:52px;height:52px;padding:0;border-radius:8px;
+  background:var(--sunk,var(--panel2));border:2px solid rgba(255,255,255,.25);
+  display:grid;place-items:center;cursor:pointer;
+  transition:border-color .12s,filter .12s}
+.tnode img{width:40px;height:40px;object-fit:contain;display:block}
+.tnode.available{border-color:rgb(242,204,89)}
+.tnode.ranked{border-color:rgb(102,217,102)}
+.tnode.locked img{filter:grayscale(1) brightness(.45)}
+.tnode.lockedout img{filter:grayscale(1) brightness(.5) sepia(1) hue-rotate(-30deg)}
+.tnode:hover{filter:brightness(1.12)}
+.trank{position:absolute;width:112px;height:16px;text-align:center;font-size:11.5px;
+  line-height:16px;font-variant-numeric:tabular-nums;color:rgb(204,204,204);
+  pointer-events:none;text-shadow:0 1px 0 rgba(0,0,0,.85)}
+.trank.has{color:rgb(128,242,128)}
+.tname{position:absolute;width:112px;text-align:center;font-size:11px;line-height:1.25;
+  color:var(--faint);pointer-events:none}
+.tlegend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--faint);margin-top:14px}
+.tlegend i{display:inline-block;width:11px;height:11px;border-radius:3px;border:2px solid;
+  vertical-align:-1px;margin-right:5px}
+
+/* The two things a level buys, in one panel: the tree on the left at its own fixed width,
+   the attribute rows beside it. They wrap on a narrow screen rather than squeezing the
+   tree, whose measurements are the game's and not ours to compress. */
+.talentbody{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap}
+.talentcol{min-width:0}
+.talentcol .ssection{margin-top:0}
+.talentcol .note{margin:4px 0 12px}
