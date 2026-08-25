@@ -245,8 +245,16 @@ dialog{background:var(--panel-raised);border-color:var(--line)}
 .tip{
   background:color-mix(in oklab, var(--panel) 92%, var(--bg));
   border-color:var(--line);border-radius:9px;overflow:hidden;
-  padding:0;max-width:330px;
+  max-width:330px;
 }
+/* Only the MARKER card gives up its padding, and only because its tint accent has to run
+   edge to edge along the top - the card puts the padding back on .tipbody underneath.
+   Every other tooltip on the site is plain content in this box and needs the padding here:
+   zeroing it for all of them left the planner's spell cards with their text against the
+   border. Keyed on the accent itself so the exception cannot drift away from the thing
+   that justifies it. */
+.tip{padding:11px 13px}
+.tip:has(> .tipaccent){padding:0}
 .tipaccent{
   display:block;height:3px;
   background:linear-gradient(90deg, var(--c, var(--gold)),

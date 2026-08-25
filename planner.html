@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Elegon DB — Character planner</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2032%2032%27%3E%3Cdefs%3E%3ClinearGradient%20id%3D%27t%27%20x1%3D%270%27%20y1%3D%270%27%20x2%3D%27.45%27%20y2%3D%271%27%3E%3Cstop%20offset%3D%270%27%20stop-color%3D%27%23ffe455%27%2F%3E%3Cstop%20offset%3D%271%27%20stop-color%3D%27%23e9a200%27%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D%2732%27%20height%3D%2732%27%20rx%3D%277%27%20fill%3D%27url%28%23t%29%27%2F%3E%3Cg%20fill%3D%27%23110c09%27%20font-family%3D%27Alice%2CGeorgia%2Cserif%27%3E%3Ctext%20x%3D%276.5%27%20y%3D%2723%27%20font-size%3D%2717%27%3EE%3C%2Ftext%3E%3Ctext%20x%3D%2717.5%27%20y%3D%2723%27%20font-size%3D%279%27%20opacity%3D%27.72%27%3Edb%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fsvg%3E">
-<link rel="stylesheet" href="style.css?v=00c97287">
-<link rel="stylesheet" href="elegon-redesign.css?v=00c97287">
+<link rel="stylesheet" href="style.css?v=da660e28">
+<link rel="stylesheet" href="elegon-redesign.css?v=da660e28">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -154,8 +154,6 @@
           <button type="button" id="openBuffs" class="buffbtn">
             Buffs <span id="buffCount" class="buffn" hidden>0</span>
           </button>
-          <label for="spellRank">Talent rank</label>
-          <input type="number" id="spellRank" min="0" max="5" step="1" value="1">
         </div>
       </div>
       <div class="divider"></div>
@@ -253,9 +251,9 @@
   </div>
 </dialog>
 
-<script src="data.js?v=00c97287"></script>
+<script src="data.js?v=da660e28"></script>
 <!-- Written by the mod when you log in; absent until then. -->
-<script src="app.js?v=00c97287"></script>
+<script src="app.js?v=da660e28"></script>
 <script>
 /* The game's slot set and order, from InGameUi.EnumerateCharacterPanelSlots:
    main weapon, off hand, head, neck, shoulder, back, chest, waist, leg, foot, hands. */
@@ -1169,13 +1167,18 @@ riftPanel(RIFTS.filter(r => r.level === TOP_LEVEL)
 /* ---- spell panel ---------------------------------------------------------
    Shows what this build's spells actually do. Damage scales on Strength, healing on
    Grace, both on level and talent rank; cast time is reduced by Alacrity. */
+/* Kept only so a build code still carries the byte it always carried - see encodeBuild.
+   Nothing reads it any more: the talent tree is where a rank comes from. */
 let spellRank = 1;
-/* Per-spell ranks from an imported character; null means "use the single rank selector". */
+/* Per-spell ranks, which the tree fills in and an imported character seeds. */
 let spellRanksByIdx = null;
 /* Auto Attack is the weapon swing every class has and sits outside the talent trees, so
-   nothing can rank it up: it stays at 1 whatever the selector says. */
+   nothing can rank it up: it stays at 1 for ever.
+
+   Everything else is exactly what the tree says, and a spell with no points in it has no
+   rank - which is the same thing the game means by not having taken it. */
 const rankFor = s => !s.talent ? 1
-  : (spellRanksByIdx && spellRanksByIdx[s.id] != null) ? spellRanksByIdx[s.id] : spellRank;
+  : ((spellRanksByIdx && spellRanksByIdx[s.id]) || 0);
 
 /* Utility with no bearing on a build. */
 const HIDDEN_SPELLS = new Set(["Recall"]);
@@ -1415,14 +1418,6 @@ classSel.onchange = () => {
   render();
 };
 
-const rankInput = document.getElementById("spellRank");
-rankInput.oninput = () => {
-  spellRank = Math.min(5, Math.max(0, Number(rankInput.value) || 0));
-  spellRanksByIdx = null;          // an explicit choice overrides the imported ranks
-  spellRanksFromTree = false;
-  render();
-};
-
 function drawSpells(totals) {
   const box = document.getElementById("spellRows");
   box.replaceChildren();
@@ -1436,14 +1431,25 @@ function drawSpells(totals) {
      They live behind the Buffs button instead, where switching one on changes every number
      below, which is the only thing they do. */
   const buffIds = new Set(buffSpells().map(s => s.id));
+  /* Only what the build has actually taken.
+
+     The panel used to list every spell the class and level allowed and rank them all at
+     whatever one selector said, which described a character nobody can make: forty points
+     do not reach ten nodes at five ranks, and half of those rows were the two halves of a
+     choice pair that cannot both exist. What the tree has points in IS the spellbook, and
+     a spell with no points is one this character has not learnt.
+
+     Auto Attack stays regardless - it is the weapon swing, not a talent, and no tree can
+     grant or withhold it. */
   const mine = all.filter(s => s.cls === 0 || String(s.cls) === charClass)
                   .filter(s => s.lvl <= level)
                   .filter(s => !HIDDEN_SPELLS.has(s.name))
-                  .filter(s => !buffIds.has(s.id));
+                  .filter(s => !buffIds.has(s.id))
+                  .filter(s => !s.talent || rankFor(s) >= 1);
 
   if (!mine.length) {
     box.appendChild(el("p", "note", all.length
-      ? `No spells for ${className()}.`
+      ? `Nothing taken yet — spend a talent point to fill this in.`
       : "No spells."));
     return;
   }
@@ -1765,22 +1771,14 @@ let talentRanks = {};
 
 const talentClass = () => Number(charClass) || 1;
 
-/** Per-spell ranks from the tree, or null when nothing has been spent in it. */
-function talentSpellRanks() {
-  if (!TALENT.spent(talentClass(), talentRanks)) return null;
-  return TALENT.spellRanksOf(talentClass(), talentRanks);
-}
-
+/* The tree is the whole of it now, so there is no longer a fallback to fall back TO and
+   the ranks are simply whatever it holds. Note the grants count: a granted opener is at
+   rank 1 without a point being spent, and the panel has to show it - gating this on
+   "anything spent" would leave a fresh character with an empty spellbook. */
 function syncTalents() {
   TALENT.reconcile(talentClass(), level, talentRanks);
-  const spellRanks = talentSpellRanks();
-  if (spellRanks) spellRanksByIdx = spellRanks;
-  else if (spellRanksFromTree) spellRanksByIdx = null;
-  spellRanksFromTree = !!spellRanks;
+  spellRanksByIdx = TALENT.spellRanksOf(talentClass(), talentRanks);
 }
-/* Whether the ranks currently in force came from the tree, so emptying it hands control
-   back to the selector rather than leaving the last tree's ranks standing. */
-let spellRanksFromTree = false;
 
 function drawTalents() {
   const cls = talentClass();
@@ -1940,7 +1938,6 @@ function importCharacter(c) {
      build that was imported rather than an empty tree beside its numbers. */
   talentRanks = TALENT.fromSpellRanks(Number(c.cls) || talentClass(), c.spellRanks || {},
                                       c.level || level);
-  spellRanksFromTree = false;
   if (c.cls && CLASSES[String(c.cls)]) {
     charClass = String(c.cls);
     document.getElementById("charClass").value = charClass;
@@ -2012,7 +2009,12 @@ function encodeBuild() {
   const wide = SLOT_ORDER.some(k => (build[k].tier || 0) > TIER_MAX_V1);
 
   const b = wide ? [CODE_V2] : [];
-  b.push(level & 255, Number(charClass) & 255, spellRank & 255);
+  /* The third byte was the single talent rank. Nothing reads it here any more - the tree
+     block at the end carries the real ranks - but the position is part of the format, so
+     it keeps its place and carries the highest rank in the tree, which is the closest
+     single number to what it used to mean. */
+  const topRank = Math.max(0, ...TALENT.forClass(charClass).map(n => talentRanks[n.id] || 0));
+  b.push(level & 255, Number(charClass) & 255, topRank & 255);
   for (const k of ATTRS) b.push(Math.min(63, alloc[k]) & 255);
   for (const k of SLOT_ORDER) {
     const st = build[k];
@@ -2114,8 +2116,7 @@ function decodeBuild(code) {
       if (node) talentRanks[node.id] = byte & 7;
     }
   }
-  spellRank = Math.min(5, Math.max(0, rank));
-  document.getElementById("spellRank").value = String(spellRank);
+  spellRank = Math.min(5, Math.max(0, rank));   // read for the format's sake, not used
   spellRanksByIdx = null;
   dropUnusable();                 // the code may carry gear this class cannot hold
   setLevel(lvl || 80);
