@@ -599,7 +599,13 @@ dialog::backdrop{background:var(--scrim);backdrop-filter:blur(2px)}
 .dtop .spacer{margin-left:auto}
 .dfilters{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .dfilters label{color:var(--faint);font-size:12px;letter-spacing:.3px}
-.dbody{overflow:auto;flex:1 1 auto;min-height:0;padding:0 18px 18px}
+/* overscroll-behavior:contain stops a scroll that reaches the end of this box from
+   continuing into the page behind the dialog. Without it a wheel inside an open modal
+   chains outward the moment the inner box runs out - which reads as the page moving
+   behind the thing you are reading, and reads differently on each side of a panel
+   depending on which of its boxes hits its end first. */
+.dbody{overflow:auto;overscroll-behavior:contain;flex:1 1 auto;min-height:0;
+  padding:0 18px 18px}
 .dbody table{border:none;border-radius:0}
 .dbody th{top:0}
 .dbody tbody tr{cursor:pointer}
@@ -2218,7 +2224,11 @@ select.riftsel:hover{
    of the dialog to give it, so it takes 74vh - a Knight's ten rows are 1,056px and every
    row it can show without scrolling is one less thing to hunt for. The 6px of horizontal
    padding is the caption overhang above. */
+/* Contained too, so the tree's own scroller hands nothing on to the body or the page: the
+   gap either side of the tree is part of this box, and a wheel there has to behave the
+   same as a wheel over the tree itself. */
 .talentcol.treecol{max-height:calc(82vh / var(--zoom));overflow-y:auto;overflow-x:hidden;
+  overscroll-behavior:contain;
   /* both-edges, so the room reserved for the scrollbar is matched on the left and the
      tree ends up optically centred rather than pushed a scrollbar's width off it. */
   padding:0 6px;scrollbar-gutter:stable both-edges}
