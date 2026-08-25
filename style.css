@@ -577,7 +577,11 @@ dialog[open]{display:flex;flex-direction:column}
    the tree's measurements are the game's, so the panel is sized to them rather than the
    other way round. 440px was the old attributes-only width and made the two columns wrap,
    which put the attributes a full tree-length below the thing they are spent alongside. */
-#attrDlg{width:min(800px,94vw)}
+/* The talent panel is the biggest thing on either page and the tree is the reason: ten
+   rows of a Knight are 1,056px at the size the game draws them. So this dialog takes
+   nearly the whole window rather than the 440px it needed when it held seven rows of
+   attributes, and the tree is magnified into whatever that leaves - see scaleFor. */
+#attrDlg{width:min(1240px,96vw);max-height:94vh}
 dialog::backdrop{background:var(--scrim);backdrop-filter:blur(2px)}
 
 /* Two rows, not one wrapping row. The filters used to share a line with Close, so on a
@@ -2196,7 +2200,9 @@ select.riftsel:hover{
    starting 30px to its left, so the outer columns' captions run from -6 to 386 - six
    pixels past the canvas at each edge. At 380 with overflow hidden they were being shaved
    on both sides. */
-.talentbody{display:grid;grid-template-columns:392px minmax(230px,1fr);gap:20px;
+/* The tree takes the room and the attributes take what they need: seven short rows do not
+   improve at 600px wide, while the tree does. */
+.talentbody{display:grid;grid-template-columns:minmax(392px,1fr) 320px;gap:24px;
   align-items:start}
 .talentcol{min-width:0}
 .talentcol .ssection{margin-top:0}
@@ -2205,8 +2211,11 @@ select.riftsel:hover{
    of the dialog to give it, so it takes 74vh - a Knight's ten rows are 1,056px and every
    row it can show without scrolling is one less thing to hunt for. The 6px of horizontal
    padding is the caption overhang above. */
-.talentcol.treecol{max-height:74vh;overflow-y:auto;overflow-x:hidden;
+.talentcol.treecol{max-height:82vh;overflow-y:auto;overflow-x:hidden;
   padding:0 6px;scrollbar-gutter:stable}
+/* Centred when the column is wider than the magnified tree - which happens at the 2x cap
+   on a very wide window, and on the way down to the narrow layout. */
+.talentcol.treecol > .tree{margin-inline:auto}
 /* Sticky so the attributes and their remaining points stay beside whatever part of the
    tree you have scrolled to. */
 .talentcol.attrcol{position:sticky;top:0}
