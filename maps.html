@@ -608,6 +608,7 @@ function draw() {
 
   kinLayer.replaceChildren();         // its nodes belong to the run being replaced
   markers.classList.remove("dimmed");
+  hovered = null;                     // whatever was under the pointer went with them
   placedScale = null;                 // fresh nodes carry no scale yet
   for (const p of shownPoints) {
     const mk = el("i", "mk mk-" + p.kind);
@@ -635,11 +636,11 @@ function draw() {
     if (p.open) mk.onkeydown = e => {
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); p.open(); }
     };
-    const kin = HIGHLIGHTS.has(p.kind) ? p.key : null;
-    mk.onmouseenter = () => { showTip(mk, p); highlight(kin); };
-    mk.onmouseleave = () => { hideTip(); highlight(null); };
-    mk.onfocus = () => { showTip(mk, p); highlight(kin); };
-    mk.onblur = () => { hideTip(); highlight(null); };
+    // Which marker the pointer is on is settled by the view, further down, rather than by
+    // enter and leave on the marker. Keyboard focus still speaks for itself.
+    mk.pt = p;
+    mk.onfocus = () => pointAt(mk);
+    mk.onblur = () => { if (!shuffling && hovered === mk) pointAt(null); };
     p.node = mk;
     markers.appendChild(mk);
   }
@@ -671,20 +672,52 @@ const HIGHLIGHTS = new Set(["mob", "npc", "quest", "mine"]);
  * each way, so crossing the map with the mouse was a slideshow. Now the parent's own opacity
  * carries the fade, one composited property, and the handful being lit are lifted out of it.
  */
+let shuffling = false;
+
 function highlight(key) {
-  while (kinLayer.firstChild) {
-    const node = kinLayer.firstChild;
-    node.classList.remove("kin");
-    markers.appendChild(node);
-  }
-  if (key !== null) {
-    for (const p of shownPoints) {
-      if (!p.node || p.key !== key) continue;
-      p.node.classList.add("kin");
-      kinLayer.appendChild(p.node);
+  // Moving a node takes it out of the document for an instant, and a node that leaves the
+  // document loses focus. Putting it back keeps tabbing on the marker it was on, and the
+  // flag stops the blur the move itself fires from reading as the pointer having left.
+  const focused = document.activeElement;
+  shuffling = true;
+  try {
+    while (kinLayer.firstChild) {
+      const node = kinLayer.firstChild;
+      node.classList.remove("kin");
+      markers.appendChild(node);
     }
+    if (key !== null) {
+      for (const p of shownPoints) {
+        if (!p.node || p.key !== key) continue;
+        p.node.classList.add("kin");
+        kinLayer.appendChild(p.node);
+      }
+    }
+    markers.classList.toggle("dimmed", key !== null);
+    if (focused && focused !== document.body && focused.isConnected
+        && document.activeElement !== focused)
+      focused.focus({preventScroll: true});
+  } finally {
+    shuffling = false;
   }
-  markers.classList.toggle("dimmed", key !== null);
+}
+
+/* Which marker the pointer is over.
+ *
+ * Asked of the view, not of the markers. highlight() MOVES the marker being pointed at into
+ * the lit layer, and a node that is reparented while the pointer is over it drops out of the
+ * browser's hover bookkeeping: the matching leave never arrives, so the tooltip and the fade
+ * stayed behind after the pointer had gone somewhere else. The view is never reparented, so
+ * asking it what lies under the pointer answers correctly however the markers are shuffled.
+ */
+let hovered = null;
+
+function pointAt(node) {
+  if (node === hovered) return;
+  hovered = node;
+  if (!node) { hideTip(); highlight(null); return; }
+  showTip(node, node.pt);
+  highlight(HIGHLIGHTS.has(node.pt.kind) ? node.pt.key : null);
 }
 
 /** Screen position for every visible marker, from the stage's current transform. */
@@ -974,6 +1007,15 @@ for (const ev of ["pointerup", "pointercancel"])
     view.classList.remove("grabbing");
     view.releasePointerCapture(e.pointerId);
   });
+
+// Hit-testing from the event beats enter and leave on the markers on both counts: it is one
+// listener rather than two per marker, and it keeps answering while highlight() moves the
+// marker being pointed at. Panning is not pointing, so a drag drops the tooltip.
+view.addEventListener("pointermove", e => {
+  if (dragging) { pointAt(null); return; }
+  pointAt(e.target.closest ? e.target.closest(".mk") : null);
+});
+view.addEventListener("pointerleave", () => pointAt(null));
 
 // A resized window changes what "fit" means, so the clamp has to be redone.
 addEventListener("resize", () => {
