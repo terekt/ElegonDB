@@ -171,7 +171,25 @@ function icon(kind, id, has, size) {
    left/top written back is a CSS length that gets scaled again. Anything positioning a
    fixed element from a measured rect has to divide by this once, at the end. Shared, because
    the map page and the quest page both learned it the hard way. */
-const pageZoom = () => Number(getComputedStyle(document.documentElement).zoom) || 1;
+/**
+ * The `zoom` the stylesheet applies to the root above 2200px, cached.
+ *
+ * getComputedStyle makes the browser settle every pending style change before it can
+ * answer. That is nothing on a quiet page and very expensive on a busy one: the map carries
+ * 1,555 markers, and a single one of these reads cost 87ms once their styles were dirty.
+ * The pointer handlers called it on every wheel tick and every drag frame, which is what
+ * made panning and zooming the overworld crawl.
+ *
+ * It only changes when the viewport crosses that width, so it is read once and thrown away
+ * on resize.
+ */
+let zoomCache = null;
+const pageZoom = () => {
+  if (zoomCache === null)
+    zoomCache = Number(getComputedStyle(document.documentElement).zoom) || 1;
+  return zoomCache;
+};
+addEventListener("resize", () => { zoomCache = null; });
 
 /** Name cell: icon and label kept on one baseline regardless of icon size. */
 function nameCell(kind, id, hasIcon, label, labelCls, size, frameQuality) {

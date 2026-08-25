@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Elegon DB — Maps</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=e12b43bd">
+<link rel="stylesheet" href="style.css?v=ea4054ad">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -100,8 +100,8 @@
   <p class="note" id="note"></p>
 </div>
 
-<script src="data.js?v=e12b43bd"></script>
-<script src="app.js?v=e12b43bd"></script>
+<script src="data.js?v=ea4054ad"></script>
+<script src="app.js?v=ea4054ad"></script>
 <script>
 /* The interactive map.
    Markers live inside a stage sized to the capture in image pixels, so a marker's position
@@ -298,7 +298,11 @@ function zoomBy(factor) {
   V.y = cy - (cy - V.y) * f;
   V.scale = next;
   clampPan();
-  apply();
+  // Coalesced to one repaint a frame. A zoom step has to rewrite every marker's transform,
+  // which is 1,555 style recalculations and the one thing on this page that still costs
+  // real time; a trackpad emits wheel events far faster than a frame, and doing that work
+  // per event rather than per frame was several of them stacked up behind one gesture.
+  requestZoomApply();
 }
 document.getElementById("zin").onclick = () => zoomBy(1.6);
 document.getElementById("zout").onclick = () => zoomBy(1 / 1.6);
@@ -598,10 +602,10 @@ function draw() {
   markers.replaceChildren();
   shownPoints = points.filter(passes);
 
+  placedScale = null;                 // fresh nodes carry no scale yet
   for (const p of shownPoints) {
     const mk = el("i", "mk mk-" + p.kind);
-    mk.style.left = p.px + "px";
-    mk.style.top = p.py + "px";
+    mk.style.transform = at(p.px, p.py);
     if (p.colour) mk.style.setProperty("--c", p.colour);
     if (p.disc) mk.style.setProperty("--d", p.disc);
     // The level, written on the marker rather than implied by its shade.
@@ -659,16 +663,44 @@ function highlight(key) {
 }
 
 /** Screen position for every visible marker, from the stage's current transform. */
+/* The scale the markers were last placed at, or null when they need placing again. */
+let placedScale = null;
+
+/** One marker's own transform: where it sits, then the half-size shift that centres it. */
+const at = (px, py) =>
+  `translate3d(${px * V.scale}px, ${py * V.scale}px, 0) translate(-50%, -50%)`;
+
+/**
+ * Put every marker where the current view says it goes.
+ *
+ * Panning moves the LAYER, not the markers. Each marker sits at its stage position times the
+ * zoom, and the two marker layers carry the pan as a transform - so dragging the map changes
+ * one composited property instead of two inline styles on every marker.
+ *
+ * That is the whole cost of this page. The overworld carries 1,555 markers and repositioning
+ * them individually measured 0.75ms of JavaScript and 91ms of layout behind it - eleven
+ * frames a second, and worst when the whole map is on screen because that is when none of
+ * them are off it. A transform on the parent is not laid out at all.
+ *
+ * left/top are still rewritten when the ZOOM changes, because the scale is baked into them.
+ * That is one pass per zoom step rather than one per frame of a drag.
+ */
 function placeMarkers() {
-  if (liveMarker) {
-    liveMarker.style.left = (V.x + (+liveMarker.dataset.px) * V.scale) + "px";
-    liveMarker.style.top = (V.y + (+liveMarker.dataset.py) * V.scale) + "px";
+  if (placedScale !== V.scale) {
+    // A marker's own position is a transform too, not left/top. Writing left moves a laid-out
+    // box and the browser re-lays-out to find where it went; a transform is composited and
+    // costs nothing to place. Zooming rewrote 1,555 of them and that alone was 123ms.
+    // The -50% pair that used to live in the stylesheet is folded in here, because an
+    // element has one transform and this one owns it.
+    if (liveMarker)
+      liveMarker.style.transform = at((+liveMarker.dataset.px), (+liveMarker.dataset.py));
+    for (const p of shownPoints)
+      if (p.node) p.node.style.transform = at(p.px, p.py);
+    placedScale = V.scale;
   }
-  for (const p of shownPoints) {
-    if (!p.node) continue;
-    p.node.style.left = (V.x + p.px * V.scale) + "px";
-    p.node.style.top = (V.y + p.py * V.scale) + "px";
-  }
+  const shift = `translate3d(${V.x}px, ${V.y}px, 0)`;
+  markers.style.transform = shift;
+  liveLayer.style.transform = shift;
 }
 
 /* ---- tooltip ------------------------------------------------------------- */
@@ -757,9 +789,28 @@ const MAX_SCALE = 6;
    on the root, and from that point the two differ by exactly that factor — which is why the
    map came out cropped on the right and bottom by 15% on a 1440p screen and was fine on a
    1080p one. Everything below works in layout pixels. */
-const viewSize = () => ({width: view.clientWidth, height: view.clientHeight});
+/* The map frame's own box, cached.
+ *
+ * Reading clientWidth or getBoundingClientRect forces the browser to settle pending style
+ * before it can answer, and this page has 1,555 markers whose styles are pending after every
+ * zoom - so a single innocent-looking read cost 87ms. The wheel handler made three of them
+ * per event, which is why a trackpad flick took seconds while dragging stayed smooth.
+ *
+ * The frame only changes size when the window does or when the layout is re-fitted, and
+ * both of those say so. */
+let viewBox = null;
+const invalidateViewBox = () => { viewBox = null; };
+function viewRect() {
+  if (!viewBox) {
+    const r = view.getBoundingClientRect();
+    viewBox = {left: r.left, top: r.top, width: view.clientWidth, height: view.clientHeight};
+  }
+  return viewBox;
+}
+
+const viewSize = () => viewRect();
 const pointerAt = e => {
-  const r = view.getBoundingClientRect(), z = pageZoom();
+  const r = viewRect(), z = pageZoom();
   return [(e.clientX - r.left) / z, (e.clientY - r.top) / z];
 };
 
@@ -768,15 +819,25 @@ const fitScale = () => {
   return Math.min(r.width / S.map.w, r.height / S.map.h);
 };
 
+/* Looked up once. apply() runs on every frame of a drag, and two querySelectors a frame is
+   work for nothing when the bar is the same bar it was. */
+const scaleBar = document.getElementById("scalebar");
+const scaleBarRule = scaleBar.querySelector("span");
+const scaleBarText = scaleBar.querySelector("b");
+let barScale = null;
+
 function apply() {
   stage.style.transform = `translate(${V.x}px, ${V.y}px) scale(${V.scale})`;
   placeMarkers();
-  const perUnit = Math.hypot(S.map.pz[0], S.map.pz[1]) || 1;
-  const bar = document.getElementById("scalebar");
-  // A round number of world units, drawn at whatever width that currently occupies.
-  const units = gridSpacing(120 / (V.scale * perUnit));
-  bar.querySelector("span").style.width = (units * perUnit * V.scale) + "px";
-  bar.querySelector("b").textContent = units + " units";
+  // The bar only says anything new when the zoom changes; panning leaves it alone.
+  if (barScale !== V.scale) {
+    const perUnit = Math.hypot(S.map.pz[0], S.map.pz[1]) || 1;
+    // A round number of world units, drawn at whatever width that currently occupies.
+    const units = gridSpacing(120 / (V.scale * perUnit));
+    scaleBarRule.style.width = (units * perUnit * V.scale) + "px";
+    scaleBarText.textContent = units + " units";
+    barScale = V.scale;
+  }
 }
 
 /** Keeps the map inside the frame, and centres it when it is smaller than the frame. */
@@ -797,6 +858,9 @@ function matchPanelHeight() {
     .gridTemplateColumns.split(" ").length < 2;
   // clientHeight, not the painted rect: this becomes a CSS length, which is layout px.
   panel.style.maxHeight = stacked ? "" : view.clientHeight + "px";
+  // After, not before: this writes a height, so the cached frame is only stale once the
+  // write has happened. Invalidating first just refilled the cache with the old box.
+  invalidateViewBox();
 }
 
 function fit() {
@@ -810,6 +874,15 @@ function fit() {
   clampPan();
   apply();
   matchPanelHeight();
+}
+
+/* apply() is synchronous everywhere else, because everywhere else calls it once. The wheel
+   is the exception: it fires in bursts, so its repaint is batched into the next frame. */
+let zoomQueued = false;
+function requestZoomApply() {
+  if (zoomQueued) return;
+  zoomQueued = true;
+  requestAnimationFrame(() => { zoomQueued = false; apply(); });
 }
 
 view.addEventListener("wheel", e => {
@@ -836,9 +909,12 @@ view.addEventListener("pointermove", e => {
   const iy = (py - V.y) / V.scale;
   if (ix < 0 || iy < 0 || ix > S.map.w || iy > S.map.h) { coordsBox.hidden = true; return; }
   const [wx, wz] = pixelToWorld(S.map, ix, iy);
-  coordsBox.replaceChildren(
-    el("span", null, "X"), el("b", null, Math.round(wx).toString()),
-    el("span", null, "Z"), el("b", null, Math.round(wz).toString()));
+  // Built once and rewritten, not rebuilt. This fires on every pointermove, and four fresh
+  // elements a move is four elements of garbage a move.
+  if (!coordsBox.firstChild)
+    coordsBox.append(el("span", null, "X"), el("b"), el("span", null, "Z"), el("b"));
+  coordsBox.children[1].textContent = Math.round(wx).toString();
+  coordsBox.children[3].textContent = Math.round(wz).toString();
   coordsBox.hidden = false;
 });
 view.addEventListener("pointerleave", () => { coordsBox.hidden = true; });
@@ -875,6 +951,7 @@ for (const ev of ["pointerup", "pointercancel"])
 
 // A resized window changes what "fit" means, so the clamp has to be redone.
 addEventListener("resize", () => {
+  invalidateViewBox();
   V.scale = Math.max(V.scale, fitScale());
   clampPan();
   apply();
