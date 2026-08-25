@@ -721,7 +721,7 @@ function simulate(M, order, opts) {
     actions += 1;
     const occupies = Math.max(cast, M.gcd);
     if (keepLog) log.push({
-      t, id: pick.id, name: pick.name, kind: "cast",
+      t, id: pick.id, key: pick.key, name: pick.name, kind: "cast",
       cast, occupies, end: t + occupies, landAt,
       energyBefore, resource, amp,
       cost, listedCost: pick.fullCost, gen: pick.gen,
@@ -973,11 +973,15 @@ function solve(M, opts) {
     }
   }
 
+  /* By ENTRY, not by spell. A proc consumer puts two lines on the bar under one id - the
+     free cast and the paid one - and when the free one takes every proc the paid one never
+     fires. Keyed by id it looked cast, so it survived as a dead row at the bottom of the
+     list: an instruction to spend 40 energy on something the fight never once did. */
   const trial = simulate(M, order, {log: true});
-  const cast = new Set(trial.log.filter(e => e.kind === "cast").map(e => e.id));
-  const never = order.filter(a => !cast.has(a.id) && !a.locked);
+  const cast = new Set(trial.log.filter(e => e.kind === "cast").map(e => e.key));
+  const never = order.filter(a => !cast.has(a.key) && !a.locked);
   if (never.length) {
-    const pruned = order.filter(a => cast.has(a.id) || a.locked);
+    const pruned = order.filter(a => cast.has(a.key) || a.locked);
     if (!betterThan(objective(M, trial), objective(M, simulate(M, pruned)))) order = pruned;
   }
 
