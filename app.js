@@ -2122,7 +2122,9 @@ function questRoster(entries, opts) {
 function personCard(npcId, name, label) {
   const npc = NPC_BY_ID.get(npcId);
   const card = el("div", "person");
-  card.appendChild(icon("npcs", npcId, !!(npc && npc.icon), 76));
+  /* 52px and round, framed on the head and shoulders. icon() writes the size inline, so
+     this is the only place it can be set - a stylesheet cannot reach past it. */
+  card.appendChild(icon("npcs", npcId, !!(npc && npc.icon), 52));
   const text = el("div", "persontext");
   text.appendChild(el("span", "personrole", label));
   text.appendChild(el("b", null, (npc && npc.name) || name || "Unknown"));
@@ -2993,35 +2995,16 @@ function openChange(entry, cat, kind, e, old) {
 })();
 
 
-/* ---- the version stamp ---------------------------------------------------
-   Which build of the game this data describes, and when it was read.
+/* ---- the footer ----------------------------------------------------------
+   Who made it. The build number used to live here too, and it has moved to the masthead's
+   own line of figures on the Items page - said once, where a reader is already reading
+   counts, rather than twice in two voices.
 
    Put here rather than in each page's markup so it cannot drift between them: seven copies
-   of a footer is seven chances for one to say something different, and the one that lies is
-   always the page nobody rebuilt.
-
-   Deliberately quiet - a hairline, muted text, the bottom of the page. A visitor comparing
-   a number against their own game needs to know which patch they are reading, and that is
-   the whole job; it does not need to announce itself. */
-(function versionStamp() {
-  if (!D.version) return;                       // no data, nothing honest to claim
-
-  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  /* Written out rather than left to toLocaleDateString: 08/09 is two different days
-     depending on where the reader lives, and a date nobody can misread costs three
-     characters. */
-  const readable = iso => {
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || "");
-    return m ? `${+m[3]} ${MONTHS[+m[2] - 1]} ${m[1]}` : null;
-  };
-
+   of a footer is seven chances for one to say something different. */
+(function siteFooter() {
   const foot = el("footer", "sitever");
-  foot.appendChild(el("span", null, "Elegon build "));
-  foot.appendChild(el("b", null, String(D.version)));
-  const when = readable(D.built);
-  if (when) foot.appendChild(el("span", null, " · data read " + when));
-  foot.title = "The build of the game this database was read from. Numbers here describe "
-             + "that patch, and the game may have moved since.";
+  foot.appendChild(el("span", null, "Created by "));
+  foot.appendChild(el("b", null, "Terek"));
   document.body.appendChild(foot);
 })();

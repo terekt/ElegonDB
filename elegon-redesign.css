@@ -232,13 +232,104 @@ dialog::backdrop{background:rgba(0,0,0,.55);backdrop-filter:blur(2px)}
 dialog{background:var(--panel-raised);border-color:var(--line)}
 .dhead{background:var(--panel-raised);border-bottom-color:var(--line)}
 
-/* The map tooltip: the family tint becomes the card's top accent, so the card
-   and the dot you pointed at are visibly the same object. Set --c per marker
-   in JS, which maps.html already does. */
+/* ---- the map marker card --------------------------------------------------
+   What a marker says when you point at it. The rule as shipped set the surface and
+   promised the tint accent without ever drawing it, and the card kept the old layout
+   underneath - a boxed 68px icon, the level as words, the figures as chips.
+
+   The design is a card: a hairline of the family's own colour across the top, the
+   creature's PORTRAIT wearing the same ring and level badge as the dot itself, the name
+   in the game's face at the family tint, and three or four figures in equal columns under
+   a rule. Capped at 330px, because it follows a cursor and must never become a panel.
+   --------------------------------------------------------------------------- */
 .tip{
   background:color-mix(in oklab, var(--panel) 92%, var(--bg));
-  border-color:var(--line);overflow:hidden;
+  border-color:var(--line);border-radius:9px;overflow:hidden;
+  padding:0;max-width:330px;
 }
+.tipaccent{
+  display:block;height:3px;
+  background:linear-gradient(90deg, var(--c, var(--gold)),
+             color-mix(in oklab, var(--c, var(--gold)) 12%, transparent));
+}
+.tipbody{padding:13px 14px 14px}
+.tipcard{display:flex;gap:13px;align-items:center}
+
+/* The marker's own element, at portrait size. .mk is absolute and translated into place
+   on the map, so both have to be undone here - everything else about it is wanted. */
+.tip .tipmk{
+  position:relative;transform:none;flex:0 0 auto;
+  width:76px;height:76px;cursor:default;
+}
+.tip .tipmk.boss{width:76px;height:76px}
+/* The badge scales with the portrait; at the marker's 9.5px it was a speck on 76px. */
+.tip .tipmk[data-lvl]::after{
+  right:-2px;bottom:0;min-width:20px;padding:1px 5px;border-radius:8px;
+  font:600 11px/15px var(--panel-font);
+}
+
+.tip .tiptext{min-width:0;flex:1 1 auto}
+/* The name carries the family tint, which maps.html sets inline; the boss class wins over
+   it exactly as it does on the marker. */
+.tip .tiptext > b{
+  display:block;font-family:var(--game-font);font-weight:400;
+  font-size:19px;line-height:1.15;margin-bottom:0;
+}
+.tip .tiptext > i{margin:5px 0 0;font-size:12px;color:var(--faint)}
+
+.tipfacts{
+  display:flex;margin-top:13px;gap:0;flex-wrap:nowrap;
+  border-top:1px solid var(--line);
+}
+.tipstat{
+  flex:1 1 0;display:flex;flex-direction:column;align-items:center;gap:2px;
+  padding:10px 2px 2px;border-left:1px solid var(--line-soft);
+  background:none;border-radius:0;
+}
+.tipstat:first-child{border-left:0}
+.tipstat b{
+  font-family:var(--game-font);font-weight:400;font-size:19px;line-height:1.1;
+  color:var(--ink);font-variant-numeric:tabular-nums;
+}
+.tipstat span{
+  font-size:9px;letter-spacing:.7px;text-transform:uppercase;color:var(--faint);
+  text-align:center;line-height:1.3;
+}
+.tiphint{margin:12px 0 0;font-size:12px;color:var(--faint);line-height:1.45}
+
+/* ---- the quest sheet ------------------------------------------------------
+   The giver's own words in Antiqua, then who to ask and who to return to, the objective,
+   and the rewards as cards. The structure was already right; what had not reached it was
+   the type. Every NAME here is a name - a person, a task, an item - and the redesign's
+   one rule is that a name is set in the client's own face.
+   --------------------------------------------------------------------------- */
+.flavour{font-size:14px;line-height:1.6;max-width:82ch}
+
+.people{gap:14px;margin-top:18px}
+.person{padding:12px 14px;border-radius:9px;gap:12px;border-color:var(--line)}
+/* Round and cropped to the head and shoulders, the way a person is framed on the map -
+   a figure centred in a square box is a pair of boots. */
+.person .ico{
+  width:52px;height:52px;border-radius:50%;object-fit:cover;object-position:50% 14%;
+  background-color:var(--panel2);
+}
+.persontext{gap:3px}
+.persontext b{font-family:var(--game-font);font-weight:400;font-size:16px;color:var(--ink)}
+.personrole{font-size:10.5px;letter-spacing:.9px}
+.person.hintonly{border-radius:9px;font-size:13px}
+
+.objblock{border-radius:9px;border-color:var(--line);padding:6px 14px 4px}
+.objwhat{font-family:var(--game-font);font-size:15px;color:var(--ink)}
+.objkind{border-radius:5px;padding:3px 10px;letter-spacing:.5px}
+
+.rewardgrid{gap:14px;margin-top:9px}
+.rewardcard{padding:12px 14px;border-radius:9px;gap:13px;border-color:var(--line)}
+.rewardtext{gap:3px}
+.rewardtext b{font-family:var(--game-font);font-weight:400;font-size:15.5px;color:var(--ink)}
+
+/* ---- the footer -----------------------------------------------------------
+   Who made it, centred. It is the last thing on the page and it is one line. */
+.sitever{text-align:center;justify-content:center}
 
 /* ---------------------------------------------------------------------------
    8. THE OPTIMIZER
