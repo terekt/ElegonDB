@@ -216,6 +216,10 @@ function makeAction(s, C) {
     hitsAll: REACHES_ALL.has(s.dlv),
     chains: s.dlv === DLV_CHAIN,
     reach: directReach(s.dlv, C.targets),
+    /* The two ends of the class proc, straight from the catalogue: casting `lights`
+       may set it, casting `consumes` spends it. Zero for everything else. */
+    lights: s.procTrigger || 0,
+    consumes: s.procConsumer || 0,
   };
 
   /* Direct value. In healing mode a hybrid heals rather than strikes, which is
@@ -256,6 +260,41 @@ function makeAction(s, C) {
 }
 
 /** The whole build, resolved: stats, level, rank, and the actions available. */
+/* ---- the class proc ------------------------------------------------------
+ * Every class opens with a free spell that feeds the bar - Slash, Fireball, Smite - and
+ * each cast of it has a 20% chance to light the class's proc for 12s. While it is lit the
+ * next cast of the class's 40-energy spell - Flurry, Gleam, Mend - is free.
+ *
+ * The description in the client says "instant and costs no energy", but all three of those
+ * spells already have a cast time of zero, and the proc's power_bonus_percent is 0. So in
+ * this build the proc is worth exactly one thing: 40 energy, often enough to matter.
+ *
+ * A 20% chance in a solver that has no dice. The rotation is scored by comparing whole
+ * fights, so a random proc would make two runs of the same priority list disagree and the
+ * hill-climb would be chasing noise. Instead the proc is carried as the PROBABILITY that
+ * it is lit, and the consumer pays its cost times the chance it is not:
+ *
+ *     a trigger cast   p <- p + (1 - p) x chance        (it cannot stack)
+ *     a consumer cast  pay cost x (1 - p), then p <- 0
+ *
+ * which is the exact expected energy over many fights, and is what a build actually
+ * averages over a five-minute pull. The one approximation is expiry: each trigger pushes
+ * the lapse out to its own cast + duration, rather than every unit of probability ageing
+ * separately. With the filler cast every few seconds and a 12s window that gap almost never
+ * opens, and when it does the model is generous by the tail of it.
+ */
+function procFor(D, cls, actions) {
+  const p = (D.procs || []).find(x => String(x.cls) === String(cls));
+  if (!p) return null;
+  // The spell it pays for, named here so the panel can say what it covered. If that spell
+  // is not on the bar the proc has nothing to spend itself on and is worth nothing.
+  const consumer = actions.find(a => a.consumes === p.id);
+  if (!consumer) return null;
+  return {id: p.id, name: p.name, consumer: consumer.name,
+          chance: (p.chance || 0) / 100, dur: p.dur || 0};
+}
+
+
 function model(D, cfg) {
   const C = {
     targets: Math.max(1, Math.round(cfg.targets || 1)),
@@ -352,6 +391,9 @@ function model(D, cfg) {
        every tick, even after that buff has expired. Measured in game rather than read from
        the catalogue, which carries no flag for it - so the right play is to re-apply a dot
        the instant a buff goes up. Always on: it is what the game does, not a preference. */
+    /* The one proc this class has. Chance as a fraction, because everything else in
+       here is a fraction and a stray percent is the kind of bug that reads as plausible. */
+    proc: procFor(D, C.cls, actions),
     snapshot: cfg.snapshot !== false,
     round: cfg.round !== false,
     exclusive: exclusiveChoices(kept),
@@ -374,6 +416,12 @@ function simulate(M, order, opts) {
   let resource = Math.min(M.resourceStart, maxR);
   let ampAmt = 0, ampUntil = -1;
   let total = 0, wasted = 0, idle = 0, actions = 0;
+
+  /* The class proc, as the probability that it is lit - see procFor. procUntil is when
+     the last trigger's window lapses; past it the probability is zero again. */
+  let procP = 0, procUntil = -1;
+  let procSaved = 0, procFreed = 0, procCasts = 0;
+  const procLit = when => (M.proc && when <= procUntil + EPS) ? procP : 0;
 
   /* The incoming half of the fight, when there is one. */
   const tank = !!M.survival && M.enemy.raw > 0;
@@ -569,9 +617,40 @@ function simulate(M, order, opts) {
 
     const energyBefore = resource;
     resource -= pick.cost;
+
+    /* The proc pays the cost BACK rather than lowering it, and that distinction decides
+       what the rotation does with it.
+
+       A discount changes what you can AFFORD, so the loop reached for the consumer at
+       moments it otherwise could not - the level-80 Mage went from 33 Gleams to 56, and
+       every extra one took the place of a Fireball, which is where the energy comes from.
+       The proc came out NEGATIVE, which is nonsense.
+
+       It is also not how the proc is played. Nobody casts an extra Gleam because one is
+       free; they cast the rotation they were going to cast and keep the forty energy. A
+       refund is exactly that: the cast costs what it says, and the proc hands the energy
+       back for the rotation to spend on whatever it values most. It can waste at the cap
+       like any other income, and it can never make a build worse. */
+    let refund = 0;
+    if (M.proc) {
+      if (pick.consumes === M.proc.id) {
+        procCasts += 1;
+        procFreed += procLit(t);              // expected free casts, not whole ones
+        refund = pick.cost * procLit(t);
+        procSaved += refund;
+        procP = 0;                            // spent, whether or not it was lit
+      }
+      if (pick.lights === M.proc.id) {
+        // It cannot stack: a second proc while one is up is the same one, refreshed.
+        const now = procLit(castEnd);
+        procP = now + (1 - now) * M.proc.chance;
+        procUntil = castEnd + M.proc.dur;
+      }
+    }
+
     const before = resource;
-    resource = Math.min(maxR, resource + pick.gen);
-    wasted += before + pick.gen - resource;
+    resource = Math.min(maxR, resource + pick.gen + refund);
+    wasted += before + pick.gen + refund - resource;
 
     if (pick.cd) cdReady.set(pick.id, castEnd + pick.cd);
     if (pick.isBuff) { ampAmt = pick.buffAmt; ampUntil = castEnd + pick.buffDur; }
@@ -616,7 +695,7 @@ function simulate(M, order, opts) {
       t, id: pick.id, name: pick.name, kind: "cast",
       cast, occupies, end: t + occupies, landAt,
       energyBefore, resource, amp,
-      cost: pick.cost, gen: pick.gen,
+      cost: pick.cost, gen: pick.gen, procRefund: refund,
       buffUntil: pick.isBuff ? ampUntil : 0,
       buffAmt: pick.isBuff ? pick.buffAmt : 0,
       periodicUntil: pick.tracksPeriodic ? landAt + pick.tickDur : 0,
@@ -654,6 +733,11 @@ function simulate(M, order, opts) {
   return {
     total, dps: total / dur, duration: dur, actions, wasted, idle,
     breakdown, log, endResource: resource,
+    /* What the class proc was worth: energy it paid for, and how much of the consumer's
+       casting it covered. Expected values, so both are fractional. */
+    proc: M.proc ? {name: M.proc.name, consumer: M.proc.consumer,
+                    saved: procSaved, casts: procCasts, freed: procFreed,
+                    share: procCasts ? procFreed / procCasts : 0} : null,
     apm: actions / (dur / 60),
     // the incoming half
     taken, healed, overheal, net, held, swings, stunned, potential,

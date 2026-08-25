@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Elegon DB — Optimizer</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2032%2032%27%3E%3Cdefs%3E%3ClinearGradient%20id%3D%27t%27%20x1%3D%270%27%20y1%3D%270%27%20x2%3D%27.45%27%20y2%3D%271%27%3E%3Cstop%20offset%3D%270%27%20stop-color%3D%27%23ffe455%27%2F%3E%3Cstop%20offset%3D%271%27%20stop-color%3D%27%23e9a200%27%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D%2732%27%20height%3D%2732%27%20rx%3D%277%27%20fill%3D%27url%28%23t%29%27%2F%3E%3Cg%20fill%3D%27%23110c09%27%20font-family%3D%27Alice%2CGeorgia%2Cserif%27%3E%3Ctext%20x%3D%276.5%27%20y%3D%2723%27%20font-size%3D%2717%27%3EE%3C%2Ftext%3E%3Ctext%20x%3D%2717.5%27%20y%3D%2723%27%20font-size%3D%279%27%20opacity%3D%27.72%27%3Edb%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fsvg%3E">
-<link rel="stylesheet" href="style.css?v=09b3d93f">
-<link rel="stylesheet" href="elegon-redesign.css?v=09b3d93f">
+<link rel="stylesheet" href="style.css?v=097ca202">
+<link rel="stylesheet" href="elegon-redesign.css?v=097ca202">
 <script>
 (function () {
   var saved = null;
@@ -580,9 +580,9 @@
        id="fightBody"></div>
 </dialog>
 
-<script src="data.js?v=09b3d93f"></script>
-<script src="app.js?v=09b3d93f"></script>
-<script src="sim.js?v=09b3d93f"></script>
+<script src="data.js?v=097ca202"></script>
+<script src="app.js?v=097ca202"></script>
+<script src="sim.js?v=097ca202"></script>
 <script>
 /* ---- the optimizer page --------------------------------------------------
    The arithmetic lives in sim.js so it can be tested outside a browser; this
@@ -913,6 +913,15 @@ function statExplain(k) {
     + `The global cooldown drops from 1.50s to ${(1.5 / (1 + b)).toFixed(2)}s.`;
 }
 
+/* What the class proc was worth, as one row. Fractional because it is an expected value
+   over the fight rather than a count of whole procs - see procFor in sim.js. */
+function procRow(res) {
+  const p = res.proc;
+  if (!p || !p.casts) return [];
+  return [[p.name, `${asPct(p.share)} of ${p.consumer} paid back`]];
+}
+
+
 function drawDerived(M, res) {
   const box = document.getElementById("derived");
   box.replaceChildren();
@@ -934,12 +943,14 @@ function drawDerived(M, res) {
               / Math.max(1, res.healerWasted + res.healerHealed))]]
          : []),
        ["Global cooldown", M.gcd.toFixed(2) + "s"],
+       ...procRow(res),
        ["Build", S.source]]
     : [["Global cooldown", M.gcd.toFixed(2) + "s"],
        ["Cast speed", "+" + asPct(M.alacrityBonus)],
        ["Actions in the fight", String(res.actions)],
        ["Actions per minute", fmt1(res.apm)],
        ["Energy wasted at cap", fmt(res.wasted)],
+       ...procRow(res),
        ["Build", S.source]];
   for (const [k, v] of rows) {
     const r = el("div", "attr");
@@ -1247,6 +1258,7 @@ function buildTimeline(sol) {
       casts.push({
         t: e.t, end: e.end, cast: e.cast, land: e.landAt, id: e.id, name: e.name,
         before: e.energyBefore, after: e.resource, cost: e.cost, gen: e.gen,
+        procRefund: e.procRefund,
         amp: e.amp, amount: hitAt.get(e.id + "@" + e.landAt.toFixed(4)) || 0,
         periodicUntil: e.periodicUntil,
       });
@@ -1269,6 +1281,7 @@ function buildTimeline(sol) {
 
   return {duration: res.duration, casts, autos, buffs, energy, colour,
           lanes: [...lanes.values()], energyMax: M.resourceMax,
+          procName: M.proc ? M.proc.name : "",
           healing: M.cfg.healing,
           survival: !!M.survival, hits, hp, healthMax: res.health,
           foeCount: res.foeCount || 1,
@@ -1620,6 +1633,10 @@ function tlTooltip(ev) {
     const rows = [];
     if (c.amount) rows.push(["On impact", fmt(c.amount)]);
     if (c.cost) rows.push(["Energy spent", String(c.cost)]);
+    // The proc hands part of that back, averaged over the fight - see sim.js.
+    if (c.procRefund)
+      rows.push([TL.data.procName || "Proc",
+                 "gave back " + fmt1(c.procRefund)]);
     if (c.gen) rows.push(["Energy gained", String(c.gen)]);
     rows.push(["Energy after", `${Math.round(c.after)} / ${TL.data.energyMax}`]);
     if (c.amp) rows.push(["Buff active", "+" + Math.round(c.amp * 100) + "%"]);
