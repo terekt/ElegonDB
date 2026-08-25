@@ -2117,7 +2117,11 @@ select.riftsel:hover{
     url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%23eaeaea' stroke-width='1.6' stroke-linecap='round'/></svg>")}
 
 /* The two marker layers are moved by transform while panning, so they are promoted once
-   rather than re-lifted on every drag. contain keeps a marker's own repaint from asking the
-   page to re-lay-out around it - there are 1,555 of them on the overworld. */
+   rather than re-lifted on every drag.
+
+   layout and style, NOT paint: paint containment clips a marker to its own 25px box, and the
+   level badge deliberately hangs outside it at right:-5px - so the number was being cut in
+   half. The two that remain are the ones that were wanted anyway; clipping was never the
+   point, and there are 1,555 of these on the overworld. */
 .mapmarkers,.maplive{will-change:transform}
-.mapmarkers .mk{contain:layout style paint}
+.mapmarkers .mk{contain:layout style}
