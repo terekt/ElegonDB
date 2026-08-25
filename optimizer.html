@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Elegon DB — Optimizer</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2032%2032%27%3E%3Cdefs%3E%3ClinearGradient%20id%3D%27t%27%20x1%3D%270%27%20y1%3D%270%27%20x2%3D%27.45%27%20y2%3D%271%27%3E%3Cstop%20offset%3D%270%27%20stop-color%3D%27%23ffe455%27%2F%3E%3Cstop%20offset%3D%271%27%20stop-color%3D%27%23e9a200%27%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D%2732%27%20height%3D%2732%27%20rx%3D%277%27%20fill%3D%27url%28%23t%29%27%2F%3E%3Cg%20fill%3D%27%23110c09%27%20font-family%3D%27Alice%2CGeorgia%2Cserif%27%3E%3Ctext%20x%3D%276.5%27%20y%3D%2723%27%20font-size%3D%2717%27%3EE%3C%2Ftext%3E%3Ctext%20x%3D%2717.5%27%20y%3D%2723%27%20font-size%3D%279%27%20opacity%3D%27.72%27%3Edb%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fsvg%3E">
-<link rel="stylesheet" href="style.css?v=097ca202">
-<link rel="stylesheet" href="elegon-redesign.css?v=097ca202">
+<link rel="stylesheet" href="style.css?v=ac9d346a">
+<link rel="stylesheet" href="elegon-redesign.css?v=ac9d346a">
 <script>
 (function () {
   var saved = null;
@@ -61,6 +61,11 @@
   gap:12px;padding:10px 12px;border-radius:8px;border:1px solid transparent}
 .prow + .prow{border-top:1px solid var(--line-soft);border-radius:0}
 .prow:hover{background:color-mix(in oklab,var(--panel2) 70%,transparent)}
+/* The proc that pays for a line, named beside the spell - two rows carry the same spell
+   name and without this they read as a duplicate. */
+.prow .pn .proctag{margin-left:7px;padding:1px 6px;border-radius:999px;
+  font-size:10.5px;letter-spacing:.4px;color:var(--gold);
+  border:1px solid color-mix(in oklab,var(--gold) 45%,transparent);vertical-align:middle}
 .prow .num{font-family:var(--game-font);font-size:17px;color:var(--faint);text-align:center;
   font-variant-numeric:tabular-nums}
 .prow .pn{font-size:14.5px;color:var(--ink);line-height:1.3}
@@ -580,9 +585,9 @@
        id="fightBody"></div>
 </dialog>
 
-<script src="data.js?v=097ca202"></script>
-<script src="app.js?v=097ca202"></script>
-<script src="sim.js?v=097ca202"></script>
+<script src="data.js?v=ac9d346a"></script>
+<script src="app.js?v=ac9d346a"></script>
+<script src="sim.js?v=ac9d346a"></script>
 <script>
 /* ---- the optimizer page --------------------------------------------------
    The arithmetic lives in sim.js so it can be tested outside a browser; this
@@ -918,7 +923,8 @@ function statExplain(k) {
 function procRow(res) {
   const p = res.proc;
   if (!p || !p.casts) return [];
-  return [[p.name, `${asPct(p.share)} of ${p.consumer} paid back`]];
+  return [[p.name, `${p.free} of ${p.casts} ${p.consumer} casts free`
+                   + (p.wasted ? ` · ${p.wasted} lapsed` : "")]];
 }
 
 
@@ -1075,13 +1081,25 @@ function drawPriority(sol) {
   const byId = new Map(res.breakdown.map(b => [b.id, b]));
 
   sol.order.forEach((a, i) => {
-    const b = byId.get(a.id) || {casts: 0, amount: 0, share: 0};
+    const whole = byId.get(a.id) || {casts: 0, amount: 0, share: 0};
+    /* A proc consumer has two lines and one breakdown row between them, so the spell's
+       casts and damage are split by how each line was reached. Same spell, same hit - the
+       only difference is what paid for it. */
+    const mine = res.castsByEntry ? (res.castsByEntry[a.key] || 0) : whole.casts;
+    const part = whole.casts ? mine / whole.casts : 1;
+    const b = (a.procOnly || (a.consumes && sol.order.some(x => x.procOnly && x.id === a.id)))
+      ? {casts: mine, amount: whole.amount * part, share: whole.share * part}
+      : whole;
     const row = el("div", "prow" + (a.isBuff ? " buff" : ""));
     row.appendChild(el("div", "num", String(i + 1)));
     row.appendChild(spellIcon(a, 38));
 
     const mid = el("div", "pm");
-    mid.appendChild(el("div", "pn", a.name));
+    const nm = el("div", "pn", a.name);
+    // Two rows carry the same name, so the one that is only there for the free cast says
+    // which proc pays for it.
+    if (a.procOnly && M.proc) nm.appendChild(el("span", "proctag", M.proc.name));
+    mid.appendChild(nm);
     mid.appendChild(el("div", "pc", SIM.conditionText(a, M)));
 
     /* The instruction says when. These say what it costs to follow it, in a
@@ -1258,7 +1276,7 @@ function buildTimeline(sol) {
       casts.push({
         t: e.t, end: e.end, cast: e.cast, land: e.landAt, id: e.id, name: e.name,
         before: e.energyBefore, after: e.resource, cost: e.cost, gen: e.gen,
-        procRefund: e.procRefund,
+        listedCost: e.listedCost, procFree: e.procFree,
         amp: e.amp, amount: hitAt.get(e.id + "@" + e.landAt.toFixed(4)) || 0,
         periodicUntil: e.periodicUntil,
       });
@@ -1634,9 +1652,8 @@ function tlTooltip(ev) {
     if (c.amount) rows.push(["On impact", fmt(c.amount)]);
     if (c.cost) rows.push(["Energy spent", String(c.cost)]);
     // The proc hands part of that back, averaged over the fight - see sim.js.
-    if (c.procRefund)
-      rows.push([TL.data.procName || "Proc",
-                 "gave back " + fmt1(c.procRefund)]);
+    if (c.procFree)
+      rows.push([TL.data.procName || "Proc", `free — ${c.listedCost} energy saved`]);
     if (c.gen) rows.push(["Energy gained", String(c.gen)]);
     rows.push(["Energy after", `${Math.round(c.after)} / ${TL.data.energyMax}`]);
     if (c.amp) rows.push(["Buff active", "+" + Math.round(c.amp * 100) + "%"]);

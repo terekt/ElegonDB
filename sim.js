@@ -220,6 +220,8 @@ function makeAction(s, C) {
        may set it, casting `consumes` spends it. Zero for everything else. */
     lights: s.procTrigger || 0,
     consumes: s.procConsumer || 0,
+    fullCost: s.cost || 0,
+    key: String(s.id),
   };
 
   /* Direct value. In healing mode a hybrid heals rather than strikes, which is
@@ -317,6 +319,22 @@ function model(D, cfg) {
     if (kept.some(s => s.id === id)) dropped.push({s: kept.find(s => s.id === id), why: OMIT.exclusive});
 
   const actions = picked.map(s => makeAction(s, C));
+
+  /* The proc's whole point is that it makes one cast free, and a priority list has no way
+     to say "cast this BECAUSE it is free" - so the free cast gets its own entry.
+  
+     Two lines for one spell: one that only appears while the proc is lit and costs
+     nothing, and the ordinary one that costs full price. The solver then answers the
+     question a player actually has - is this spell worth casting at all, or only when the
+     proc pays for it? - by placing them independently, or dropping either. They share an
+     id on purpose: one cooldown, one row in the breakdown, one spell. */
+  const procDef = (D.procs || []).find(x => String(x.cls) === String(C.cls));
+  if (procDef) {
+    const consumer = actions.find(a => a.consumes === procDef.id);
+    if (consumer && consumer.cost > 0)
+      actions.push(Object.assign({}, consumer,
+                                 {procOnly: true, cost: 0, key: consumer.id + ":proc"}));
+  }
 
   /* The filler: no cost, no cooldown, and it feeds the bar. Every class has
      exactly one, and it is the reason the loop can never stall. */
@@ -417,11 +435,17 @@ function simulate(M, order, opts) {
   let ampAmt = 0, ampUntil = -1;
   let total = 0, wasted = 0, idle = 0, actions = 0;
 
-  /* The class proc, as the probability that it is lit - see procFor. procUntil is when
-     the last trigger's window lapses; past it the probability is zero again. */
-  let procP = 0, procUntil = -1;
-  let procSaved = 0, procFreed = 0, procCasts = 0;
-  const procLit = when => (M.proc && when <= procUntil + EPS) ? procP : 0;
+  /* The class proc. It is LIT or it is not - a real boolean, so the rotation can hold a
+     cast back for it, which is the whole point of the thing.
+  
+     Fired on a schedule rather than on a coin: each trigger cast banks its chance, and the
+     proc lights when a whole one has accrued - every fifth Slash at 20%. That is the exact
+     rate a coin would average, with none of the variance, and the variance is not wanted
+     here: the solver scores whole fights against each other and compares builds a single
+     stat point apart, so a run-to-run wobble of a few procs would drown the difference it
+     is being asked to measure. */
+  let procLit = false, procUntil = -1, procCredit = 0;
+  let procSaved = 0, procFree = 0, procCasts = 0, procWasted = 0;
 
   /* The incoming half of the fight, when there is one. */
   const tank = !!M.survival && M.enemy.raw > 0;
@@ -457,6 +481,7 @@ function simulate(M, order, opts) {
      for one that has to be applied to each in turn. */
   const live = new Map();
   const per = new Map();              // spell id -> {casts, amount}
+  const perEntry = new Map();         // entry key -> casts, so two lines can be told apart
   const log = [];
   for (const a of priority) per.set(a.id, {name: a.name, casts: 0, amount: 0, direct: 0, over: 0});
   if (M.autoOn) per.set(-1, {name: "Auto Attack", casts: 0, amount: 0, direct: 0, over: 0});
@@ -558,10 +583,17 @@ function simulate(M, order, opts) {
       continue;
     }
 
+    // A proc nobody spent. It lapses, and that is a waste worth counting.
+    if (procLit && t > procUntil + EPS) { procLit = false; procWasted += 1; }
+
     /* An action. Walk the list and take the first thing that is allowed. */
     let pick = null, onTarget = 0;
     for (const a of priority) {
       if ((cdReady.get(a.id) || 0) > t + EPS) continue;
+      // The proc-only entry is the free cast and nothing else: without the proc up it is
+      // simply not on the bar, which is what lets it sit above spells it could not
+      // otherwise outrank.
+      if (a.procOnly && !procLit) continue;
       if (a.cost > resource + EPS) continue;
       if (a.isBuff && ampUntil > t + EPS) continue;               // never clip your own buff
       if (tank) {
@@ -616,41 +648,37 @@ function simulate(M, order, opts) {
     const landAt = castEnd + pick.land;
 
     const energyBefore = resource;
-    resource -= pick.cost;
-
-    /* The proc pays the cost BACK rather than lowering it, and that distinction decides
-       what the rotation does with it.
-
-       A discount changes what you can AFFORD, so the loop reached for the consumer at
-       moments it otherwise could not - the level-80 Mage went from 33 Gleams to 56, and
-       every extra one took the place of a Fireball, which is where the energy comes from.
-       The proc came out NEGATIVE, which is nonsense.
-
-       It is also not how the proc is played. Nobody casts an extra Gleam because one is
-       free; they cast the rotation they were going to cast and keep the forty energy. A
-       refund is exactly that: the cast costs what it says, and the proc hands the energy
-       back for the rotation to spend on whatever it values most. It can waste at the cap
-       like any other income, and it can never make a build worse. */
-    let refund = 0;
-    if (M.proc) {
-      if (pick.consumes === M.proc.id) {
-        procCasts += 1;
-        procFreed += procLit(t);              // expected free casts, not whole ones
-        refund = pick.cost * procLit(t);
-        procSaved += refund;
-        procP = 0;                            // spent, whether or not it was lit
+    /* A lit proc makes the next cast of its spell free - however that cast was reached.
+       The proc-only entry is the deliberate way to take it; an ordinary cast of the same
+       spell while the proc happens to be up is free too, because the game does not ask
+       why you cast it. */
+    let cost = pick.cost;
+    if (M.proc && pick.consumes === M.proc.id) {
+      procCasts += 1;
+      if (procLit) {
+        cost = 0;
+        procFree += 1;
+        procSaved += pick.fullCost;    // what the spell costs, not what this entry lists
+        procLit = false;
       }
-      if (pick.lights === M.proc.id) {
-        // It cannot stack: a second proc while one is up is the same one, refreshed.
-        const now = procLit(castEnd);
-        procP = now + (1 - now) * M.proc.chance;
+    }
+    resource -= cost;
+
+    if (M.proc && pick.lights === M.proc.id) {
+      procCredit += M.proc.chance;
+      if (procCredit >= 1 - EPS) {
+        procCredit -= 1;
+        // It cannot stack. Lighting one that is already lit replaces it and the old one
+        // is gone unspent, which is the cost of sitting on a proc.
+        if (procLit) procWasted += 1;
+        procLit = true;
         procUntil = castEnd + M.proc.dur;
       }
     }
 
     const before = resource;
-    resource = Math.min(maxR, resource + pick.gen + refund);
-    wasted += before + pick.gen + refund - resource;
+    resource = Math.min(maxR, resource + pick.gen);
+    wasted += before + pick.gen - resource;
 
     if (pick.cd) cdReady.set(pick.id, castEnd + pick.cd);
     if (pick.isBuff) { ampAmt = pick.buffAmt; ampUntil = castEnd + pick.buffDur; }
@@ -689,13 +717,15 @@ function simulate(M, order, opts) {
       });
     }
     const p = per.get(pick.id); if (p) p.casts += 1;
+    perEntry.set(pick.key, (perEntry.get(pick.key) || 0) + 1);
     actions += 1;
     const occupies = Math.max(cast, M.gcd);
     if (keepLog) log.push({
       t, id: pick.id, name: pick.name, kind: "cast",
       cast, occupies, end: t + occupies, landAt,
       energyBefore, resource, amp,
-      cost: pick.cost, gen: pick.gen, procRefund: refund,
+      cost, listedCost: pick.fullCost, gen: pick.gen,
+      procFree: cost === 0 && pick.cost > 0,
       buffUntil: pick.isBuff ? ampUntil : 0,
       buffAmt: pick.isBuff ? pick.buffAmt : 0,
       periodicUntil: pick.tracksPeriodic ? landAt + pick.tickDur : 0,
@@ -733,11 +763,13 @@ function simulate(M, order, opts) {
   return {
     total, dps: total / dur, duration: dur, actions, wasted, idle,
     breakdown, log, endResource: resource,
+    castsByEntry: Object.fromEntries(perEntry),
     /* What the class proc was worth: energy it paid for, and how much of the consumer's
        casting it covered. Expected values, so both are fractional. */
     proc: M.proc ? {name: M.proc.name, consumer: M.proc.consumer,
-                    saved: procSaved, casts: procCasts, freed: procFreed,
-                    share: procCasts ? procFreed / procCasts : 0} : null,
+                    saved: procSaved, casts: procCasts, free: procFree,
+                    wasted: procWasted,
+                    share: procCasts ? procFree / procCasts : 0} : null,
     apm: actions / (dur / 60),
     // the incoming half
     taken, healed, overheal, net, held, swings, stunned, potential,
@@ -1061,6 +1093,10 @@ function statWeights(D, cfg, step) {
    re-read inside a sentence every time.                                      */
 function conditionText(a, M) {
   const secs = n => (n % 1 ? n.toFixed(1) : String(n)) + "s";
+
+  if (a.procOnly)
+    return `Only while ${M.proc ? M.proc.name : "the proc"} is up — it costs nothing then, `
+         + "so take it the moment it lights";
 
   if (a === M.generator && !a.cd && !a.cost)
     return "Filler — cast this whenever nothing above is ready";
