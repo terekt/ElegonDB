@@ -577,7 +577,7 @@ dialog[open]{display:flex;flex-direction:column}
    the tree's measurements are the game's, so the panel is sized to them rather than the
    other way round. 440px was the old attributes-only width and made the two columns wrap,
    which put the attributes a full tree-length below the thing they are spent alongside. */
-#attrDlg{width:min(820px,94vw)}
+#attrDlg{width:min(800px,94vw)}
 dialog::backdrop{background:var(--scrim);backdrop-filter:blur(2px)}
 
 /* Two rows, not one wrapping row. The filters used to share a line with Close, so on a
@@ -2192,14 +2192,21 @@ select.riftsel:hover{
 
    Below 760px there is no room for two columns and it stacks, tree first - which is the
    order they are read in. */
-.talentbody{display:grid;grid-template-columns:380px minmax(240px,1fr);gap:22px;
+/* 392px, not 380. The tree canvas is 380 wide, but a node's caption is a 112px box
+   starting 30px to its left, so the outer columns' captions run from -6 to 386 - six
+   pixels past the canvas at each edge. At 380 with overflow hidden they were being shaved
+   on both sides. */
+.talentbody{display:grid;grid-template-columns:392px minmax(230px,1fr);gap:20px;
   align-items:start}
 .talentcol{min-width:0}
 .talentcol .ssection{margin-top:0}
 .talentcol .note{margin:4px 0 12px}
-/* The tree's own scroller. 62vh leaves the dialog's head and the legend on screen. */
-.talentcol.treecol{max-height:62vh;overflow-y:auto;overflow-x:hidden;
-  padding-right:6px;scrollbar-gutter:stable}
+/* The tree's own scroller. With the legend and the two summary lines gone there is more
+   of the dialog to give it, so it takes 74vh - a Knight's ten rows are 1,056px and every
+   row it can show without scrolling is one less thing to hunt for. The 6px of horizontal
+   padding is the caption overhang above. */
+.talentcol.treecol{max-height:74vh;overflow-y:auto;overflow-x:hidden;
+  padding:0 6px;scrollbar-gutter:stable}
 /* Sticky so the attributes and their remaining points stay beside whatever part of the
    tree you have scrolled to. */
 .talentcol.attrcol{position:sticky;top:0}

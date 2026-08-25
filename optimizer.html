@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Elegon DB — Optimizer</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2032%2032%27%3E%3Cdefs%3E%3ClinearGradient%20id%3D%27t%27%20x1%3D%270%27%20y1%3D%270%27%20x2%3D%27.45%27%20y2%3D%271%27%3E%3Cstop%20offset%3D%270%27%20stop-color%3D%27%23ffe455%27%2F%3E%3Cstop%20offset%3D%271%27%20stop-color%3D%27%23e9a200%27%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D%2732%27%20height%3D%2732%27%20rx%3D%277%27%20fill%3D%27url%28%23t%29%27%2F%3E%3Cg%20fill%3D%27%23110c09%27%20font-family%3D%27Alice%2CGeorgia%2Cserif%27%3E%3Ctext%20x%3D%276.5%27%20y%3D%2723%27%20font-size%3D%2717%27%3EE%3C%2Ftext%3E%3Ctext%20x%3D%2717.5%27%20y%3D%2723%27%20font-size%3D%279%27%20opacity%3D%27.72%27%3Edb%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fsvg%3E">
-<link rel="stylesheet" href="style.css?v=5c5ab8df">
-<link rel="stylesheet" href="elegon-redesign.css?v=5c5ab8df">
+<link rel="stylesheet" href="style.css?v=6de7cbc6">
+<link rel="stylesheet" href="elegon-redesign.css?v=6de7cbc6">
 <script>
 (function () {
   var saved = null;
@@ -570,6 +570,7 @@
   <div class="dhead">
     <div class="dtop">
       <b>Talents &amp; attributes</b>
+      <span class="count" id="attrSummary"></span>
       <span class="spacer"></span>
       <button type="button" id="attrReset">Reset</button>
       <button type="button" id="attrClose" class="gold">Close</button>
@@ -580,18 +581,11 @@
          the solver reads the ranks it produces rather than one number for every spell. -->
     <div class="talentcol treecol">
       <h4 class="ssection" id="oTreeTitle">Talents</h4>
-      <p class="note" id="oTreeSummary"></p>
       <div class="tree" id="oTree"></div>
-      <div class="tlegend">
-        <span><i style="border-color:rgb(242,204,89)"></i>can take a point</span>
-        <span><i style="border-color:rgb(102,217,102)"></i>has ranks</span>
-        <span>click · <b>shift-click</b> to max · right-click to give one back</span>
-      </div>
     </div>
     <div class="talentcol attrcol">
       <h4 class="ssection">Attributes</h4>
       <div class="allocrows" id="attrRows"></div>
-      <p class="note" id="attrSummary" style="margin:12px 2px 0"></p>
     </div>
   </div>
 </dialog>
@@ -609,9 +603,9 @@
        id="fightBody"></div>
 </dialog>
 
-<script src="data.js?v=5c5ab8df"></script>
-<script src="app.js?v=5c5ab8df"></script>
-<script src="sim.js?v=5c5ab8df"></script>
+<script src="data.js?v=6de7cbc6"></script>
+<script src="app.js?v=6de7cbc6"></script>
+<script src="sim.js?v=6de7cbc6"></script>
 <script>
 /* ---- the optimizer page --------------------------------------------------
    The arithmetic lives in sim.js so it can be tested outside a browser; this
@@ -3500,9 +3494,19 @@ function drawAlloc() {
       + ((S.alloc[k] || 0) ? `  +${(S.alloc[k] || 0) * GAME.STAT_PER_POINT}` : "")));
     rows.appendChild(row);
   }
-  document.getElementById("attrSummary").textContent =
-    `${pointsSpent()} spent, ${pointsLeft()} left of ${pointsTotal()} at level ${S.level}. `
-    + `Each is worth ${GAME.STAT_PER_POINT}, and no stat takes more than ${GAME.MAX_PER_ATTR}.`;
+  syncPointCounts();
+}
+
+/* Both budgets, as figures, in the panel's own head. The sentence that used to carry the
+   attribute half explained what a point is worth every time it was read; the number is the
+   part anyone spending them actually needs. */
+function syncPointCounts() {
+  const out = document.getElementById("attrSummary");
+  if (!out) return;
+  const spell = TALENT.spellPointsAt(S.level) - TALENT.spent(S.cls, optTalents);
+  out.replaceChildren();
+  out.append(el("b", null, String(spell)), el("span", null, " spell · "),
+             el("b", null, String(pointsLeft())), el("span", null, " attribute"));
 }
 
 function stepAlloc(k, by) {
@@ -3711,17 +3715,9 @@ function drawOptTree() {
     onLeave: () => { tip.hidden = true; },
   });
 
-  const list = TALENT.forClass(S.cls);
-  const pairs = new Set(list.filter(n => n.choice).map(n => n.choice));
-  const total = TALENT.spellPointsAt(S.level);
-  const left = total - TALENT.spent(S.cls, optTalents);
   document.getElementById("oTreeTitle").textContent =
     (CLASSES[String(S.cls)] || {}).name + " talents";
-  document.getElementById("oTreeSummary").textContent =
-    `${left} of ${total} spell points left · ${pairs.size} either-or pairs, so `
-    + `${list.length - pairs.size} of ${list.length} nodes are reachable · `
-    + (left === total ? "with nothing spent the Talent rank box speaks for every spell"
-                      : "these ranks override the Talent rank box");
+  syncPointCounts();
 }
 
 document.getElementById("openAttrs").onclick = () => {
