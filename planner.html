@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Elegon DB — Character planner</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=9c11790a">
+<link rel="stylesheet" href="style.css?v=841cbcc2">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -27,6 +27,7 @@
     <a href="quests.html">Quests</a>
     <a href="maps.html">Maps</a>
     <a href="planner.html" class="on"><span class="navlong">Character </span>Planner</a>
+    <a href="optimizer.html">Optimizer</a>
     <a href="scaling.html">Scaling</a>
   </nav>
     <button type="button" id="themebtn" class="themebtn" aria-label="Switch theme">
@@ -237,9 +238,9 @@
   </div>
 </dialog>
 
-<script src="data.js?v=9c11790a"></script>
+<script src="data.js?v=841cbcc2"></script>
 <!-- Written by the mod when you log in; absent until then. -->
-<script src="app.js?v=9c11790a"></script>
+<script src="app.js?v=841cbcc2"></script>
 <script>
 /* The game's slot set and order, from InGameUi.EnumerateCharacterPanelSlots:
    main weapon, off hand, head, neck, shoulder, back, chest, waist, leg, foot, hands. */
@@ -1830,14 +1831,29 @@ function Log(msg) {
 const SLOT_ORDER = SLOTS.map(s => s.k);
 const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
+/* Instability was packed into six bits while the field that feeds it accepts 2000, so every
+   build shared above tier 63 came back wearing tier & 63 - 100 reloaded as 36, quietly, with
+   a number plausible enough to be believed. The wider form below carries fourteen bits and
+   is used only when the narrow one would lose something, so a build that already fits emits
+   the old bytes exactly and every link already in the wild still decodes.
+   A level is 1-80, so 0xFF can never begin a v1 code and makes an unambiguous sentinel. */
+const TIER_MAX_V1 = 63;
+const CODE_V2 = 0xFF;
+
 function encodeBuild() {
-  const b = [level & 255, Number(charClass) & 255, spellRank & 255];
+  const wide = SLOT_ORDER.some(k => (build[k].tier || 0) > TIER_MAX_V1);
+
+  const b = wide ? [CODE_V2] : [];
+  b.push(level & 255, Number(charClass) & 255, spellRank & 255);
   for (const k of ATTRS) b.push(Math.min(63, alloc[k]) & 255);
   for (const k of SLOT_ORDER) {
     const st = build[k];
     const id = st.item ? st.item.id : 0;
+    const tier = Math.max(0, Math.min(wide ? 16383 : TIER_MAX_V1, st.tier | 0));
     // quality is 1..4, so it is stored as 0..3 - masking it raw turned Flawless into Normal
-    b.push((id >> 8) & 255, id & 255, (((st.quality - 1) & 3) << 6) | (st.tier & 63));
+    const q = ((st.quality - 1) & 3) << 6;
+    if (wide) b.push((id >> 8) & 255, id & 255, q | ((tier >> 8) & 63), tier & 255);
+    else b.push((id >> 8) & 255, id & 255, q | tier);
   }
   /* Proficiencies ride on the end, and only the ones that are set. Fourteen fixed slots
      would have cost 28 bytes on every link to carry mostly zeros; a pair per non-zero skill
@@ -1874,16 +1890,20 @@ function decodeBuild(code) {
   if (b.length < 10) return false;
 
   let p = 0;
+  const wide = b[0] === CODE_V2;
+  if (wide) p++;
   const lvl = b[p++], cls = b[p++], rank = b[p++];
   for (const k of ATTRS) alloc[k] = Math.min(MAX_PER_ATTR, b[p++] || 0);
   SLOT_ORDER.forEach(k => build[k] = {item: null, quality: 1, tier: 0});
+  const slotBytes = wide ? 4 : 3;
   for (const k of SLOT_ORDER) {
-    if (p + 2 >= b.length + 1) break;
+    if (p + slotBytes > b.length) break;
     const id = ((b[p++] || 0) << 8) | (b[p++] || 0);
     const packed = b[p++] || 0;
+    const tier = wide ? (((packed & 63) << 8) | (b[p++] || 0)) : (packed & 63);
     if (!id) continue;
     const item = D.items.find(i => i.id === id);
-    if (item) build[k] = {item, quality: ((packed >> 6) & 3) + 1, tier: packed & 63};
+    if (item) build[k] = {item, quality: ((packed >> 6) & 3) + 1, tier};
   }
 
   PROF_SKILLS.forEach(sk => { prof[sk.id] = 0; });

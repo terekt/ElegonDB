@@ -1,0 +1,3585 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Elegon DB — Optimizer</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%94%B6%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css?v=841cbcc2">
+<script>
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem("elegon-theme"); } catch (e) { /* private mode */ }
+  var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.dataset.theme = saved || (dark ? "dark" : "light");
+})();
+</script>
+<style>
+/* Page-scoped layout. Everything else is the site's own tokens and classes, so
+   this file inherits both themes without knowing either exists. */
+.optgrid{display:grid;grid-template-columns:340px minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:1000px){.optgrid{grid-template-columns:minmax(0,1fr)}}
+
+/* style.css makes every .attrs panel sticky. That is right on the planner,
+   where three of them sit side by side and each holds its own column while a
+   long one scrolls — but this page stacks six down a single column, and six
+   sticky panels all park under the header and slide over one another.
+
+   So the stickiness moves up a level: the panels themselves scroll normally,
+   and the left column as a whole is what holds position, which is what it was
+   for in the first place. Capped to the viewport with its own scroll, because a
+   sticky element taller than the screen pins its top and hides its bottom. */
+.optgrid .attrs{position:static}
+.optgrid > .side{position:sticky;top:calc(var(--header-h) + 18px);
+  max-height:calc(100vh / var(--zoom) - var(--header-h) - 36px);
+  overflow-y:auto;scrollbar-width:thin;
+  display:flex;flex-direction:column;gap:16px}
+.optgrid > .side > .attrs{margin-top:0 !important}
+/* Stacked, there is nothing beside it to hold position against. */
+@media (max-width:1000px){
+  .optgrid > .side{position:static;max-height:none;overflow:visible}
+}
+
+.headline{display:flex;flex-wrap:wrap;gap:26px;align-items:flex-end;
+  background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px;
+  box-shadow:0 1px 0 var(--shadow)}
+.headline .big{display:flex;flex-direction:column;gap:2px}
+.headline .big b{font-family:var(--game-font);font-weight:400;font-size:38px;line-height:1;
+  color:var(--gold);font-variant-numeric:tabular-nums}
+.headline .big span{font-size:10.5px;letter-spacing:.9px;text-transform:uppercase;color:var(--faint)}
+.headline .sub{display:flex;flex-direction:column;gap:2px}
+.headline .sub b{font-family:var(--game-font);font-weight:400;font-size:19px;line-height:1.1;
+  color:var(--ink);font-variant-numeric:tabular-nums}
+.headline .sub span{font-size:10.5px;letter-spacing:.9px;text-transform:uppercase;color:var(--faint)}
+.headline .spacer{flex:1 1 auto}
+
+/* A fixed track for the figures rather than `auto`. Every row is its own grid,
+   so an auto column is sized by that row's own text — and one short number was
+   enough to drag its neighbour's bar sideways and break the column. */
+.prow{display:grid;grid-template-columns:30px 38px minmax(0,1fr) 136px;align-items:center;
+  gap:12px;padding:10px 12px;border-radius:8px;border:1px solid transparent}
+.prow + .prow{border-top:1px solid var(--line-soft);border-radius:0}
+.prow:hover{background:color-mix(in oklab,var(--panel2) 70%,transparent)}
+.prow .num{font-family:var(--game-font);font-size:17px;color:var(--faint);text-align:center;
+  font-variant-numeric:tabular-nums}
+.prow .pn{font-size:14.5px;color:var(--ink);line-height:1.3}
+.prow .pc{font-size:11.5px;color:var(--faint);letter-spacing:.2px;line-height:1.35}
+.prow .pv{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.prow .pf{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.prow .pf span{font-size:10.5px;letter-spacing:.2px;color:var(--faint);
+  border:1px solid var(--line);border-radius:4px;padding:1px 6px;white-space:nowrap;
+  font-variant-numeric:tabular-nums}
+.prow .pf span.cost{color:var(--s2);border-color:color-mix(in oklab,var(--s2) 45%,transparent)}
+.prow .pf span.gen{color:var(--good);border-color:color-mix(in oklab,var(--good) 45%,transparent)}
+.prow .pv b{font-family:var(--game-font);font-weight:400;font-size:15px;color:var(--ink)}
+.prow .pv span{display:block;font-size:11px;color:var(--faint)}
+.prow.buff .num{color:var(--gold)}
+.prow .ico.ph{width:38px;height:38px;line-height:36px}
+/* Narrow: the condition needs the full width to stay one readable line, so the
+   figure moves under it rather than squeezing both into a third of the row. */
+@media (max-width:620px){
+  .wrow{grid-template-columns:minmax(0,1fr) 116px;row-gap:4px}
+  .wrow .wbar{grid-column:1 / -1;order:3}
+  .prow{grid-template-columns:24px 32px minmax(0,1fr);row-gap:2px;padding:11px 4px}
+  .prow .ico,.prow .ico.ph{width:32px;height:32px;line-height:30px}
+  .prow .pv{grid-column:3;text-align:left;display:flex;align-items:baseline;gap:8px}
+  .prow .pv span{display:inline}
+}
+
+.share{height:4px;border-radius:2px;background:var(--panel2);overflow:hidden;margin-top:5px}
+.share i{display:block;height:100%;background:var(--gold);border-radius:2px}
+
+.bench{display:flex;flex-wrap:wrap;gap:7px;margin-top:4px}
+.bench .tag{cursor:help}
+
+.tlhost{position:relative}
+#timeline{display:block;width:100%;height:auto;touch-action:none;cursor:grab;
+  border-radius:6px;outline-offset:2px}
+#timeline.drag{cursor:grabbing}
+.tltip{position:absolute;z-index:5;pointer-events:none;max-width:260px;
+  background:var(--panel2);border:1px solid var(--line);border-radius:7px;
+  padding:9px 11px;font-size:12px;line-height:1.45;color:var(--ink);
+  box-shadow:0 6px 18px var(--shadow)}
+.tltip b{display:block;font-family:var(--panel-font);font-size:13.5px;font-weight:400;
+  margin-bottom:3px}
+.tltip i{display:block;font-style:normal;color:var(--faint);font-size:11px;margin-top:3px}
+.tltip .row{display:flex;justify-content:space-between;gap:14px;
+  font-variant-numeric:tabular-nums}
+.tltip .row span{color:var(--faint)}
+
+.wrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(90px,180px) 136px;gap:12px;
+  align-items:center;padding:7px 2px;font-size:13px}
+.wrow + .wrow{border-top:1px solid var(--line-soft)}
+.wrow .wn{color:var(--ink)}
+.wbar{height:6px;border-radius:3px;background:var(--panel2);overflow:hidden}
+.wbar i{display:block;height:100%;background:var(--s1);border-radius:3px}
+.wrow .wv{text-align:right;font-variant-numeric:tabular-nums;color:var(--dim);font-size:12.5px}
+/* The same row in a 290px sidebar: the figures shrink so the name still has
+   somewhere to go, rather than being run over by the bar. */
+.wrow.mini{grid-template-columns:minmax(0,1fr) 62px 58px;gap:9px}
+.wrow.mini .wn{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wrow.mini .why{grid-column:1 / -1;font-size:11px;line-height:1.4;color:var(--faint);
+  margin:-1px 0 2px}
+
+/* app.js wraps every number input in a stepper, and the pair of buttons plus a
+   four-figure value needs 113px. The column was 92, and .numfield clips what
+   does not fit — so the + was sliced off at every screen width. The field is
+   given the room it asks for and told to fill it, rather than a fixed inner
+   width that has to be guessed again the next time a button's padding moves. */
+/* The gear list, sized for a 340px column rather than a paperdoll: one row a
+   slot, the art at the size the picker shows it, and the two modifiers that
+   actually get changed — quality and instability — readable without opening
+   anything. */
+.bulk{display:flex;flex-direction:column;gap:8px;margin:0 0 12px}
+.bulk .rarityset{gap:4px}
+.bulk .rbtn{padding:4px 8px;font-size:11px;flex:1 1 auto;text-align:center}
+.bulkline{display:flex;align-items:center;gap:8px}
+.bulkline label{color:var(--faint);font-size:11px;letter-spacing:.6px;text-transform:uppercase}
+.bulkline .numfield{flex:1 1 auto}
+.bulkline .numfield input[type=number]{width:100%;min-width:0}
+
+/* The gear is the character panel, the same way the planner draws it: the
+   engine's own slot captures, the panel's own empty-slot art, head down the
+   left and body down the right with the weapons underneath. It reuses .eqslot
+   and .eqbox from the site stylesheet outright, so a slot means the same thing
+   on both pages; all that differs here is the size, because this sits in a
+   340px column beside a page of results rather than filling one. */
+.odoll{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;
+  justify-content:center;margin:0 0 4px}
+.odoll .eqslot{width:58px}
+.odoll .eqbox{width:52px;height:52px}
+.odoll .eqslot.weapon .eqbox{width:58px;height:54px}
+.odoll .dollcol{gap:5px}
+.odoll .dollweapons{padding-top:9px;margin-top:2px}
+.odoll .dollfig{gap:8px}
+/* The figure is there to make the shape read as a character panel, so it gives
+   way before the slots do rather than setting the panel's height. */
+.odoll .dollfig img{width:100%;min-height:0;max-height:196px}
+.odoll .dollfig img.gone{display:none}
+
+/* ---- the pull -----------------------------------------------------------
+   One card per kind of creature, at the size the rest of the site draws a
+   portrait, with the count on a stepper rather than typed. The card you are
+   facing is marked, because a single-target stun goes there and nowhere else. */
+.roster{display:flex;flex-direction:column;gap:6px;margin:2px 0 8px}
+.foe{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:10px;align-items:center;
+  padding:6px 8px;border:1px solid var(--line);border-radius:9px;
+  background:color-mix(in oklab,var(--panel2) 55%,transparent)}
+.foe.facing{border-color:color-mix(in oklab,var(--gold) 55%,var(--line))}
+.foe .foeart{cursor:help}
+.foe .fn{font-size:13px;color:var(--ink);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+.foe .fm{font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums}
+.foestep{display:inline-flex;align-items:center;gap:2px}
+.foestep button{width:26px;height:26px;padding:0;display:grid;place-items:center;
+  font-size:14px;line-height:1;border-radius:6px}
+.foestep b{min-width:22px;text-align:center;font-weight:400;font-family:var(--game-font);
+  font-size:13px;font-variant-numeric:tabular-nums;color:var(--ink)}
+.foeadd{display:flex;gap:8px;align-items:center;margin-top:2px}
+.foeadd select{flex:1 1 auto;min-width:0}
+.foesum{margin:4px 2px 0}
+.foesum b{font-weight:400;color:var(--dim);font-variant-numeric:tabular-nums}
+
+/* Instability is the one thing about a piece this page exists to tune, and the
+   frame says quality but has nothing to say about depth — so the tier rides in
+   the corner of the box instead of only in the tooltip. */
+.eqbox .inst{position:absolute;right:1px;bottom:0;z-index:2;
+  font-family:var(--game-font);font-size:9.5px;line-height:1.35;letter-spacing:.2px;
+  padding:0 3px;border-radius:3px;color:var(--gold);
+  background:color-mix(in oklab,var(--bg) 78%,transparent);
+  font-variant-numeric:tabular-nums;pointer-events:none}
+#pickRows tr:hover{background:color-mix(in oklab,var(--panel2) 60%,transparent)}
+#pickRows tr.on{background:color-mix(in oklab,var(--gold) 12%,transparent)}
+#pickRows td.zero{color:var(--faint)}
+#pickRows .q1{color:var(--normal)} #pickRows .q3{color:var(--fine)}
+#pickRows .q2{color:var(--superior)} #pickRows .q4{color:var(--flawless)}
+#pickRows b{font-weight:400}
+#openAttrs{width:100%;font-size:11.5px;padding:7px 10px}
+#gearBody[hidden]{display:none}
+/* Folded, the panel still has to say what is in it — a collapsed section that
+   reads as empty is worse than one that never folded. */
+.gearsum{display:flex;justify-content:space-between;gap:10px;font-size:12px;
+  color:var(--faint);padding:2px 2px 4px}
+.gearsum b{font-weight:400;color:var(--dim);font-variant-numeric:tabular-nums}
+
+.statin{display:grid;grid-template-columns:minmax(0,1fr) 122px;gap:10px;align-items:center;
+  padding:5px 0}
+/* A stat that comes out of the gear is shown, not typed. */
+.statin .ro{text-align:right;font-family:var(--game-font);font-size:14px;
+  color:var(--stat-positive);font-variant-numeric:tabular-nums;padding-right:2px}
+.statin label{color:var(--parchment);font-family:var(--game-font);font-size:13px}
+.statin input{width:100%}
+.statin .numfield{width:100%}
+.statin .numfield input[type=number]{width:100%;min-width:0}
+
+.choice{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media (max-width:620px){.choice{grid-template-columns:1fr}}
+.optbox{border:1px solid var(--line);border-radius:9px;padding:14px;background:var(--panel2)}
+.optbox.win{border-color:var(--gold)}
+.optbox h4{margin:0 0 3px;font-family:var(--panel-font);font-size:13.5px;color:var(--ink);font-weight:400}
+.optbox b{font-family:var(--game-font);font-weight:400;font-size:23px;color:var(--ink);
+  font-variant-numeric:tabular-nums}
+.optbox.win b{color:var(--gold)}
+.optbox .d{font-size:11.5px;color:var(--faint);margin-top:3px}
+
+.curves{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media (max-width:760px){.curves{grid-template-columns:1fr}}
+.curves figure{margin:0;min-width:0}
+.curves figcaption{font-size:10.5px;letter-spacing:.9px;text-transform:uppercase;
+  color:var(--faint);margin-bottom:8px}
+.curves svg{width:100%;height:auto;display:block}
+
+/* Four controls and a button do not fit a phone in one line, and .rifthead
+   does not wrap on its own. */
+#gearCtl{flex-wrap:wrap}
+#gearCtl select{min-width:0;flex:1 1 150px}
+#gearCtl label{color:var(--faint);font-size:12px}
+@media (max-width:760px){
+  .rifthead{flex-wrap:wrap}
+  #gearCtl{width:100%}
+}
+
+/* Named for what it is: .grow is style.css's, on the setup bar's last group,
+   and sharing it turned that group into a five-column grid. */
+.gearrow{display:grid;grid-template-columns:74px minmax(0,1fr) 16px minmax(0,1fr) 116px;
+  gap:10px;align-items:center;padding:9px 2px;font-size:13px}
+.gearrow + .gearrow{border-top:1px solid var(--line-soft)}
+.gearrow .gs{font-size:10.5px;letter-spacing:.7px;text-transform:uppercase;color:var(--faint)}
+.gearrow .arrow{color:var(--faint);text-align:center}
+.gearrow .gnow{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gearrow .gnew{color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gearrow .gv{text-align:right;font-variant-numeric:tabular-nums;color:var(--good);
+  white-space:nowrap}
+.gearrow.pair .gv{color:var(--faint)}
+.gearrow.same .gnew{color:var(--faint)}
+.gearrow.same .gv{color:var(--faint)}
+.gearrow .q1{color:var(--normal)} .gearrow .q3{color:var(--fine)}
+.gearrow .q2{color:var(--superior)} .gearrow .q4{color:var(--flawless)}
+@media (max-width:700px){
+  .gearrow{grid-template-columns:minmax(0,1fr) 96px;row-gap:2px}
+  .gearrow .gs{grid-column:1 / -1}
+  .gearrow .arrow{display:none}
+  .gearrow .gnow{grid-column:1 / -1;font-size:12px}
+}
+
+/* .bar.setup aligns its groups on the bottom edge, which works while every
+   group is a label over one control of the same height. The Character group is
+   a label over a ROW of buttons, and a button is shorter than a stepper, so it
+   floated. Giving the line a matching min-height puts every control in the bar
+   on one baseline. */
+.bar.setup .grp > .grpline{min-height:38px;align-items:stretch}
+.bar.setup .grp > .grpline > button{display:inline-flex;align-items:center}
+
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{border:0;border-radius:0;background:transparent;padding:7px 14px}
+.seg button + button{border-left:1px solid var(--line)}
+.seg button.on{background:var(--gold);color:var(--gold-ink)}
+
+.solving{opacity:.45;transition:opacity .12s}
+.opthead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.opthead .note{margin:0}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><span>ELEGON</span> DB</div>
+  <nav>
+    <a href="index.html">Items</a>
+    <a href="monsters.html">Monsters</a>
+    <a href="quests.html">Quests</a>
+    <a href="maps.html">Maps</a>
+    <a href="planner.html"><span class="navlong">Character </span>Planner</a>
+    <a href="optimizer.html" class="on">Optimizer</a>
+    <a href="scaling.html">Scaling</a>
+  </nav>
+  <button type="button" id="themebtn" class="themebtn" aria-label="Switch theme">
+    <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.4"/><g><path d="M12 1.8v3M12 19.2v3M1.8 12h3M19.2 12h3M4.8 4.8l2.1 2.1M17.1 17.1l2.1 2.1M19.2 4.8l-2.1 2.1M6.9 17.1l-2.1 2.1"/></g></svg>
+    <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.6 13.6A8.6 8.6 0 0 1 10.4 3.4a8.6 8.6 0 1 0 10.2 10.2z"/></svg>
+  </button>
+</header>
+
+<div class="wrap">
+  <div class="hero">
+    <h1>Optimizer</h1>
+  </div>
+
+  <div class="bar setup">
+    <div class="grp">
+      <label for="oClass">Class</label>
+      <select id="oClass"></select>
+    </div>
+    <div class="grp">
+      <label for="oLevel">Level</label>
+      <input type="number" id="oLevel" min="1" max="80" step="1" value="80">
+    </div>
+    <div class="grp">
+      <label for="oRank">Talent rank</label>
+      <input type="number" id="oRank" min="0" max="5" step="1" value="5">
+    </div>
+    <div class="grp" id="targetGrp">
+      <label for="oTargets">Enemies</label>
+      <input type="number" id="oTargets" min="1" max="40" step="1" value="1">
+    </div>
+    <div class="grp" id="modeGrp">
+      <label>Measuring</label>
+      <div class="seg" id="oMode"></div>
+    </div>
+    <div class="grp grow">
+      <label>Character</label>
+      <div class="grpline">
+        <button type="button" id="loadBtn">Load a build…</button>
+        <button type="button" id="fightBtn">Fight settings</button>
+        <button type="button" id="shareBtn" title="Copy a link that rebuilds this exactly">Copy link</button>
+      </div>
+    </div>
+    <span class="savenote" id="oNote"></span>
+  </div>
+
+  <div class="optgrid">
+    <div class="side">
+      <div class="attrs">
+        <div class="rifthead">
+          <div class="opthead"><h3>Build</h3></div>
+          <div class="grpline">
+            <button type="button" id="gearFold" aria-expanded="true"
+                    aria-controls="gearBody" title="Hide the gear">Hide gear</button>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div id="gearBody">
+        <div class="bulk">
+          <span id="bulkRar"></span>
+          <div class="bulkline">
+            <label for="bulkInstIn">All slots</label>
+            <span id="bulkInst"></span>
+            <button type="button" id="bulkApply">Apply</button>
+          </div>
+        </div>
+        <div class="odoll" id="slotList">
+          <div class="dollcol" id="odollL"></div>
+          <div class="dollmid">
+            <figure class="dollfig">
+              <img id="oCharFig" alt="Character" loading="lazy">
+              <button type="button" id="openAttrs" class="attrbtn">
+                Attribute points <span id="ptsLeft">0</span>
+              </button>
+            </figure>
+          </div>
+          <div class="dollcol" id="odollR"></div>
+          <div class="dollweapons" id="odollW"></div>
+        </div>
+        </div>
+        <div class="divider" style="margin:12px 0 10px"></div>
+        <div id="statInputs"></div>
+        <div class="divider" style="margin:12px 0 10px"></div>
+        <div id="derived"></div>
+      </div>
+      <div class="attrs" style="margin-top:16px">
+        <h3>What a stat is worth</h3>
+        <div class="divider"></div>
+        <div id="weights"><p class="note" style="margin:2px">Measuring…</p></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="headline" id="headline"></div>
+
+      <div class="attrs" style="margin-top:16px">
+        <div class="rifthead">
+          <div class="opthead">
+            <h3 id="prioTitle">Priority</h3>
+            <p class="note" id="prioNote"></p>
+          </div>
+          <div class="grpline"><button type="button" id="copyBtn">Copy list</button></div>
+        </div>
+        <div class="divider"></div>
+        <div id="priority"></div>
+        <div id="benched"></div>
+      </div>
+
+      <div class="attrs" style="margin-top:16px" id="choiceCard" hidden>
+        <h3 id="choiceTitle">The choice</h3>
+        <div class="divider"></div>
+        <div class="choice" id="choice"></div>
+        <p class="note" id="choiceNote" style="margin:12px 0 0"></p>
+      </div>
+
+      <div class="attrs" style="margin-top:16px">
+        <div class="rifthead">
+          <div class="opthead">
+            <h3>How it scales</h3>
+            <p class="note">each point re-solved from scratch</p>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div class="curves">
+          <figure>
+            <figcaption>Against more enemies</figcaption>
+            <svg id="curveTargets" role="img" aria-label="Damage per second against a growing pack"></svg>
+          </figure>
+          <figure>
+            <figcaption>Over a longer fight</figcaption>
+            <svg id="curveTime" role="img" aria-label="Damage per second against fight length"></svg>
+          </figure>
+        </div>
+        <p class="note" id="scaleNote" style="margin:12px 0 0">Measuring…</p>
+      </div>
+
+      <div class="attrs" style="margin-top:16px">
+        <div class="rifthead">
+          <div class="opthead">
+            <h3>The fight, second by second</h3>
+            <p class="note" id="tlRange"></p>
+          </div>
+          <div class="grpline" id="tlBar">
+            <button type="button" id="tlOut" aria-label="Zoom out">&#8722;</button>
+            <button type="button" id="tlIn" aria-label="Zoom in">+</button>
+            <button type="button" id="tlOpen">Opener</button>
+            <button type="button" id="tlFit">Whole fight</button>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div class="tlhost">
+          <canvas id="timeline" tabindex="0"
+                  aria-label="Cast timeline. Drag to pan, scroll to zoom, arrow keys to move, plus and minus to zoom."></canvas>
+          <div class="tltip" id="tlTip" hidden></div>
+        </div>
+        <p class="note" id="tlNote" style="margin:10px 0 0"></p>
+      </div>
+
+      <div class="attrs" style="margin-top:16px">
+        <h3 id="breakTitle">Where it came from</h3>
+        <div class="divider"></div>
+        <div id="breakdown"></div>
+      </div>
+
+      <div class="attrs" style="margin-top:16px">
+        <div class="rifthead">
+          <div class="opthead">
+            <h3>Better gear</h3>
+            <p class="note">the best thing in the catalogue for each slot</p>
+          </div>
+          <div class="grpline" id="gearCtl">
+            <label for="gearInst">Instability</label>
+            <input type="number" id="gearInst" min="0" max="400" step="10" value="0" style="width:88px">
+            <select id="gearQual"></select>
+            <select id="gearSrc">
+              <option value="all">From anywhere</option>
+              <option value="inst">Only the two scaling rifts</option>
+            </select>
+            <button type="button" id="gearRun" class="gold">Search</button>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div id="gearRows"><p class="note" style="margin:2px">
+          Instability only raises an item if it drops in <b>Ashenroot Grotto</b> or
+          <b>Embermaw Caverns</b>; everything else is fixed at its printed value however
+          deep you push. Set the tier you actually farm and press Search — every result
+          respects what your class can hold, and a two-hander empties the off hand.</p></div>
+        <div class="grpline" id="gearFoot" hidden style="margin-top:14px">
+          <button type="button" id="gearApply" class="gold">Equip all of it</button>
+          <span class="savenote" id="gearApplied"></span>
+        </div>
+      </div>
+
+      <p class="note" id="assumptions"></p>
+    </div>
+  </div>
+</div>
+
+<dialog id="loadDlg">
+  <div class="dhead">
+    <div class="dtop">
+      <b>Load a build</b>
+      <span class="spacer"></span>
+      <button id="loadClose" class="gold">Close</button>
+    </div>
+  </div>
+  <div class="dbody" style="padding:16px 18px;display:flex;flex-direction:column;gap:16px">
+    <div>
+      <label class="panelhead" for="pasteCode">Paste a planner link or code</label>
+      <div class="grpline" style="margin-top:7px">
+        <input type="text" id="pasteCode" placeholder="https://…/planner.html#…" style="flex:1 1 320px">
+        <button type="button" id="pasteBtn" class="gold">Load</button>
+      </div>
+      <p class="note" style="margin:8px 0 0">Every gear, quality, instability and proficiency
+        choice rides in the link, so what the planner shows is what gets simulated.</p>
+    </div>
+    <div>
+      <label class="panelhead" for="savedList">Or a build saved in the planner on this browser</label>
+      <div class="grpline" style="margin-top:7px">
+        <select id="savedList" style="flex:1 1 260px"></select>
+        <button type="button" id="savedBtn">Load</button>
+      </div>
+    </div>
+    <div>
+      <label class="panelhead">Or take the best gear in the catalogue</label>
+      <div class="grpline" style="margin-top:7px">
+        <button type="button" id="bisBtn">Best in slot, Flawless</button>
+        <label for="bisTier" style="color:var(--faint);font-size:12px">instability</label>
+        <input type="number" id="bisTier" min="0" max="30" step="1" value="0" style="width:80px">
+      </div>
+      <p class="note" style="margin:8px 0 0">A ceiling rather than a build — it takes the
+        highest-scoring item per slot with no regard for what actually drops together.</p>
+    </div>
+    <p class="note" id="loadNote" style="margin:0"></p>
+  </div>
+</dialog>
+
+<dialog id="pickDlg">
+  <div class="dhead">
+    <div class="dtop">
+      <b id="pickTitle">Head</b>
+      <span class="spacer"></span>
+      <button type="button" id="pickClear">Leave it empty</button>
+      <button type="button" id="pickClose" class="gold">Close</button>
+    </div>
+    <div class="dfilters">
+      <input type="search" id="pickSearch" placeholder="Search this slot…" style="flex:1 1 200px">
+      <span id="pickRarity"></span>
+      <label for="pickInstIn">Instability</label>
+      <span id="pickInst"></span>
+    </div>
+  </div>
+  <div class="dbody">
+    <p class="note" id="pickNote" style="margin:10px 2px"></p>
+    <table><thead><tr id="pickHead"></tr></thead><tbody id="pickRows"></tbody></table>
+  </div>
+</dialog>
+
+<dialog id="attrDlg">
+  <div class="dhead">
+    <div class="dtop">
+      <b>Attribute points</b>
+      <span class="spacer"></span>
+      <button type="button" id="attrReset">Reset</button>
+      <button type="button" id="attrClose" class="gold">Close</button>
+    </div>
+  </div>
+  <div class="dbody" style="padding:14px 18px 18px">
+    <div class="allocrows" id="attrRows"></div>
+    <p class="note" id="attrSummary" style="margin:12px 2px 0"></p>
+  </div>
+</dialog>
+
+<dialog id="fightDlg">
+  <div class="dhead">
+    <div class="dtop">
+      <b>Fight settings</b>
+      <span class="spacer"></span>
+      <button id="fightReset">Reset</button>
+      <button id="fightClose" class="gold">Close</button>
+    </div>
+  </div>
+  <div class="dbody" style="padding:16px 18px;display:flex;flex-direction:column;gap:4px"
+       id="fightBody"></div>
+</dialog>
+
+<script src="data.js?v=841cbcc2"></script>
+<script src="app.js?v=841cbcc2"></script>
+<script src="sim.js?v=841cbcc2"></script>
+<script>
+/* ---- the optimizer page --------------------------------------------------
+   The arithmetic lives in sim.js so it can be tested outside a browser; this
+   file is the panel around it. It reads the same catalogue every other page
+   reads and decodes the planner's own build links, so a character described in
+   one place is the same character here.                                      */
+"use strict";
+/* D, el(), icon(), scaleStat() and the quality arithmetic all come from app.js,
+   which every page on the site already loads. Redeclaring them here would not
+   only duplicate the maths, it would throw. */
+const SIM = window.ElegonSim;
+const CLASSES = D.classes || {};
+const ATTRS = ["vitality", "fortitude", "strength", "grace", "alacrity", "tempo"];
+const SLOT_ORDER = ["Head", "Neck", "Back", "Shoulder", "Chest", "Waist",
+                    "Legs", "Feet", "Hands", "Main Hand", "Off Hand"];
+const PROF = (D.skills || []).filter(s => s.group === "Combat");
+const PROF_BY_ID = new Map(PROF.map(s => [s.id, s]));
+const PROF_BY_SUB = new Map(PROF.filter(s => s.sub).map(s => [s.sub, s]));
+
+const fmt = n => Math.round(n).toLocaleString();
+const fmt1 = n => (Math.round(n * 10) / 10).toLocaleString(undefined, {minimumFractionDigits: 1});
+/* app.js owns `pct` for a different job, so this one is named for what it is. */
+const asPct = n => (n * 100).toFixed(1) + "%";
+
+/* ---- state ---------------------------------------------------------------
+   Two halves that change for different reasons: who the character is, and what
+   the fight is. Only the first arrives from a planner link.                  */
+const S = {
+  cls: 1, level: 80, rank: 5, healing: false, survival: false,
+  strength: 0, grace: 0, alacrity: 0, tempo: 0,
+  vitality: 0, fortitude: 0, defense: 0,
+  weaponPower: 0, weaponSkill: null,
+  ranks: null, source: "nothing loaded",
+  /* The gear itself, kept rather than only the totals it produced. Switching
+     class or switching to healing asks a different question of the same
+     wardrobe, and a Grace build read off a Strength one answers it with zero. */
+  slots: null, alloc: null, profLevels: null, autoGear: true, autoTier: 0,
+};
+const FIGHT = {
+  duration: 300, resourceMax: 100, resourceStart: 0,
+  targets: 1, inMelee: null, snapshot: true,
+  /* Who is hitting back, and who is holding you up. The pack is a list of
+     {id, n} — the same creature four times is one entry with n: 4 — and null
+     means "whatever hits hardest", so an untouched page still has a fight. */
+  pack: null, enemyTier: null, stunnable: true, healerHps: 0,
+};
+
+/* ---- where instability applies -------------------------------------------
+   Only the two level-80 rifts drop gear that scales with the tier you cleared
+   it at. Everything else in the catalogue is worth what it prints, however
+   deep you push, so a search that scaled all of it would quietly invent power
+   that does not exist. */
+const INST_RIFTS = ["ashenroot-breach", "lava-breach"];
+const INST_POOL = new Set();
+for (const r of INST_RIFTS)
+  for (const ids of Object.values((D.riftDrops || {})[r] || {}))
+    for (const id of ids) INST_POOL.add(id);
+const RIFT_OF = new Map();
+for (const [rift, sets] of Object.entries(D.riftDrops || {}))
+  for (const [bucket, ids] of Object.entries(sets))
+    for (const id of ids)
+      if (!RIFT_OF.has(id))
+        RIFT_OF.set(id, {name: (D.mapNames || {})[rift] || rift, boss: bucket === "boss",
+                         scales: INST_RIFTS.includes(rift)});
+const scalesWithInstability = id => INST_POOL.has(id);
+const FIGHT_FIELDS = [
+  {k: "duration", label: "Fight length", unit: "seconds", min: 10, max: 3600, step: 10,
+   hint: "Five minutes against one enemy is the scenario these rotations are solved "
+       + "for. A longer fight dilutes the opener; a shorter one is mostly cooldowns."},
+  {k: "resourceMax", label: "Maximum energy", unit: "the size of the bar", min: 40, max: 500, step: 5,
+   hint: "100, measured in game. The catalogue carries every cost and every gain but "
+       + "not the size of the bar, so this is the one number here that came from "
+       + "playing rather than from the data."},
+  {k: "resourceStart", label: "Energy at the pull", unit: "what you open holding", min: 0, max: 500, step: 5,
+   hint: "Nothing generates energy before the fight starts, so zero is the honest "
+       + "default — but if you can walk in with a full bar, say so here."},
+];
+
+/* ---- gear ----------------------------------------------------------------
+   A build link stores an item id and a pair of modifiers rather than final
+   numbers, so every stat has to go back through the same quality and
+   instability arithmetic the item pages use. scaleStat() is app.js's, which is
+   the point: one copy, and the two can never disagree.                       */
+
+/** Fold a set of equipped slots into stat totals and the live weapon skill. */
+function applyGear(slots, alloc, profLevels) {
+  const totals = {}; ATTRS.forEach(k => totals[k] = 0);
+  let mainSub = null;
+  for (const [slot, st] of Object.entries(slots)) {
+    if (!st || !st.item) continue;
+    if (slot === "Main Hand") mainSub = st.item.sub;
+    ATTRS.forEach(k => totals[k] += scaleStat(st.item[k] || 0, st.quality, st.tier));
+  }
+  ATTRS.forEach(k => totals[k] += 2 * ((alloc || {})[k] || 0));
+  const skill = mainSub ? PROF_BY_SUB.get(mainSub) : null;
+  const lvl = skill ? ((profLevels || {})[skill.id] || 0) : 0;
+  return {totals, weaponSkill: skill, weaponPower: skill ? lvl * (skill.bonus || 0) : 0,
+          weaponLevel: lvl};
+}
+
+/* The planner's own packing, read back. Written out rather than shared because
+   the planner keeps it in a closure over its own build; the test for it is that
+   a link made there loads here unchanged.
+
+   Two forms. The original gave instability six bits, which is 0-63, while the
+   field that sets it goes to 2000 — so a build shared at tier 100 arrived here
+   as tier 36 and every stat on the page was quietly wrong by the ratio between
+   the two multipliers. The longer form is marked by a leading 0xFF, which a
+   level byte (1-80) can never be, and gives it fourteen. */
+const CODE_V2 = 0xFF;
+const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+function decodeBuild(code) {
+  const b = [];
+  for (let i = 0; i < code.length; i += 4) {
+    let n = 0, got = 0;
+    for (let j = 0; j < 4; j++) {
+      const v = B64.indexOf(code[i + j]);
+      if (v < 0) break;
+      n = (n << 6) | v; got++;
+    }
+    n <<= 6 * (4 - got);
+    const bytes = Math.floor(got * 6 / 8);
+    for (let j = 0; j < bytes; j++) b.push((n >> (16 - j * 8)) & 255);
+  }
+  if (b.length < 10) return null;
+
+  let p = 0;
+  const wide = b[0] === CODE_V2;
+  if (wide) p++;
+  const level = b[p++], cls = b[p++], rank = b[p++];
+  const alloc = {};
+  for (const k of [...ATTRS, "accuracy"]) alloc[k] = Math.min(25, b[p++] || 0);
+  const slots = {}; let missing = 0;
+  const slotBytes = wide ? 4 : 3;
+  for (const k of SLOT_ORDER) {
+    if (p + slotBytes > b.length) break;
+    const id = ((b[p++] || 0) << 8) | (b[p++] || 0);
+    const packed = b[p++] || 0;
+    const tier = wide ? (((packed & 63) << 8) | (b[p++] || 0)) : (packed & 63);
+    if (!id) continue;
+    const item = D.items.find(i => i.id === id);
+    if (!item) { missing++; continue; }
+    slots[k] = {item, quality: ((packed >> 6) & 3) + 1, tier};
+  }
+  const profLevels = {};
+  while (p + 1 < b.length) {
+    const hi = b[p++], lo = b[p++];
+    const sk = PROF_BY_ID.get(hi >> 2);
+    if (sk) profLevels[sk.id] = Math.min(sk.max || 400, ((hi & 3) << 8) | lo);
+  }
+  return {level, cls, rank, alloc, slots, profLevels, missing};
+}
+
+/** Take a link, a bare code, or a hash and get the code out of it. */
+const codeFrom = s => {
+  const t = (s || "").trim();
+  const hash = t.lastIndexOf("#");
+  return (hash >= 0 ? t.slice(hash + 1) : t).replace(/^b=/, "").trim();
+};
+
+/* ---- best in slot --------------------------------------------------------
+   A ceiling, not a build: the highest-scoring item per slot with no regard for
+   where any of it drops. Scored on the stat being measured, with the two speed
+   stats at half weight so it does not hand back a pile of raw power that
+   cannot be cast.                                                            */
+function bestInSlot(cls, level, quality, tier, mode) {
+  const allowed = new Set((D.classWeapons || {})[String(cls)] || []);
+  /* A ceiling for the thing being measured. Handing a tank the same pile of
+     Strength it hands a damage build would open survival mode on a character
+     with no health in it. */
+  const w = mode === "healing" ? {grace: 1, alacrity: .5, tempo: .5}
+    : mode === "survival" ? {vitality: 1, fortitude: 1.4, strength: .35, tempo: .3}
+    : {strength: 1, alacrity: .5, tempo: .5};
+  const score = it => ATTRS.reduce((s, k) => s + (w[k] || 0) * scaleStat(it[k] || 0, quality, tier), 0);
+  const slots = {};
+  for (const slot of SLOT_ORDER) {
+    const pool = (D.items || []).filter(i => i.slot === slot && i.lvl <= level
+      && (i.cls === 0 || i.cls === cls)
+      && ((slot !== "Main Hand" && slot !== "Off Hand") || allowed.has(i.sub)));
+    if (!pool.length) continue;
+    pool.sort((a, b) => score(b) - score(a));
+    slots[slot] = {item: pool[0], quality, tier};
+  }
+  const mh = slots["Main Hand"];
+  if (mh && String(mh.item.hand || "").toLowerCase().startsWith("t")) delete slots["Off Hand"];
+  return slots;
+}
+
+/* ---- reading the build into state --------------------------------------- */
+function adopt(b, label, auto) {
+  S.cls = CLASSES[String(b.cls)] ? b.cls : S.cls;
+  S.level = Math.min(80, Math.max(1, b.level || 80));
+  if (b.rank != null) S.rank = Math.min(5, Math.max(0, b.rank));
+  S.slots = b.slots; S.alloc = b.alloc; S.profLevels = b.profLevels;
+  S.autoGear = !!auto;
+  S.source = label;
+  regear();
+  syncInputs();
+  render();
+}
+
+/** Recompute the stats the sim reads from whatever gear is currently held. */
+function regear() {
+  if (S.autoGear) {
+    S.slots = bestInSlot(S.cls, S.level, 4, S.autoTier, modeNow());
+    S.profLevels = {};
+    const mh = S.slots["Main Hand"];
+    const sk = mh ? PROF_BY_SUB.get(mh.item.sub) : null;
+    if (sk) S.profLevels[sk.id] = sk.max || 400;
+    S.source = `best in slot, Flawless${S.autoTier ? ", instability " + S.autoTier : ""}`;
+  }
+  if (!S.slots) return;
+  const g = applyGear(S.slots, S.alloc, S.profLevels);
+  S.strength = g.totals.strength; S.grace = g.totals.grace;
+  S.alacrity = g.totals.alacrity; S.tempo = g.totals.tempo;
+  S.vitality = g.totals.vitality; S.fortitude = g.totals.fortitude;
+  S.weaponPower = g.weaponPower; S.weaponSkill = g.weaponSkill;
+  S.weaponLevel = g.weaponLevel;
+  S.defense = (S.profLevels || {})[DEFENSE_SKILL] || 0;
+}
+
+/* The Defense proficiency is the third reduction, and the only one that is not
+   a stat on a piece of gear. */
+const DEFENSE_SKILL = 2;
+
+/* ---- panel: the build ---------------------------------------------------- */
+/* Damage for everyone, healing for the Cleric, and survival for the Knight —
+   the only class the catalogue gives damage reduction, a self-heal and three
+   stuns to. */
+const MODES = {
+  "1": [["damage", "Damage"], ["survival", "Survival"]],
+  "2": [["damage", "Damage"]],
+  "3": [["damage", "Damage"], ["healing", "Healing"]],
+};
+const modeNow = () => S.healing ? "healing" : S.survival ? "survival" : "damage";
+function setMode(m) {
+  S.healing = m === "healing";
+  S.survival = m === "survival";
+}
+
+const STAT_ROWS = [
+  {k: "vitality", label: "Vitality", when: () => S.survival, note: "10 health a point"},
+  {k: "fortitude",label: "Fortitude",when: () => S.survival, note: "mitigates every hit"},
+  {k: "strength", label: "Strength", when: () => !S.healing, note: "scales damage"},
+  {k: "grace",    label: "Grace",    when: () => S.healing || S.survival,
+   note: () => S.survival ? "scales Respite" : "scales healing"},
+  {k: "alacrity", label: "Alacrity", when: () => true, note: "shortens casts"},
+  {k: "tempo",    label: "Tempo",    when: () => true, note: "shortens the global cooldown"},
+];
+
+function drawStatInputs() {
+  const box = document.getElementById("statInputs");
+  box.replaceChildren();
+  for (const r of STAT_ROWS) {
+    if (!r.when()) continue;
+    const row = el("div", "statin");
+    const lab = el("label", null, r.label);
+    lab.htmlFor = "stat_" + r.k;
+    const rNote = typeof r.note === "function" ? r.note() : r.note;
+    /* Output now, not input: the number comes from the gear above and the
+       points spent below, and a field you can type into while both of those
+       also claim to set it can only ever be lying about one of them. */
+    const out = el("div", "ro", fmt(Math.round(S[r.k] || 0)));
+    row.append(lab, out);
+    attachTip(lab, `<b>${r.label}</b><i>${rNote}</i>`
+      + statExplain(r.k));
+    box.appendChild(row);
+  }
+  const row = el("div", "statin");
+  const lab = el("label", null, "Weapon skill");
+  const inp = el("input");
+  inp.type = "number"; inp.id = "stat_wep"; inp.min = "0"; inp.max = "400"; inp.step = "10";
+  inp.value = String(Math.round((S.weaponPower || 0) / 0.00025));
+  inp.oninput = () => {
+    S.weaponPower = Math.max(0, Number(inp.value) || 0) * 0.00025;
+    S.autoGear = false; render();
+  };
+  row.append(lab, inp);
+  attachTip(lab, `<b>Weapon proficiency</b><i>+0.025% damage and healing per point</i>`
+    + (S.weaponSkill ? `${S.weaponSkill.name}, from the main hand in the loaded build. ` : "")
+    + `400 points is +10%.`);
+  box.appendChild(row);
+
+  if (S.survival) {
+    const dr = el("div", "statin");
+    const dlab = el("label", null, "Defense");
+    const dinp = el("input");
+    dinp.type = "number"; dinp.min = "0"; dinp.max = "400"; dinp.step = "10";
+    dinp.value = String(Math.round(S.defense || 0));
+    dinp.oninput = () => {
+      S.defense = Math.min(400, Math.max(0, Number(dinp.value) || 0));
+      S.autoGear = false; render();
+    };
+    dr.append(dlab, dinp);
+    attachTip(dlab, `<b>Defense proficiency</b><i>-0.02% damage taken per point</i>`
+      + `Applied to what is left after Fortitude and after your strongest damage `
+      + `reduction, so the three multiply. 400 points is -8%.`);
+    box.appendChild(dr);
+  }
+  /* app.js wires its steppers once, on DOMContentLoaded. Everything this page
+     rebuilds after that — this list on every class change, the fight dialog on
+     every open — has to ask for them, or those fields silently fall back to the
+     browser's own spinners and stop matching the rest of the site. */
+  enhanceNumberInputs(box);
+}
+
+function statExplain(k) {
+  const v = S[k] || 0, L = S.level;
+  if (k === "vitality")
+    return `<i>base + 8 x (level - 1) + 10 x Vitality</i>`
+      + `<b>${fmt(SIM.maxHealth(healthBase(), L, v))}</b> health at level ${L}.`;
+  if (k === "fortitude") {
+    const mit = SIM.mitigation(v);
+    return `<i>min(60%, F / (F + 500))</i>`
+      + `${asPct(mit)} of every hit stopped${mit >= 0.5999 ? " — at the cap" : ""}. `
+      + `The cap binds at 750; past that the stat does nothing here.`;
+  }
+  if (k === "strength") return `+${(v / 100).toFixed(1)}x on every hit and every tick.`;
+  if (k === "grace")
+    return `+${(v / 100).toFixed(1)}x on every heal and every tick.`
+      + (S.survival ? ` Respite is a heal over time, so it scales on Grace and not on `
+                      + `anything a Knight is normally built for — which is why the gear `
+                      + `search reaches for it.` : "");
+  const b = SIM.ratingBonus(v, L);
+  if (k === "alacrity") return `<i>0.4 r / (r + 20 + level)</i>+${asPct(b)} at level ${L}. `
+    + `A 2.00s cast finishes in ${(2 / (1 + b)).toFixed(2)}s. The curve caps at 40%.`;
+  return `<i>0.4 r / (r + 20 + level)</i>+${asPct(b)} at level ${L}. `
+    + `The global cooldown drops from 1.50s to ${(1.5 / (1 + b)).toFixed(2)}s.`;
+}
+
+function drawDerived(M, res) {
+  const box = document.getElementById("derived");
+  box.replaceChildren();
+  const rows = S.survival
+    ? [["Health", fmt(res.health)],
+       ["Fortitude stops", asPct(SIM.mitigation(M.fortitude))],
+       ["Defense stops", asPct(M.defense)],
+       ...(res.foeCount > 1
+         ? [["On you", `${res.foeCount} creatures`],
+            ["A full cycle, raw", fmt(M.enemy.raw)]]
+         : [["Its hit, raw", fmt(M.enemy.raw)]]),
+       ["A hit, after everything", fmt(res.swings ? res.taken / res.swings : 0)],
+       ["Swings landed", `${res.swings} of ${res.swingsPossible}`],
+       ["Respite put back", fmt(res.healed)],
+       ["Healing you need", fmt(res.needed) + "/s"],
+       ...(res.healerHps
+         ? [["Healing you have", fmt(res.healerHps) + "/s"],
+            ["Of it, wasted", asPct(res.healerWasted
+              / Math.max(1, res.healerWasted + res.healerHealed))]]
+         : []),
+       ["Global cooldown", M.gcd.toFixed(2) + "s"],
+       ["Build", S.source]]
+    : [["Global cooldown", M.gcd.toFixed(2) + "s"],
+       ["Cast speed", "+" + asPct(M.alacrityBonus)],
+       ["Actions in the fight", String(res.actions)],
+       ["Actions per minute", fmt1(res.apm)],
+       ["Energy wasted at cap", fmt(res.wasted)],
+       ["Build", S.source]];
+  for (const [k, v] of rows) {
+    const r = el("div", "attr");
+    r.appendChild(el("span", null, k));
+    r.appendChild(el("b", null, v));
+    box.appendChild(r);
+  }
+}
+
+/* ---- who is hitting back --------------------------------------------------
+   The catalogue has a damage figure for every creature and no attack-interval
+   column, so the 3-second cycle every measured creature swings on is used for
+   all of them — the same assumption the planner's rift panel makes. */
+const ATTACKERS = (D.monsters || []).slice()
+  .sort((a, b) => b.lvl - a.lvl || b.dmg - a.dmg);
+
+/* A pull comes out of one place, so the list to pick it from is grouped by
+   place: every creature in Embermaw Caverns together, and the rift you are
+   farming at the top rather than scattered through seventy names. Deepest
+   first, matching the flat order it replaces. */
+const NO_MAP = "\u0000";            // a creature the export gives no map at all
+const ATTACKER_GROUPS = (() => {
+  const by = new Map();
+  for (const m of ATTACKERS) {
+    /* An empty map is the overworld and the catalogue names it; a missing one
+       is a gap in the export, and those two are not the same thing. */
+    const key = m.map == null ? NO_MAP : String(m.map);
+    if (!by.has(key)) by.set(key, []);
+    by.get(key).push(m);
+  }
+  /* Rifts first, deepest first, because a pull is something you farm and the
+     rift is what you farm it in. The overworld goes under them and reads as one
+     long list of everything else, whatever the level of the worst thing in it. */
+  const isRift = key => !!(D.rifts || {})[key] || !!(D.riftDrops || {})[key];
+  const rank = key => key === NO_MAP ? 2 : isRift(key) ? 0 : 1;
+  return [...by.entries()]
+    .map(([key, list]) => ({
+      key, list, rank: rank(key),
+      name: key === NO_MAP ? "Elsewhere"
+            : (D.mapNames || {})[key] || key.replace(/-/g, " "),
+      depth: Math.max(...list.map(m => m.lvl || 0)),
+    }))
+    .sort((a, b) => a.rank - b.rank || b.depth - a.depth);
+})();
+const DEFAULT_ATTACKER = ATTACKERS.length
+  ? ATTACKERS.slice().sort((a, b) => b.dmg - a.dmg)[0].id : null;
+
+const BY_ID = new Map(ATTACKERS.map(m => [m.id, m]));
+const NOTHING = {id: -1, name: "nothing", dmg: 0, lvl: 0};
+const PACK_MAX = 20;                 // one clock each, and a screenful of cards
+
+/** The pack as creatures, defaulting to one of whatever hits hardest. */
+function pack() {
+  const raw = FIGHT.pack && FIGHT.pack.length
+    ? FIGHT.pack : [{id: DEFAULT_ATTACKER, n: 1}];
+  const out = [];
+  for (const e of raw) {
+    const m = BY_ID.get(e.id);
+    if (m) out.push({m, n: Math.max(1, Math.min(PACK_MAX, Math.round(e.n || 1)))});
+  }
+  return out.length ? out : [{m: ATTACKERS[0] || NOTHING, n: 1}];
+}
+const packSize = () => pack().reduce((t, e) => t + e.n, 0);
+/* The one you are facing — the first in the list, which is where a single
+   target stun lands and what the instability note talks about. */
+const attacker = () => pack()[0].m;
+
+function setPack(next) {
+  /* Trimmed here rather than at every caller, so nothing downstream has to
+     wonder whether it is looking at a list that adds up to sixty creatures. */
+  let left = PACK_MAX;
+  FIGHT.pack = next.filter(e => BY_ID.has(e.id)).map(e => {
+    const n = Math.max(1, Math.min(left, Math.round(e.n || 1)));
+    left -= n;
+    return {id: e.id, n};
+  }).filter(e => e.n > 0);
+  if (!FIGHT.pack.length) FIGHT.pack = null;
+}
+
+/* The tier the enemy is met at defaults to the tier the gear was farmed at:
+   you fight the rift you are geared from, at the depth you push it. */
+function enemyTier() {
+  if (FIGHT.enemyTier != null) return FIGHT.enemyTier;
+  if (!S.slots) return S.autoTier || 0;
+  return Math.max(0, ...Object.values(S.slots).map(st => st.tier || 0));
+}
+
+/** The pack in the shape sim.js wants: one entry per kind, with a count. */
+function enemyCfg(over) {
+  const tier = (over && over.tier != null) ? over.tier : enemyTier();
+  return pack().map(e => Object.assign({
+    id: e.m.id, damage: e.m.dmg || 0, tier, name: e.m.name, boss: !!e.m.boss,
+    count: e.n, stunnable: FIGHT.stunnable !== false,
+  }, over || {}, {count: e.n}));
+}
+
+/* ---- panel: the answer ---------------------------------------------------
+   One palette, used by the priority list and the timeline both, keyed by an
+   action's place on the list, so a colour means the same thing in both.
+
+   The filler is deliberately not in it. It is the most-cast thing on the bar by
+   a distance, and colouring it as loudly as a two-minute cooldown would make
+   the timeline a wall of one hue with the interesting actions lost inside it.
+   Grey turns it into the metronome it is and lets everything else read. */
+const TL_PALETTE = ["--gold", "--s1", "--superior", "--good", "--bad", "--s2", "--fine"];
+const TL_FILLER = "--dim";
+const actionColour = (a, i, M) =>
+  (a === M.generator && !a.cd && !a.cost) ? TL_FILLER : TL_PALETTE[i % TL_PALETTE.length];
+
+function spellIcon(a, px) {
+  return a.spell && a.spell.icon ? icon("spells", a.id, true, px) : (() => {
+    const s = el("span", "ico ph", "▢");
+    s.style.width = s.style.height = px + "px"; s.style.lineHeight = (px - 2) + "px";
+    return s;
+  })();
+}
+
+function drawPriority(sol) {
+  const M = sol.model, res = sol.result;
+  const box = document.getElementById("priority");
+  box.replaceChildren();
+  const byId = new Map(res.breakdown.map(b => [b.id, b]));
+
+  sol.order.forEach((a, i) => {
+    const b = byId.get(a.id) || {casts: 0, amount: 0, share: 0};
+    const row = el("div", "prow" + (a.isBuff ? " buff" : ""));
+    row.appendChild(el("div", "num", String(i + 1)));
+    row.appendChild(spellIcon(a, 38));
+
+    const mid = el("div", "pm");
+    mid.appendChild(el("div", "pn", a.name));
+    mid.appendChild(el("div", "pc", SIM.conditionText(a, M)));
+
+    /* The instruction says when. These say what it costs to follow it, in a
+       row that can be read down the column instead of unpicked from a
+       sentence every time. */
+    const facts = el("div", "pf");
+    for (const f of SIM.actionFacts(a, M))
+      facts.appendChild(el("span", f.k === "cost" ? "cost" : f.k === "gen" ? "gen" : null, f.v));
+    mid.appendChild(facts);
+
+    const bar = el("div", "share");
+    const fill = el("i");
+    const gain = sol.buffGain[a.id];
+    const rel = a.isBuff ? (gain || 0) / Math.max(1, res.total) : b.share;
+    fill.style.width = Math.min(100, rel * 100).toFixed(1) + "%";
+    bar.appendChild(fill);
+    mid.appendChild(bar);
+    row.appendChild(mid);
+
+    const val = el("div", "pv");
+    if (S.survival) {
+      /* Damage taken is the measure, so every line is priced by what taking it
+         off the bar would let through — a number Guard has and a filler mostly
+         does not, which is the opposite of how a damage column reads. */
+      const saved = (sol.prevented || {})[a.id] || 0;
+      const worst = Math.max(1, ...Object.values(sol.prevented || {x: 1}));
+      fill.style.width = Math.min(100, Math.max(0, saved) / worst * 100).toFixed(1) + "%";
+      /* The filler always measures zero, because taking it off the bar only
+         makes the loop fall back to it — it is what pays for everything with a
+         cost, not something you can actually drop. */
+      const isFiller = a === M.generator && !a.cd && !a.cost;
+      val.appendChild(el("b", null, isFiller ? "—" : saved > 0.5 ? fmt(saved) : "—"));
+      val.appendChild(el("span", null, `${b.casts} casts · `
+        + (isFiller ? "pays for the rest" : saved > 0.5 ? "damage it stops" : "stops nothing")));
+    } else if (a.isBuff) {
+      val.appendChild(el("b", null, gain > 0 ? "+" + fmt(gain) : "—"));
+      val.appendChild(el("span", null, `${b.casts} casts · ${asPct(rel)} of the total`));
+    } else {
+      val.appendChild(el("b", null, fmt(b.amount)));
+      val.appendChild(el("span", null, `${b.casts} casts · ${asPct(b.share)}`));
+    }
+    row.appendChild(val);
+
+    attachTip(row, spellTip(a, M, b, gain, (sol.prevented || {})[a.id]));
+    box.appendChild(row);
+  });
+
+  const bench = document.getElementById("benched");
+  bench.replaceChildren();
+  if (sol.benched.length) {
+    const p = el("p", "note", "Left off the bar: ");
+    const wrap = el("span", "bench");
+    for (const x of sol.benched) {
+      const t = el("span", "tag", x.action.name);
+      attachTip(t, `<b>${x.action.name}</b><i>not in the rotation</i>${x.why}.`);
+      wrap.appendChild(t);
+    }
+    p.appendChild(wrap);
+    bench.appendChild(p);
+  }
+}
+
+function spellTip(a, M, b, gain, saved) {
+  const s = a.spell;
+  const lines = [];
+  lines.push(`<b>${a.name}</b><i>${(D.delivery || {})[s.dlv] || ""}</i>`);
+  const cast = a.castBase ? (a.castBase / (1 + M.alacrityBonus)) : 0;
+  lines.push(cast ? `${cast.toFixed(2)}s cast` : "Instant");
+  if (s.cd) lines.push(`${s.cd}s cooldown`);
+  if (a.cost) lines.push(`costs ${a.cost}`);
+  if (a.gen) lines.push(`generates ${a.gen}`);
+  let body = lines.slice(1).join(" · ");
+  if (a.direct) body += `<br>${fmt(a.direct)} per ${a.heals ? "heal" : "hit"} unbuffed`;
+  if (a.tick) body += `<br>${fmt(a.tick)} per tick, ${a.ticks} ticks over ${a.tickDur}s`;
+  if (a.isBuff) body += `<br>+${asPct(a.buffAmt)} power and cast speed for ${a.buffDur}s`
+    + (gain != null ? `<br>Worth <b>${fmt(gain)}</b> across the fight` : "");
+  if (a.rank !== 1) body += `<br>Talent rank ${a.rank} (x${SIM.talentMul(a.rank).toFixed(1)})`;
+  if (a.inferredFx) body += `<br><span style="opacity:.7">The client has no wording for this `
+    + `effect type; the amount and tick are read from the catalogue.*</span>`;
+  if (saved != null && S.survival)
+    body += `<br>Taking it off the bar lets <b>${fmt(Math.max(0, saved))}</b> more `
+      + `through over the fight`;
+  if (b && b.casts) body += `<br><span style="opacity:.7">${b.casts} casts`
+    + (b.amount ? `, ${fmt(b.amount)} damage dealt` : "") + `</span>`;
+  return lines[0] + body;
+}
+
+const asClock = sec => sec >= 60
+  ? `${Math.floor(sec / 60)}m ${String(Math.round(sec % 60)).padStart(2, "0")}s`
+  : `${Math.round(sec)}s`;
+
+function drawHeadline(sol) {
+  const res = sol.result, M = sol.model;
+  const box = document.getElementById("headline");
+  box.replaceChildren();
+
+  const big = el("div", "big");
+  if (S.survival) {
+    /* The number a tank is judged on is how long the health bar lasts. It is a
+       measured death when the fight kills you and a projection past the end
+       when it does not, which is the only way to compare two builds that both
+       walk away. */
+    big.appendChild(el("b", null, isFinite(res.survivalSeconds)
+      ? asClock(res.survivalSeconds) : "\u221e"));
+    const pl = res.foeCount > 1;
+    big.appendChild(el("span", null,
+      res.survived ? `before ${pl ? "they" : "it"} could kill you`
+                   : `and ${pl ? "they kill" : "it kills"} you there`));
+  } else {
+    big.appendChild(el("b", null, fmt(res.dps)));
+    big.appendChild(el("span", null, S.healing ? "healing per second" : "damage per second"));
+  }
+  box.appendChild(big);
+
+  const facing = S.healing || S.survival ? 1 : Math.max(1, FIGHT.targets);
+  /* One creature is "it"; four of them are "them". Worth the two lines: a panel
+     that says "everything it threw at you" over a five-creature pull reads as
+     though the other four were not counted. */
+  const many = res.foeCount > 1;
+  const rows = S.survival
+    ? [[asPct(res.stopped), `of everything ${many ? "they" : "it"} threw at you, stopped`],
+       [fmt(res.dtps) + "/s", "still reaching you"],
+       [fmt(res.health), "health"],
+       [fmt(res.dps) + " dps", "dealt while doing it"]]
+    : [[fmt(res.total), S.healing ? "total healing" : "total damage"],
+       [Math.round(FIGHT.duration) + "s",
+        S.healing ? "of casting" : facing === 1 ? "against one enemy" : `against ${facing} enemies`],
+       [res.actions + " actions", fmt1(res.apm) + " per minute"]];
+
+  for (const [v, k] of rows) {
+    const s = el("div", "sub");
+    s.appendChild(el("b", null, v));
+    s.appendChild(el("span", null, k));
+    box.appendChild(s);
+  }
+}
+
+/* ---- the fight, drawn ----------------------------------------------------
+   Five minutes at once is roughly 200 casts and a thousand ticks, which is too
+   much to read as a list and too much to hand to the DOM as a thousand nodes
+   that have to be rebuilt every time the view moves. So it is a canvas you can
+   move around in: the whole fight to begin with, drag to pan, scroll to zoom,
+   and the numbers behind any one action on hover.
+
+   Everything drawn comes out of the same log the totals come out of, so what
+   you see here is the fight that produced the number at the top of the page,
+   not an illustration of it.                                                 */
+const TL = {
+  cv: null, ctx: null, tip: null, data: null,
+  view: {t0: 0, t1: 300}, hits: [], pointers: new Map(),
+  pan: null, cursor: null,
+};
+
+/** Fold the simulator's log into lanes the canvas can draw straight from. */
+function buildTimeline(sol) {
+  const res = sol.result, M = sol.model;
+  const casts = [], lanes = new Map(), autos = [], buffs = [], energy = [];
+  const hitAt = new Map();
+  for (const e of res.log)
+    if (e.kind === "hit") hitAt.set(e.id + "@" + e.t.toFixed(4), e.amount);
+
+  const hits = [], hp = [];
+  if (M.survival) {
+    hp.push({t: 0, v: res.health});
+    for (const e of res.log) {
+      if (e.kind === "swing")
+        hits.push({t: e.t, amount: e.amount, hp: e.hp, name: e.name});
+      if (e.kind === "swing" || e.kind === "mend" || e.kind === "heal")
+        hp.push({t: e.t, v: e.hp});
+    }
+  }
+  for (const e of res.log) {
+    if (e.kind === "cast") {
+      casts.push({
+        t: e.t, end: e.end, cast: e.cast, land: e.landAt, id: e.id, name: e.name,
+        before: e.energyBefore, after: e.resource, cost: e.cost, gen: e.gen,
+        amp: e.amp, amount: hitAt.get(e.id + "@" + e.landAt.toFixed(4)) || 0,
+        periodicUntil: e.periodicUntil,
+      });
+      energy.push({t: e.t, v: e.energyBefore}, {t: e.t, v: e.resource});
+      if (e.buffUntil > e.t) buffs.push({t0: e.t, t1: e.buffUntil, name: e.name, amt: e.buffAmt});
+    } else if (e.kind === "tick") {
+      if (!lanes.has(e.id)) lanes.set(e.id, {id: e.id, name: e.name, ticks: []});
+      lanes.get(e.id).ticks.push({t: e.t, amount: e.amount});
+    } else if (e.kind === "auto") {
+      autos.push({t: e.t, amount: e.amount});
+    }
+  }
+  energy.sort((a, b) => a.t - b.t);
+
+  /* Colour by position on the priority list, so the strip and the list read as
+     the same object rather than two views that happen to share names. */
+  const colour = new Map();
+  sol.order.forEach((a, i) => colour.set(a.id, actionColour(a, i, M)));
+  colour.set(-1, "--faint");
+
+  return {duration: res.duration, casts, autos, buffs, energy, colour,
+          lanes: [...lanes.values()], energyMax: M.resourceMax,
+          healing: M.cfg.healing,
+          survival: !!M.survival, hits, hp, healthMax: res.health,
+          foeCount: res.foeCount || 1,
+          deathAt: res.deathAt};
+}
+
+const TL_GUT = 92, TL_RIGHT = 12;
+
+/* Where a pointer is, in the units the canvas draws in.
+
+   Above 2200px the stylesheet scales the page with `zoom`, and a canvas is the
+   one place where that difference is impossible to ignore: getBoundingClientRect
+   reports the element in viewport pixels while clientWidth — the number the
+   drawing code lays everything out against — is in the zoomed frame. Subtracting
+   one from the other put the crosshair x x (zoom - 1) to the right of the cursor,
+   381px adrift at 1.35, and left the hit test missing every block on the strip so
+   nothing showed a tooltip at all.
+
+   The ratio of the two widths is the conversion, and it costs nothing to take it
+   from the element itself rather than from a zoom value that has to be looked up
+   and trusted. It also covers any other scaling the page might pick up later. */
+function tlPoint(ev) {
+  const cv = TL.cv, r = cv.getBoundingClientRect();
+  const sx = r.width ? cv.clientWidth / r.width : 1;
+  const sy = r.height ? cv.clientHeight / r.height : 1;
+  return {x: (ev.clientX - r.left) * sx, y: (ev.clientY - r.top) * sy};
+}
+
+const tlSpan = () => TL.view.t1 - TL.view.t0;
+const tlX = (t, W) => TL_GUT + (t - TL.view.t0) / tlSpan() * (W - TL_GUT - TL_RIGHT);
+const tlT = (x, W) => TL.view.t0 + (x - TL_GUT) / (W - TL_GUT - TL_RIGHT) * tlSpan();
+
+/** A tick step that lands on a round number and leaves room to label it. */
+function tlStep(span, px) {
+  for (const step of [1, 2, 5, 10, 15, 30, 60, 120, 300])
+    if (span / step * 1 <= px / 62) return step;
+  return 600;
+}
+
+function drawTL() {
+  const d = TL.data, cv = TL.cv;
+  if (!d || !cv) return;
+  const css = getComputedStyle(cv);
+  const C = k => css.getPropertyValue(k).trim() || "#888";
+
+  const W = cv.clientWidth || 800;
+  const AXIS = 22, BUFF = d.buffs.length ? 14 : 0, CAST = 30,
+        LANE = 16, AUTO = d.autos.length ? 13 : 0, EN = 62, GAP = 8;
+  const HITS = d.survival && d.hits.length ? 14 : 0;
+  const HP = d.survival && d.hp.length ? 62 : 0;
+  const H = AXIS + BUFF + CAST + d.lanes.length * LANE + AUTO + HITS
+          + GAP + EN + (HP ? GAP + HP : 0) + 10;
+
+  /* The backing store carries the page zoom as well as the device ratio, or the
+     strip is drawn at 1/zoom of the resolution it is displayed at. */
+  const dpr = Math.min(4, (window.devicePixelRatio || 1) * (pageZoom() || 1));
+  if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) {
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  }
+  cv.style.height = H + "px";
+  const g = TL.ctx;
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, W, H);
+  g.font = '11px Outfit, system-ui, sans-serif';
+  g.textBaseline = "middle";
+  TL.hits = [];
+
+  /* The gutter is fixed, so a long spell name is shortened to fit it rather
+     than allowed to run under the plot. */
+  /* Everything that is data gets drawn inside the plot and nothing else: a cast
+     block that starts in view can run past the right edge, and the energy line
+     is a step function that has to begin and end outside the frame to be
+     continuous across it. Labels are drawn outside the clip, in the gutter. */
+  const PLOT_L = TL_GUT, PLOT_R = W - TL_RIGHT;
+  const clipPlot = (top, height) => {
+    g.save();
+    g.beginPath();
+    g.rect(PLOT_L, top, PLOT_R - PLOT_L, height);
+    g.clip();
+  };
+
+  const label = (text, y, colour) => {
+    const room = TL_GUT - 14;
+    let t = text;
+    if (g.measureText(t).width > room) {
+      while (t.length > 2 && g.measureText(t + "\u2026").width > room) t = t.slice(0, -1);
+      t += "\u2026";
+    }
+    g.fillStyle = colour || C("--faint");
+    g.textAlign = "right";
+    g.fillText(t, TL_GUT - 10, y);
+    g.textAlign = "left";
+  };
+
+  /* time ruling */
+  const step = tlStep(tlSpan(), W - TL_GUT - TL_RIGHT);
+  const first = Math.ceil(TL.view.t0 / step) * step;
+  g.strokeStyle = C("--grid"); g.lineWidth = 1;
+  for (let t = first; t <= TL.view.t1 + 1e-6; t += step) {
+    const x = Math.round(tlX(t, W)) + .5;
+    g.beginPath(); g.moveTo(x, AXIS - 6); g.lineTo(x, H - EN - GAP); g.stroke();
+    g.fillStyle = C("--faint");
+    /* The label on the last tick sits on the right edge, so centring it hangs
+       half of it off the canvas and the reader gets "5m0(". The two end labels
+       tuck inside instead. */
+    const txt = t >= 60 ? Math.floor(t / 60) + "m" + String(Math.round(t % 60)).padStart(2, "0")
+                        : t + "s";
+    const half = g.measureText(txt).width / 2;
+    g.textAlign = x + half > W - 2 ? "right" : x - half < TL_GUT ? "left" : "center";
+    g.fillText(txt, g.textAlign === "right" ? W - 2 : g.textAlign === "left" ? TL_GUT : x, 9);
+    g.textAlign = "left";
+  }
+
+  let y = AXIS;
+
+  /* the buff windows, as a band above everything they multiply */
+  if (BUFF) {
+    label(d.buffs[0].name, y + BUFF / 2 - 1);
+    clipPlot(y, BUFF);
+    for (const b of d.buffs) {
+      const x0 = tlX(b.t0, W), x1 = tlX(b.t1, W);
+      if (x1 < PLOT_L || x0 > PLOT_R) continue;
+      const l = Math.max(PLOT_L, x0), r2 = Math.min(PLOT_R, x1);
+      g.fillStyle = C("--gold");
+      g.globalAlpha = .3;
+      g.fillRect(l, y + 2, Math.max(2, r2 - l), BUFF - 5);
+      g.globalAlpha = 1;
+      TL.hits.push({x: l, y: y + 2, w: Math.max(2, r2 - l), h: BUFF - 5, kind: "buff", d: b});
+    }
+    g.restore();
+    y += BUFF;
+  }
+
+  /* the casts */
+  label("casts", y + CAST / 2 - 2);
+  clipPlot(y, CAST);
+  for (const c of d.casts) {
+    const x0 = tlX(c.t, W), x1 = tlX(c.end, W);
+    if (x1 < PLOT_L || x0 > PLOT_R) continue;
+    const w = Math.max(1.5, x1 - x0 - 1);
+    const cx = Math.max(PLOT_L, x0);
+    g.fillStyle = C(d.colour.get(c.id) || "--faint");
+    g.globalAlpha = c.cast > 0 ? 1 : .82;
+    g.fillRect(cx, y + 3, w, CAST - 9);
+    g.globalAlpha = 1;
+    if (w > 30) {
+      /* Whatever fits, shortened rather than clipped mid-stroke. Zoom in and
+         the names fill out; at the whole-fight view the colour is the label,
+         which is why the priority list carries the same colours. */
+      let t = c.name;
+      const room = Math.min(w, PLOT_R - cx) - 10;
+      if (g.measureText(t).width > room) {
+        while (t.length > 2 && g.measureText(t + "\u2026").width > room) t = t.slice(0, -1);
+        t = t.length > 2 ? t + "\u2026" : "";
+      }
+      if (t) {
+        g.fillStyle = C("--bg");
+        g.fillText(t, cx + 5, y + CAST / 2 - 1);
+      }
+    }
+    TL.hits.push({x: cx, y: y + 3, w: Math.max(Math.min(w, PLOT_R - cx), 4), h: CAST - 9,
+                  kind: "cast", d: c});
+  }
+  g.restore();
+  y += CAST;
+
+  /* one row per effect that ticks, so a gap in a row is uptime lost */
+  for (const lane of d.lanes) {
+    label(lane.name, y + LANE / 2);
+    TL.hits.push({x: 0, y: y + 1, w: TL_GUT - 6, h: LANE - 2, kind: "lane", d: lane, lane});
+    clipPlot(y, LANE);
+    g.fillStyle = C(d.colour.get(lane.id) || "--faint");
+    const wide = tlSpan() < 90;
+    for (const tk of lane.ticks) {
+      const x = tlX(tk.t, W);
+      if (x < PLOT_L - 2 || x > PLOT_R + 2) continue;
+      g.globalAlpha = .9;
+      g.fillRect(x - (wide ? 1.5 : .75), y + 3, wide ? 3 : 1.5, LANE - 7);
+      g.globalAlpha = 1;
+      if (wide) TL.hits.push({x: x - 3, y: y + 3, w: 6, h: LANE - 7,
+                              kind: "tick", d: tk, lane});
+    }
+    g.restore();
+    y += LANE;
+  }
+
+  /* weapon swings, when there are any */
+  if (AUTO) {
+    label("swings", y + AUTO / 2);
+    clipPlot(y, AUTO);
+    g.fillStyle = C("--faint");
+    for (const a of d.autos) {
+      const x = tlX(a.t, W);
+      if (x < PLOT_L - 2 || x > PLOT_R + 2) continue;
+      g.fillRect(x - .75, y + 3, 1.5, AUTO - 7);
+    }
+    g.restore();
+    y += AUTO;
+  }
+
+  /* what it landed on you, and what that did to the health bar */
+  if (HITS) {
+    label(((TL.data.foeCount || 1) > 1 ? "their hits" : "its hits"), y + HITS / 2);
+    clipPlot(y, HITS);
+    g.fillStyle = C("--bad");
+    for (const h of d.hits) {
+      const x = tlX(h.t, W);
+      if (x < PLOT_L - 2 || x > PLOT_R + 2) continue;
+      g.fillRect(x - 1, y + 3, 2, HITS - 7);
+      if (tlSpan() < 90)
+        TL.hits.push({x: x - 4, y: y + 3, w: 8, h: HITS - 7, kind: "hit", d: h});
+    }
+    g.restore();
+    y += HITS;
+  }
+
+  if (HP) {
+    y += GAP;
+    const hTop = y + 12, hBot = y + HP - 14;
+    const hy = v => hBot - Math.max(0, v) / d.healthMax * (hBot - hTop);
+    g.strokeStyle = C("--line"); g.lineWidth = 1;
+    g.beginPath(); g.moveTo(PLOT_L, Math.round(hy(d.healthMax)) + .5);
+    g.lineTo(PLOT_R, Math.round(hy(d.healthMax)) + .5); g.stroke();
+    g.beginPath(); g.moveTo(PLOT_L, Math.round(hBot) + .5);
+    g.lineTo(PLOT_R, Math.round(hBot) + .5); g.stroke();
+    label("health", (hTop + hBot) / 2);
+    g.fillStyle = C("--faint"); g.textAlign = "right";
+    g.fillText(fmt(d.healthMax), TL_GUT - 10, hTop - 6);
+    g.textAlign = "left";
+
+    clipPlot(hTop - 4, (hBot - hTop) + 8);
+    /* The line stops where the health does. Carrying it on along the floor read
+       as a bar that had stabilised, when what it means is that the fight ended
+       three minutes ago and you were not in it. */
+    const end = d.deathAt == null ? Infinity : d.deathAt;
+    g.strokeStyle = C("--good"); g.lineWidth = 1.6;
+    g.beginPath();
+    let started = false, lastV = d.healthMax;
+    for (const pt of d.hp) {
+      if (pt.t > end) break;
+      const x = tlX(pt.t, W);
+      if (!started) { g.moveTo(PLOT_L - 30, hy(pt.v)); started = true; }
+      g.lineTo(Math.max(PLOT_L - 30, x), hy(pt.v));
+      lastV = pt.v;
+    }
+    if (started && d.deathAt == null) g.lineTo(PLOT_R + 30, hy(lastV));
+    g.stroke();
+
+    if (d.deathAt != null) {
+      const dx = tlX(d.deathAt, W);
+      g.strokeStyle = C("--bad"); g.lineWidth = 1.5;
+      g.beginPath(); g.moveTo(dx, hTop - 4); g.lineTo(dx, hBot + 4); g.stroke();
+      g.fillStyle = C("--bad");
+      g.beginPath(); g.arc(dx, hy(0), 3.5, 0, Math.PI * 2); g.fill();
+      g.font = '10px Outfit, system-ui, sans-serif';
+      const tag = "dead at " + (d.deathAt >= 60
+        ? Math.floor(d.deathAt / 60) + "m" + String(Math.round(d.deathAt % 60)).padStart(2, "0")
+        : Math.round(d.deathAt) + "s");
+      const w = g.measureText(tag).width;
+      g.textAlign = dx + w + 12 > PLOT_R ? "right" : "left";
+      g.fillText(tag, g.textAlign === "right" ? dx - 6 : dx + 6, hTop + 4);
+      g.textAlign = "left";
+      g.font = '11px Outfit, system-ui, sans-serif';
+    }
+    g.restore();
+    y += HP;
+  }
+
+  /* energy, as the step function it actually is */
+  y += GAP;
+  const top = y + 12, bot = y + EN - 14;
+  const ey = v => bot - (v / d.energyMax) * (bot - top);
+  g.strokeStyle = C("--line"); g.lineWidth = 1;
+  g.beginPath(); g.moveTo(PLOT_L, Math.round(ey(d.energyMax)) + .5);
+  g.lineTo(PLOT_R, Math.round(ey(d.energyMax)) + .5); g.stroke();
+  g.beginPath(); g.moveTo(PLOT_L, Math.round(bot) + .5);
+  g.lineTo(PLOT_R, Math.round(bot) + .5); g.stroke();
+  label("energy", (top + bot) / 2);
+  g.fillStyle = C("--faint"); g.textAlign = "right";
+  g.fillText(String(d.energyMax), TL_GUT - 10, top - 6);
+  g.textAlign = "left";
+
+  /* A step function, drawn from outside the frame to outside the frame and
+     clipped to it. The previous version clamped each point into the plot
+     instead, which stacked every off-screen step onto the left edge and then,
+     after running a little past the right edge, drew a line back to it — the
+     stray segment ahead of where the line ended. */
+  let last = 0;
+  for (const pt of d.energy) {
+    if (pt.t > TL.view.t0) break;
+    last = pt.v;
+  }
+  clipPlot(top - 4, (bot - top) + 8);
+  g.strokeStyle = C("--s1"); g.lineWidth = 1.5;
+  g.lineJoin = "miter";
+  g.beginPath();
+  g.moveTo(PLOT_L - 30, ey(last));
+  for (const pt of d.energy) {
+    if (pt.t <= TL.view.t0) continue;
+    if (pt.t > TL.view.t1) break;
+    const x = tlX(pt.t, W);
+    g.lineTo(x, ey(last));
+    g.lineTo(x, ey(pt.v));
+    last = pt.v;
+  }
+  g.lineTo(PLOT_R + 30, ey(last));
+  g.stroke();
+  g.restore();
+
+  /* the cursor, so a reading in one lane can be lined up against another */
+  if (TL.cursor != null && TL.cursor >= TL_GUT && TL.cursor <= W) {
+    g.strokeStyle = C("--ink"); g.globalAlpha = .28; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(Math.round(TL.cursor) + .5, AXIS - 6);
+    g.lineTo(Math.round(TL.cursor) + .5, H - 6); g.stroke();
+    g.globalAlpha = 1;
+  }
+
+  const fmtT = t => t >= 60 ? `${Math.floor(t / 60)}m ${(t % 60).toFixed(0)}s` : `${t.toFixed(1)}s`;
+  document.getElementById("tlRange").textContent =
+    `${fmtT(TL.view.t0)} to ${fmtT(TL.view.t1)} of ${fmtT(d.duration)}`;
+}
+
+/* ---- moving around in it ------------------------------------------------- */
+function tlSetView(t0, span) {
+  const D = TL.data ? TL.data.duration : 300;
+  span = Math.max(2.5, Math.min(D, span));
+  t0 = Math.max(0, Math.min(D - span, t0));
+  TL.view = {t0, t1: t0 + span};
+  drawTL();
+}
+function tlZoom(atTime, factor) {
+  const span = tlSpan(), next = span * factor;
+  const frac = (atTime - TL.view.t0) / span;
+  tlSetView(atTime - frac * next, next);
+}
+
+function tlTooltip(ev) {
+  const cv = TL.cv, tip = TL.tip;
+  const {x, y} = tlPoint(ev);
+  TL.cursor = x;
+  const hit = TL.hits.find(h => x >= h.x && x <= h.x + h.w && y >= h.y - 2 && y <= h.y + h.h + 2);
+  drawTL();
+  if (!hit) { tip.hidden = true; return; }
+
+  const unit = TL.data.healing ? "healing" : "damage";
+  let html = "";
+  if (hit.kind === "cast") {
+    const c = hit.d;
+    const rows = [];
+    if (c.amount) rows.push(["On impact", fmt(c.amount)]);
+    if (c.cost) rows.push(["Energy spent", String(c.cost)]);
+    if (c.gen) rows.push(["Energy gained", String(c.gen)]);
+    rows.push(["Energy after", `${Math.round(c.after)} / ${TL.data.energyMax}`]);
+    if (c.amp) rows.push(["Buff active", "+" + Math.round(c.amp * 100) + "%"]);
+    html = `<b>${c.name}</b><i>cast at ${c.t.toFixed(2)}s`
+      + (c.cast ? ` · ${c.cast.toFixed(2)}s cast` : " · instant")
+      + (c.land > c.t ? ` · lands ${c.land.toFixed(2)}s` : "") + `</i>`
+      + rows.map(([k, v]) => `<div class="row"><span>${k}</span>${v}</div>`).join("");
+  } else if (hit.kind === "tick") {
+    html = `<b>${hit.lane.name}</b><i>tick at ${hit.d.t.toFixed(2)}s</i>`
+      + `<div class="row"><span>${unit}</span>${fmt(hit.d.amount)}</div>`;
+  } else if (hit.kind === "hit") {
+    /* The log carries the creature's name once there is more than one of them,
+       so a spike on the health line can be traced to what caused it. */
+    html = `<b>${hit.d.name && hit.d.name !== "Enemy swing" ? hit.d.name : "Its swing"}</b>`
+      + `<i>landed at ${hit.d.t.toFixed(2)}s</i>`
+      + `<div class="row"><span>damage taken</span>${fmt(hit.d.amount)}</div>`
+      + `<div class="row"><span>health left</span>${fmt(Math.max(0, hit.d.hp))}</div>`;
+  } else if (hit.kind === "lane") {
+    const ticks = hit.lane.ticks;
+    const total = ticks.reduce((a, t) => a + t.amount, 0);
+    html = `<b>${hit.lane.name}</b><i>every tick it landed in the fight</i>`
+      + `<div class="row"><span>ticks</span>${ticks.length}</div>`
+      + `<div class="row"><span>${unit}</span>${fmt(total)}</div>`;
+  } else {
+    const b = hit.d;
+    html = `<b>${b.name}</b><i>${b.t0.toFixed(1)}s to ${b.t1.toFixed(1)}s</i>`
+      + `<div class="row"><span>power</span>+${Math.round(b.amt * 100)}%</div>`;
+  }
+  tip.innerHTML = html;
+  tip.hidden = false;
+
+  /* Beside the pointer, not under it. Centred-above put the panel across the
+     lanes below the cursor and hid the crosshair it was describing — the two
+     things you are trying to read together. To the right and vertically centred
+     leaves the line visible the whole height of the strip, and it flips to the
+     left rather than being pushed back over the cursor near the right edge. */
+  const tw = tip.offsetWidth, th = tip.offsetHeight, pad = 18;
+  let left = x + pad;
+  if (left + tw > cv.clientWidth - 4) left = x - tw - pad;
+  tip.style.left = Math.max(4, Math.min(cv.clientWidth - tw - 4, left)) + "px";
+  tip.style.top = Math.max(4, Math.min(cv.clientHeight - th - 4, y - th / 2)) + "px";
+}
+
+function initTimeline() {
+  const cv = document.getElementById("timeline");
+  TL.cv = cv; TL.ctx = cv.getContext("2d"); TL.tip = document.getElementById("tlTip");
+
+  cv.addEventListener("wheel", e => {
+    e.preventDefault();
+    tlZoom(tlT(tlPoint(e).x, cv.clientWidth), e.deltaY > 0 ? 1.3 : 1 / 1.3);
+  }, {passive: false});
+
+  cv.addEventListener("pointerdown", e => {
+    cv.setPointerCapture(e.pointerId);
+    TL.pointers.set(e.pointerId, e.clientX);
+    if (TL.pointers.size === 1) {
+      TL.pan = {x: e.clientX, t0: TL.view.t0};
+      cv.classList.add("drag");
+      TL.tip.hidden = true;
+    }
+  });
+  cv.addEventListener("pointermove", e => {
+    if (TL.pointers.has(e.pointerId)) {
+      const prev = [...TL.pointers.values()];
+      TL.pointers.set(e.pointerId, e.clientX);
+      if (TL.pointers.size >= 2) {
+        /* Two fingers: the distance between them is the span. */
+        const now = [...TL.pointers.values()];
+        const was = Math.abs(prev[0] - prev[1]) || 1;
+        const is = Math.abs(now[0] - now[1]) || 1;
+        const mid = tlPoint({clientX: (now[0] + now[1]) / 2, clientY: 0}).x;
+        tlZoom(tlT(mid, cv.clientWidth), was / is);
+        return;
+      }
+      if (TL.pan) {
+        /* Dragging is a distance, so it goes through the same conversion —
+           otherwise the strip slides faster than the hand that moves it. */
+        const scale = cv.clientWidth / (cv.getBoundingClientRect().width || cv.clientWidth);
+        const perPx = tlSpan() / (cv.clientWidth - TL_GUT - TL_RIGHT);
+        tlSetView(TL.pan.t0 - (e.clientX - TL.pan.x) * scale * perPx, tlSpan());
+      }
+      return;
+    }
+    tlTooltip(e);
+  });
+  const release = e => {
+    TL.pointers.delete(e.pointerId);
+    if (!TL.pointers.size) { TL.pan = null; cv.classList.remove("drag"); }
+  };
+  cv.addEventListener("pointerup", release);
+  cv.addEventListener("pointercancel", release);
+  cv.addEventListener("pointerleave", () => {
+    TL.tip.hidden = true; TL.cursor = null; drawTL();
+  });
+
+  cv.addEventListener("keydown", e => {
+    const span = tlSpan();
+    const keys = {
+      ArrowLeft:  () => tlSetView(TL.view.t0 - span * .2, span),
+      ArrowRight: () => tlSetView(TL.view.t0 + span * .2, span),
+      Home:       () => tlSetView(0, span),
+      End:        () => tlSetView(TL.data.duration, span),
+      "+":        () => tlZoom(TL.view.t0 + span / 2, 1 / 1.4),
+      "=":        () => tlZoom(TL.view.t0 + span / 2, 1 / 1.4),
+      "-":        () => tlZoom(TL.view.t0 + span / 2, 1.4),
+      "0":        () => tlSetView(0, TL.data.duration),
+    };
+    if (keys[e.key]) { e.preventDefault(); keys[e.key](); }
+  });
+
+  document.getElementById("tlIn").onclick = () => tlZoom(TL.view.t0 + tlSpan() / 2, 1 / 1.5);
+  document.getElementById("tlOut").onclick = () => tlZoom(TL.view.t0 + tlSpan() / 2, 1.5);
+  document.getElementById("tlFit").onclick = () => tlSetView(0, TL.data.duration);
+  document.getElementById("tlOpen").onclick = () => tlSetView(0, Math.min(45, TL.data.duration));
+
+  new ResizeObserver(() => drawTL()).observe(cv.parentElement);
+  new MutationObserver(() => drawTL())
+    .observe(document.documentElement, {attributes: true, attributeFilter: ["data-theme"]});
+}
+
+function drawTimeline(sol) {
+  const first = !TL.data;
+  const keep = !first && TL.data.duration === sol.result.duration ? TL.view : null;
+  TL.data = buildTimeline(sol);
+  TL.view = keep || {t0: 0, t1: TL.data.duration};
+  drawTL();
+  document.getElementById("tlNote").textContent =
+    "Every cast in the fight, at its real width — an action wider than its "
+    + "neighbours took longer than the global cooldown. Drag to move, scroll or "
+    + "pinch to zoom, hover anything for its numbers. A gap in an effect's row "
+    + "is uptime lost"
+    + (S.survival
+       ? "; the red row is what it landed on you and the green line is the health "
+         + "bar those hits came out of."
+       : "; the line at the bottom is energy against the " + FIGHT.resourceMax + " cap.");
+}
+
+function drawBreakdown(sol) {
+  const box = document.getElementById("breakdown");
+  box.replaceChildren();
+  const res = sol.result;
+  /* A buff has no damage of its own, so it is credited with what the fight
+     loses without it and marked as the different kind of number it is. */
+  const rows = res.breakdown.map(b => {
+    const gain = sol.buffGain[b.id];
+    return gain != null
+      ? {...b, amount: gain, share: gain / Math.max(1, res.total), buff: true}
+      : b;
+  }).sort((x, y) => y.amount - x.amount);
+
+  const top = Math.max(1, ...rows.map(b => b.amount));
+  for (const b of rows) {
+    if (!b.amount && !b.casts) continue;
+    const row = el("div", "wrow");
+    row.appendChild(el("div", "wn", b.name + (b.buff ? " (buff)" : "")));
+    const bar = el("div", "wbar"); const fill = el("i");
+    fill.style.width = Math.max(0, b.amount / top * 100).toFixed(1) + "%";
+    if (b.id === -1) fill.style.background = "var(--faint)";
+    if (b.buff) fill.style.background = "var(--s2)";
+    bar.appendChild(fill); row.appendChild(bar);
+    row.appendChild(el("div", "wv",
+      `${b.buff ? "+" : ""}${fmt(b.amount)}  ·  ${asPct(b.share)}`));
+    attachTip(row, `<b>${b.name}</b><i>${b.casts} casts</i>`
+      + (b.buff
+         ? `Deals nothing itself. Removing it and re-solving costs `
+           + `<b>${fmt(b.amount)}</b> across the fight — ${asPct(b.share)} of the total.`
+         : `${fmt(b.direct)} direct` + (b.over ? ` · ${fmt(b.over)} over time` : "")
+           + `<br>${fmt(b.perSecond)} per second of the fight`));
+    box.appendChild(row);
+  }
+
+  /* The other direction, once there is more than one of them: what each kind of
+     creature actually put on you. A pull is usually decided by the adds rather
+     than the thing with the name, and this is where that shows. */
+  const foes = res.attackers || [];
+  if (S.survival && foes.length > 1) {
+    box.appendChild(el("div", "divider", ""));
+    box.appendChild(el("div", "panelhead", "And what they landed on you"));
+    const worst = Math.max(1, ...foes.map(f => f.amount));
+    for (const f of foes) {
+      const row = el("div", "wrow");
+      row.appendChild(el("div", "wn", (f.count > 1 ? f.count + "x " : "") + f.name));
+      const bar = el("div", "wbar"); const fill = el("i");
+      fill.style.width = Math.max(0, f.amount / worst * 100).toFixed(1) + "%";
+      fill.style.background = "var(--bad)";
+      bar.appendChild(fill); row.appendChild(bar);
+      row.appendChild(el("div", "wv",
+        `${fmt(f.amount)}  ·  ${asPct(f.amount / Math.max(1, res.taken))}`));
+      attachTip(row, `<b>${f.name}</b><i>${f.count} of them</i>`
+        + `<div class="row"><span>swings landed</span>${f.swings}</div>`
+        + `<div class="row"><span>damage through</span>${fmt(f.amount)}</div>`
+        + `<div class="row"><span>a hit, after everything</span>`
+        + `${fmt(f.swings ? f.amount / f.swings : 0)}</div>`);
+      box.appendChild(row);
+    }
+  }
+}
+
+/* Why each either/or comes out the way it does. Two spells in one talent slot
+   is a decision the numbers can settle, but only the wording can explain. */
+const EITHER_OR = {
+  "15-28": (hi, lo) =>
+    `You can only take one. On ${FIGHT.targets === 1 ? "a single target"
+      : FIGHT.targets + " enemies"} for ${FIGHT.duration}s this build gets more from `
+    + `<b>${hi.label}</b>. Both cover the ground they are put on and both run 14 seconds `
+    + `on a 40-second cooldown; Arcane Tempest simply ticks 40% harder. What separates `
+    + `them is where they sit — Flamestorm follows the target, Arcane Tempest is planted `
+    + `where you stand — so a fight that moves you off it flips the answer.`,
+  /* Two damage reductions is a decision with two different answers depending on
+     whether the fight can hurt you at all, and saying only one of them made the
+     card read as nonsense whenever the other was true. */
+  "11-22": (hi, lo) => {
+    const tied = Math.abs((hi.result.net || 0) - (lo.result.net || 0)) <= 0.5;
+    const stack = `Two damage reductions running at once are worth the better of the two, `
+      + `never their sum. Encase cuts 50%, which is exactly what Guard already does, so it `
+      + `adds nothing while Guard is up — and Guard is up almost always. Stonewall's 80% is `
+      + `the only thing on the bar that improves on it.`;
+    if (!tied)
+      return `You can only take one, and <b>${hi.label}</b> wins on the only measure that `
+        + `matters here: <b>${fmt(Math.abs(hi.result.net - lo.result.net))}</b> less damage `
+        + `through over the fight. ${stack} Encase's case is the field it leaves for `
+        + `everyone else standing in it, which this fight has no one else in.`;
+    return `<b>Neither of them matters in this fight.</b> Nothing gets through it — `
+      + `Fortitude and Guard between them stop enough that Respite heals back every point `
+      + `that lands, so both come out at zero damage taken and the choice falls to the `
+      + `tie-break, which is damage dealt. <b>${hi.label}</b> wins that on cooldown alone: `
+      + `${hi.result.order ? "" : ""}a 2-minute one is three global cooldowns over five `
+      + `minutes where a 90-second one is four. Raise the enemy's instability in Fight `
+      + `settings and the question becomes real — ${stack}`;
+  },
+};
+
+/* ---- the either/or ------------------------------------------------------- */
+function drawChoice(sol, alt) {
+  const card = document.getElementById("choiceCard");
+  if (!alt) { card.hidden = true; return; }
+  card.hidden = false;
+  const box = document.getElementById("choice");
+  box.replaceChildren();
+  /* The winner is the one the page actually chose, handed over from the solve.
+     Working it out again here — and on damage, which is not what a survival
+     panel is measuring — had the card crown Encase while the rest of the page
+     played Stonewall. */
+  const win = alt.win || alt.a;
+  const tied = S.survival
+    && Math.abs((alt.a.result.net || 0) - (alt.b.result.net || 0)) <= 0.5;
+  for (const opt of [alt.a, alt.b]) {
+    const w = opt === win;
+    const b = el("div", "optbox" + (w ? " win" : ""));
+    b.appendChild(el("h4", null, opt.label));
+    if (S.survival) {
+      /* A defensive talent judged on damage per second is judged on the wrong
+         thing. The figure is what got through; the damage is the footnote. */
+      b.appendChild(el("b", null, fmt(opt.result.net)));
+      b.appendChild(el("span", null, " damage taken"));
+      const gap = opt.result.net - win.result.net;
+      b.appendChild(el("div", "d", w
+        ? (tied ? `level on damage taken — ahead only on the ${fmt(opt.result.total)} `
+                  + `it leaves you free to deal`
+                : "less gets through with this one")
+        : tied
+          ? `level on damage taken, ${fmt(opt.result.total)} dealt`
+          : `${fmt(gap)} more through — ${asPct(gap / Math.max(1, win.result.net))} worse`));
+    } else {
+      b.appendChild(el("b", null, fmt(opt.result.dps)));
+      b.appendChild(el("span", null, " dps"));
+      b.appendChild(el("div", "d", w
+        ? "the stronger of the two here"
+        : `${fmt(win.result.dps - opt.result.dps)} dps behind — `
+          + `${asPct((win.result.dps - opt.result.dps) / opt.result.dps)} less`));
+    }
+    box.appendChild(b);
+  }
+  document.getElementById("choiceTitle").textContent = `${alt.a.label} or ${alt.b.label}`;
+  document.getElementById("choiceNote").innerHTML = alt.note;
+}
+
+/* ---- what a stat is worth ------------------------------------------------ */
+let weightTimer = null;
+function drawWeights(cfg, sol) {
+  const box = document.getElementById("weights");
+  clearTimeout(weightTimer);
+  box.classList.add("solving");
+  weightTimer = setTimeout(() => {
+    const step = 100;
+    const out = SIM.statWeights(D, cfg, step);
+    box.classList.remove("solving");
+    box.replaceChildren();
+    const entries = Object.entries(out.weights).sort((a, b) => b[1].delta - a[1].delta);
+    const top = Math.max(1e-9, ...entries.map(([, v]) => Math.abs(v.delta)));
+    for (const [k, v] of entries) {
+      const row = el("div", "wrow");
+      row.appendChild(el("div", "wn", k[0].toUpperCase() + k.slice(1)));
+      const bar = el("div", "wbar"); const fill = el("i");
+      fill.style.width = (Math.abs(v.delta) / top * 100).toFixed(1) + "%";
+      if (v.delta <= 0) fill.style.background = "var(--faint)";
+      bar.appendChild(fill); row.appendChild(bar);
+      row.appendChild(el("div", "wv", (v.percent >= 0 ? "+" : "") + v.percent.toFixed(2) + "%"));
+      /* A stat worth nothing is a finding, not a rendering accident, so it says
+         which part of the build makes it worth nothing. */
+      row.classList.add("mini");
+      const dead = Math.abs(v.percent) < (k === "alacrity" ? 1 : 0.005)
+        ? deadStatReason(k, sol) : null;
+      if (dead) row.appendChild(el("div", "why", dead));
+      attachTip(row, `<b>${k[0].toUpperCase() + k.slice(1)}</b><i>+${step} points</i>`
+        + (S.survival
+           ? `${(v.percent >= 0 ? "+" : "") + v.percent.toFixed(2)}% longer alive, `
+             + `${v.delta >= 0 ? "+" : ""}${fmt1(v.delta)} seconds.<br>`
+           : `${(v.percent >= 0 ? "+" : "") + v.percent.toFixed(2)}% output, `
+             + `${fmt(v.delta)} over the fight.<br>`)
+        + `<span style="opacity:.7">Re-solved with the extra points rather than replayed: `
+        + `speed stats can change which order is best, and a weight measured against the `
+        + `wrong rotation is worse than none.</span>`);
+      box.appendChild(row);
+    }
+    const note = el("p", "note", `Per ${step} points, at this build and this fight, `
+      + (S.survival ? "measured as seconds before it kills you. " : "")
+      + `The rotation is re-optimised for each.`);
+    note.style.margin = "10px 2px 0";
+    box.appendChild(note);
+  }, 40);
+}
+
+/** Why a stat came back worth little or nothing for this particular rotation.
+    Alacrity is the one that surprises people: it only ever buys time on a cast
+    that is still longer than the global cooldown, so once your casts have been
+    squeezed under it the stat stops paying, however much more you stack.     */
+function deadStatReason(k, sol) {
+  if (!sol) return null;
+  if (k === "tempo" && SIM.ratingBonus(S.tempo, S.level) > 0.399)
+    return "already at the 40% cap";
+  if (k !== "alacrity") return null;
+  const M = sol.model;
+  const casters = sol.order.filter(a => a.castBase);
+  if (!casters.length) return "nothing on this bar has a cast time";
+  const slow = casters.filter(a => a.castBase / (1 + M.alacrityBonus) > M.gcd + 1e-6);
+  if (!slow.length)
+    return `every cast already finishes inside the ${M.gcd.toFixed(2)}s global cooldown`;
+  if (slow.length < casters.length)
+    return `only ${slow.map(a => a.name).join(" and ")} still casts longer than the `
+         + `${M.gcd.toFixed(2)}s global cooldown`;
+  return null;
+}
+
+/* ---- putting it together ------------------------------------------------- */
+function baseCfg(extra) {
+  return Object.assign({
+    cls: S.cls, level: S.level, rank: S.rank, ranks: S.ranks,
+    strength: S.strength, grace: S.grace,
+    alacrity: S.alacrity, tempo: S.tempo,
+    weaponPower: S.weaponPower, healing: S.healing, survival: S.survival,
+    vitality: S.vitality, fortitude: S.fortitude, defense: S.defense,
+    enemies: S.survival ? enemyCfg() : null,
+    healerHps: S.survival ? (FIGHT.healerHps || 0) : 0,
+    duration: FIGHT.duration, resourceMax: FIGHT.resourceMax,
+    resourceStart: FIGHT.resourceStart, snapshot: FIGHT.snapshot,
+    inMelee: FIGHT.inMelee,
+    targets: S.healing ? 1 : Math.max(1, FIGHT.targets),
+  }, extra || {});
+}
+
+let pending = null;
+function render() {
+  document.querySelector(".optgrid").classList.add("solving");
+  clearTimeout(pending);
+  pending = setTimeout(solveAndDraw, 20);
+}
+
+function solveAndDraw() {
+  const probe = SIM.model(D, baseCfg());
+  const pairs = probe.exclusive;
+
+  let sol, alt = null;
+  if (pairs.length) {
+    /* Two spells, one talent slot: both have to be solved, and the panel shows
+       the loser as well as the winner because the gap is the whole answer. */
+    const [x, y] = pairs[0];
+    const nameOf = id => (D.spells.find(s => s.id === id) || {}).name || "";
+    const a = SIM.solve(SIM.model(D, baseCfg({exclude: [y]})), {restarts: 8});
+    const b = SIM.solve(SIM.model(D, baseCfg({exclude: [x]})), {restarts: 8});
+    a.label = nameOf(x); b.label = nameOf(y);
+    /* Whichever wins on the figure the page is measuring — which for a tank is
+       damage taken first and damage dealt only as a tie-break, not the damage
+       comparison that decides the Mage's storm. */
+    sol = SIM.betterThan(SIM.objective(b.model, b.result),
+                         SIM.objective(a.model, a.result)) ? b : a;
+    const hi = sol, lo = sol === a ? b : a;
+    alt = {a, b, note: EITHER_OR[`${x}-${y}`]
+      ? EITHER_OR[`${x}-${y}`](hi, lo)
+      : `You can only take one, and this build gets more from <b>${hi.label}</b>.`};
+    alt.title = `${a.label} or ${b.label}`;
+    alt.win = sol;
+  } else {
+    sol = SIM.solve(SIM.model(D, baseCfg()), {restarts: 10});
+  }
+
+  document.querySelector(".optgrid").classList.remove("solving");
+  drawHeadline(sol);
+  drawPriority(sol);
+  drawChoice(sol, alt);
+  drawTimeline(sol);
+  drawBreakdown(sol);
+  drawDerived(sol.model, sol.result);
+  const chosenExclude = alt ? [sol === alt.a ? pairs[0][1] : pairs[0][0]] : null;
+  drawWeights(baseCfg(chosenExclude ? {exclude: chosenExclude} : {}), sol);
+  drawScaling(chosenExclude);
+  GEAR.result = null; drawGear();
+
+  document.getElementById("prioTitle").textContent =
+    S.healing ? "Healing priority" : S.survival ? "Survival priority" : "Damage priority";
+  document.getElementById("breakTitle").textContent =
+    S.survival ? "The damage you still dealt" : "Where it came from";
+  document.getElementById("prioNote").textContent =
+    "top to bottom — cast the first one you can";
+
+  const M = sol.model;
+  if (S.survival) {
+    /* The tank panel says what it assumed in the places the assumption is made
+       — the enemy in Fight settings, the stacking rule on the either/or card —
+       rather than restating all of it in a paragraph nobody asked for. */
+    document.getElementById("assumptions").textContent = "";
+    window.__sol = sol;
+    saveState();
+    return;
+  }
+  document.getElementById("assumptions").innerHTML = [
+    `Energy caps at <b>${FIGHT.resourceMax}</b> (measured in game), opening at `
+    + `${FIGHT.resourceStart}.`,
+    M.autoOn ? `Weapon swings every ${M.autoInterval}s are counted; Auto Attack reaches `
+      + `${M.autoRange} units, so only a character standing in melee gets them.`
+      : `No weapon swings: Auto Attack reaches ${M.autoRange} units and this build is `
+      + `treated as fighting from range.`,
+    FIGHT.snapshot
+      ? `An effect over time keeps the buff that was up when it was cast for its whole `
+        + `duration.`
+      : `Each tick of an effect over time uses whatever buff is up as it lands.`,
+    `A cooldown starts when the cast finishes. Cast time and the global cooldown run together, `
+    + `so an action costs whichever is longer.`,
+    S.healing || FIGHT.targets === 1
+      ? `Nothing here models overhealing, movement or misses.`
+      : `${FIGHT.targets} enemies, all in range for the whole fight. A ground effect or `
+        + `an arc covers the lot; a chain reaches three beyond its target at 65% each; `
+        + `everything else hits one, and a single-target effect over time has to be `
+        + `applied to each enemy separately — one global cooldown each. Nothing here `
+        + `models movement or misses.`,
+  ].join(" ");
+
+  window.__sol = sol;
+  saveState();
+}
+
+/* ---- the list, as text --------------------------------------------------- */
+document.getElementById("copyBtn").onclick = () => {
+  const sol = window.__sol;
+  if (!sol) return;
+  const M = sol.model;
+  const head = `${(CLASSES[String(S.cls)] || {}).name} — ${S.healing ? "healing" : "damage"} `
+    + `priority, level ${S.level}, ${fmt(sol.result.dps)} ${S.healing ? "hps" : "dps"}`;
+  const body = sol.order.map((a, i) =>
+    `${i + 1}. ${a.name} — ${SIM.conditionText(a, M)}\n`
+    + `   (${SIM.actionFacts(a, M).map(f => f.v).join(", ")})`);
+  const tail = sol.benched.length
+    ? ["", "Left off the bar: " + sol.benched.map(b => b.action.name).join(", ")] : [];
+  const text = [head, "".padEnd(head.length, "-"), ...body, ...tail].join("\n");
+  navigator.clipboard.writeText(text)
+    .then(() => note("Priority list copied.", true))
+    .catch(() => note("Could not reach the clipboard."));
+};
+
+const noteBox = document.getElementById("oNote");
+function note(msg, ok) {
+  noteBox.textContent = msg;
+  noteBox.classList.toggle("ok", !!ok);
+  clearTimeout(note.t);
+  note.t = setTimeout(() => { noteBox.textContent = ""; }, 4000);
+}
+
+/* ---- setup wiring -------------------------------------------------------- */
+const clsSel = document.getElementById("oClass");
+for (const [id, c] of Object.entries(CLASSES)) {
+  const o = el("option", null, c.name); o.value = id; clsSel.appendChild(o);
+}
+clsSel.value = String(S.cls);
+
+const healthBase = () => ((CLASSES[String(S.cls)] || {}).health_base) || 162;
+
+function syncInputs() {
+  clsSel.value = String(S.cls);
+  document.getElementById("oLevel").value = String(S.level);
+  document.getElementById("oRank").value = String(S.rank);
+  document.getElementById("oTargets").value = String(FIGHT.targets);
+  document.getElementById("targetGrp").hidden = S.healing || S.survival;
+
+  const modes = MODES[String(S.cls)] || MODES["2"];
+  if (!modes.some(([m]) => m === modeNow())) setMode("damage");
+  const seg = document.getElementById("oMode");
+  document.getElementById("modeGrp").hidden = modes.length < 2;
+  seg.replaceChildren();
+  for (const [m, label] of modes) {
+    const btn = el("button", modeNow() === m ? "on" : null, label);
+    btn.type = "button";
+    btn.onclick = () => { setMode(m); regear(); syncInputs(); render(); };
+    seg.appendChild(btn);
+  }
+  drawStatInputs();
+  if (typeof drawSlots === "function") { drawSlots(); drawGearFold(); }
+}
+
+/* Bound once, here, rather than re-bound on every sync. */
+document.getElementById("oTargets").oninput = e => {
+  FIGHT.targets = Math.min(40, Math.max(1, Math.round(Number(e.target.value) || 1)));
+  render();
+};
+
+clsSel.onchange = () => {
+  S.cls = Number(clsSel.value);
+  if (String(S.cls) !== "3") S.healing = false;
+  regear(); syncInputs(); render();
+};
+document.getElementById("oLevel").oninput = e => {
+  S.level = Math.min(80, Math.max(1, Number(e.target.value) || 1));
+  if (typeof trimAlloc === "function") trimAlloc();
+  regear(); syncInputs(); render();
+};
+document.getElementById("oRank").oninput = e => {
+  S.rank = Math.min(5, Math.max(0, Number(e.target.value) || 0)); S.ranks = null; render();
+};
+
+/* ---- load dialog --------------------------------------------------------- */
+const loadDlg = document.getElementById("loadDlg");
+document.getElementById("loadBtn").onclick = () => { drawSaved(); loadDlg.showModal(); };
+document.getElementById("loadClose").onclick = () => loadDlg.close();
+
+function drawSaved() {
+  const sel = document.getElementById("savedList");
+  let m = {};
+  try { m = JSON.parse(localStorage.getItem("elegon.planner.saves.v1") || "{}"); } catch {}
+  const names = Object.keys(m).sort((a, b) => a.localeCompare(b));
+  sel.replaceChildren();
+  sel.appendChild(Object.assign(el("option", null,
+    names.length ? "Pick a saved build…" : "No planner builds saved here"), {value: ""}));
+  for (const n of names) sel.appendChild(Object.assign(el("option", null, n), {value: n}));
+  document.getElementById("savedBtn").disabled = !names.length;
+}
+
+function loadCode(code, label) {
+  const b = decodeBuild(codeFrom(code));
+  if (!b) { document.getElementById("loadNote").textContent =
+    "That does not decode as a planner build."; return false; }
+  adopt(b, label, false);
+  document.getElementById("loadNote").textContent = b.missing
+    ? `Loaded, but ${b.missing} item(s) are no longer in the catalogue and were skipped.`
+    : "Loaded.";
+  note(`Loaded ${label}.`, true);
+  return true;
+}
+
+document.getElementById("pasteBtn").onclick = () => {
+  const v = document.getElementById("pasteCode").value;
+  if (loadCode(v, "a planner link")) loadDlg.close();
+};
+document.getElementById("savedBtn").onclick = () => {
+  const sel = document.getElementById("savedList");
+  if (!sel.value) return;
+  let m = {};
+  try { m = JSON.parse(localStorage.getItem("elegon.planner.saves.v1") || "{}"); } catch {}
+  if (loadCode(m[sel.value] || "", `"${sel.value}"`)) loadDlg.close();
+};
+document.getElementById("bisBtn").onclick = () => {
+  S.autoTier = Math.max(0, Number(document.getElementById("bisTier").value) || 0);
+  adopt({level: S.level, cls: S.cls, rank: S.rank, alloc: {}, slots: null,
+         profLevels: {}, missing: 0}, "", true);
+  loadDlg.close();
+};
+
+/* ---- fight settings ------------------------------------------------------ */
+/* ---- the pack -------------------------------------------------------------
+   A tank fight is rarely one creature, and a list of names does not say what a
+   pull looks like. So it is drawn as the pull itself: a card per kind, the
+   creature's own portrait, and a stepper for how many of it — the whole state
+   of the fight readable without opening anything. The first card is the one you
+   are facing, which is where a single-target stun goes. */
+const ADDING = {id: null};          // what the add control is pointing at
+
+function drawRoster() {
+  const box = document.getElementById("roster");
+  if (!box) return;
+  box.replaceChildren();
+
+  const here = pack();
+  const total = packSize();
+  const cycle = here.reduce((t, e) => t + e.n * (e.m.dmg || 0), 0)
+                * SIM.enemyDamageMult(enemyTier());
+
+  here.forEach((e, i) => {
+    const card = el("div", "foe" + (i === 0 ? " facing" : ""));
+
+    const art = portraitIcon("monsters", e.m.id, !!e.m.icon, 44);
+    art.classList.add("foeart");
+    card.appendChild(art);
+
+    const mid = el("div", "foemid");
+    mid.appendChild(el("div", "fn", e.m.name));
+    mid.appendChild(el("div", "fm",
+      `level ${e.m.lvl}${e.m.boss ? " \u00b7 boss" : ""} \u00b7 `
+      + `${fmt((e.m.dmg || 0) * SIM.enemyDamageMult(enemyTier()))} a hit`));
+    card.appendChild(mid);
+
+    const step = el("div", "foestep");
+    const minus = el("button", null, "\u2212");
+    minus.type = "button";
+    minus.title = e.n > 1 ? "One fewer" : "Take it out of the pull";
+    minus.onclick = () => {
+      const next = here.map(x => ({id: x.m.id, n: x.n}));
+      if (next[i].n > 1) next[i].n -= 1; else next.splice(i, 1);
+      setPack(next); drawRoster(); render();
+    };
+    const num = el("b", null, String(e.n));
+    const plus = el("button", null, "+");
+    plus.type = "button";
+    plus.disabled = total >= PACK_MAX;
+    plus.title = plus.disabled ? `${PACK_MAX} at once is the limit` : "One more";
+    plus.onclick = () => {
+      const next = here.map(x => ({id: x.m.id, n: x.n}));
+      next[i].n += 1;
+      setPack(next); drawRoster(); render();
+    };
+    step.append(minus, num, plus);
+    card.appendChild(step);
+
+    attachTip(art, `<b>${e.m.name}</b><i>level ${e.m.lvl}`
+      + `${e.m.boss ? " \u00b7 boss" : ""}${e.m.hp ? " \u00b7 " + fmt(e.m.hp) + " health" : ""}</i>`
+      + `${e.m.dmg} a hit at instability 0, `
+      + `<b>${fmt((e.m.dmg || 0) * SIM.enemyDamageMult(enemyTier()))}</b> at ${enemyTier()}.`
+      + (i === 0 ? `<br><span style="opacity:.75">The one you are facing \u2014 a `
+                   + `single-target stun lands here.</span>` : ""));
+    box.appendChild(card);
+  });
+
+  /* Adding one: the whole catalogue, hardest hitters first, and a button. A
+     creature already in the pull adds to its count rather than a second card. */
+  const add = el("div", "foeadd");
+  const sel = el("select");
+  sel.setAttribute("aria-label", "Creature to add");
+  /* Scaled, like the cards above it — a list that says 212 next to a card
+     saying 2,411 reads as two different creatures. */
+  const mult = SIM.enemyDamageMult(enemyTier());
+  for (const g of ATTACKER_GROUPS) {
+    const grp = el("optgroup");
+    grp.label = `${g.name} \u2014 level ${Math.min(...g.list.map(m => m.lvl))}`
+      + `\u2013${g.depth}`;
+    for (const m of g.list) {
+      const o = el("option", null,
+        `${m.name} \u2014 level ${m.lvl}${m.boss ? ", boss" : ""} `
+        + `(${fmt((m.dmg || 0) * mult)} a hit)`);
+      o.value = String(m.id);
+      grp.appendChild(o);
+    }
+    sel.appendChild(grp);
+  }
+  /* Adding four of one rift's creatures means four trips through this control,
+     so it stays where it was left rather than jumping back to whatever you are
+     facing and making you find the group again. */
+  sel.value = String(ADDING.id != null && BY_ID.has(ADDING.id)
+    ? ADDING.id : attacker().id);
+  sel.onchange = () => { ADDING.id = Number(sel.value); };
+  const btn = el("button", "gold", "Add");
+  btn.type = "button";
+  btn.disabled = total >= PACK_MAX;
+  btn.onclick = () => {
+    const id = Number(sel.value);
+    ADDING.id = id;
+    const next = here.map(x => ({id: x.m.id, n: x.n}));
+    const had = next.find(x => x.id === id);
+    if (had) had.n += 1; else next.push({id, n: 1});
+    setPack(next); drawRoster(); render();
+  };
+  add.append(sel, btn);
+  box.appendChild(add);
+
+  const sum = el("p", "note foesum");
+  sum.innerHTML = total === 1
+    ? `One creature, <b>${fmt(cycle)}</b> every ${(D.attackInterval || 3)}s.`
+    : `<b>${total}</b> creatures, <b>${fmt(cycle)}</b> between them every `
+      + `${(D.attackInterval || 3)}s \u2014 dealt in evenly around the cycle rather than `
+      + `landing together.`;
+  box.appendChild(sum);
+}
+
+const fightDlg = document.getElementById("fightDlg");
+document.getElementById("fightBtn").onclick = () => { drawFight(); fightDlg.showModal(); };
+document.getElementById("fightClose").onclick = () => fightDlg.close();
+document.getElementById("fightReset").onclick = () => {
+  Object.assign(FIGHT, {duration: 300, resourceMax: 100, resourceStart: 0,
+                        inMelee: null, snapshot: true, pack: null,
+                        enemyTier: null, stunnable: true, healerHps: 0});
+  drawFight(); render();
+};
+
+function drawFight() {
+  const box = document.getElementById("fightBody");
+  box.replaceChildren();
+  for (const f of FIGHT_FIELDS) {
+    const row = el("div", "statin");
+    const lab = el("label", null, f.label);
+    const inp = el("input");
+    inp.type = "number"; inp.min = f.min; inp.max = f.max; inp.step = f.step;
+    inp.value = String(FIGHT[f.k]);
+    inp.oninput = () => {
+      FIGHT[f.k] = Math.min(f.max, Math.max(f.min, Number(inp.value) || f.min)); render();
+    };
+    row.append(lab, inp);
+    attachTip(lab, `<b>${f.label}</b><i>${f.unit}</i>${f.hint}`);
+    box.appendChild(row);
+  }
+  if (S.survival) {
+    const head = el("div", "panelhead");
+    head.textContent = "What is hitting you";
+    head.style.margin = "8px 0 4px";
+    box.appendChild(head);
+
+    const roster = el("div", "roster");
+    roster.id = "roster";
+    box.appendChild(roster);
+    drawRoster();
+
+    const healRow = el("div", "statin");
+    const hlab = el("label", null, "Healing on you");
+    const hinp = el("input");
+    hinp.type = "number"; hinp.min = "0"; hinp.max = "1000000"; hinp.step = "250";
+    hinp.value = String(FIGHT.healerHps || 0);
+    hinp.oninput = () => {
+      FIGHT.healerHps = Math.max(0, Math.round(Number(hinp.value) || 0)); render();
+    };
+    healRow.append(hlab, hinp);
+    attachTip(hlab, `<b>Healing on you</b><i>from someone else, per second</i>`
+      + `Difficult content is not soloed, and a tank measured with nobody behind them is `
+      + `measured in a fight that does not happen. A flat rate rather than a second `
+      + `rotation, capped at the health you are actually missing — so overhealing is `
+      + `wasted here the same way it is in the game.<br>`
+      + `<span style="opacity:.75">Zero is the solo case. The panel tells you what rate `
+      + `this fight actually demands.</span>`);
+    box.appendChild(healRow);
+
+    const tierRow = el("div", "statin");
+    const tlab = el("label", null, packSize() > 1 ? "Their instability" : "Its instability");
+    const tinp = el("input");
+    tinp.type = "number"; tinp.min = "0"; tinp.max = "2000"; tinp.step = "10";
+    tinp.value = String(enemyTier());
+    tinp.oninput = () => {
+      FIGHT.enemyTier = Math.max(0, Math.round(Number(tinp.value) || 0)); render();
+    };
+    tierRow.append(tlab, tinp);
+    attachTip(tlab, `<b>Enemy instability</b><i>damage x 1.10^min(t,10) x 1.03^(t-10)</i>`
+      + `Defaults to the tier your gear was farmed at, on the grounds that you fight `
+      + `the rift you are geared from, and applies to everything in the pull. `
+      + `${attacker().name}'s ${attacker().dmg}-damage hit becomes `
+      + `<b>${fmt(attacker().dmg * SIM.enemyDamageMult(enemyTier()))}</b> at `
+      + `instability ${enemyTier()}.`);
+    box.appendChild(tierRow);
+    enhanceNumberInputs(box);
+  }
+
+  for (const t of [
+    {k: "stunnable", label: (packSize() > 1 ? "They can be stunned" : "It can be stunned"),
+     only: "survival",
+     get: () => FIGHT.stunnable !== false,
+     hint: "Daze says it prevents the target attacking, so a stun here postpones the "
+         + "swing rather than softening it — which is why two stuns at once buy nothing. "
+         + "Turn it off for anything immune."
+         + (packSize() > 1
+            ? "<br><span style=\"opacity:.75\">Every Knight stun is single-target, so in a "
+              + "pull it holds the creature at the top of the list and nothing else — which "
+              + "is why a stun slides down the priority as the pull grows.</span>" : "")},
+    {k: "inMelee", label: "Standing in melee",
+     get: () => FIGHT.inMelee == null ? String(S.cls) === "1" : FIGHT.inMelee,
+     hint: "Auto Attack reaches 4 units, so only a character inside that range swings between "
+         + "casts. Knights default to yes and casters to no."},
+    {k: "snapshot", label: "Effects keep the buff they were cast under",
+     get: () => FIGHT.snapshot,
+     hint: "Say you cast Ignite while Catalyze is up. <b>Yes</b>: Ignite locks in the +50% "
+         + "and every one of its 14 ticks is boosted, even after Catalyze has expired — so "
+         + "the right play is to re-apply your dots the instant a buff goes up. <b>No</b>: "
+         + "each tick is worth whatever buff happens to be running at the moment it lands, "
+         + "and applying dots under a buff buys you nothing extra. Most games do the first; "
+         + "the catalogue does not say which one Elegon does, so it is a switch."},
+  ]) {
+    if (t.only === "survival" && !S.survival) continue;
+    const row = el("div", "statin");
+    const lab = el("label", null, t.label);
+    const btn = el("button", null, t.get() ? "Yes" : "No");
+    btn.type = "button";
+    btn.onclick = () => {
+      FIGHT[t.k] = !t.get();
+      btn.textContent = FIGHT[t.k] ? "Yes" : "No";
+      render();
+    };
+    row.append(lab, btn);
+    attachTip(lab, `<b>${t.label}</b><i>assumption</i>${t.hint}`);
+    box.appendChild(row);
+  }
+  enhanceNumberInputs(box);
+}
+
+/* ---- a shared tooltip ----------------------------------------------------
+   Above 2200px the stylesheet scales the whole page with `zoom`, and past 3000
+   it scales it again. That leaves the tooltip and the pointer measuring in two
+   different units: a mouse event reports clientX in viewport pixels, while a
+   `left` written onto an element inside the zoomed root is multiplied by the
+   zoom before it lands. Writing one straight into the other put the tooltip
+   cursorX x (zoom - 1) away from the cursor — a couple of hundred pixels adrift
+   at the right of a wide screen, and worse the further right you pointed.
+
+   So the arithmetic is done entirely in viewport pixels, where getBoundingClientRect
+   and innerWidth already agree with the pointer, and the result is divided back
+   into the zoomed frame at the last moment.                                   */
+const tip = el("div", "tip");
+tip.hidden = true;
+document.body.appendChild(tip);
+/* pageZoom() is app.js's, and reads the computed `zoom` rather than the --zoom
+   token that mirrors it — maps and quests already place their own overlays
+   through it. */
+function attachTip(node, html) {
+  node.classList.add("hastip");
+  const place = e => {
+    const pad = 14, z = pageZoom(), r = tip.getBoundingClientRect();
+    let x = e.clientX + pad, y = e.clientY + pad;
+    if (x + r.width > innerWidth - 8) x = e.clientX - r.width - pad;
+    if (y + r.height > innerHeight - 8) y = e.clientY - r.height - pad;
+    tip.style.left = Math.max(8, x) / z + "px";
+    tip.style.top = Math.max(8, y) / z + "px";
+  };
+  node.addEventListener("mouseenter", e => { tip.innerHTML = html; tip.hidden = false; place(e); });
+  node.addEventListener("mousemove", place);
+  node.addEventListener("mouseleave", () => { tip.hidden = true; });
+}
+
+/* ---- a link that rebuilds this exactly ------------------------------------
+   The planner's own link carries a character. This one has to carry a
+   character AND a fight — how many enemies, how long, how much energy — because
+   the answer is meaningless without them. It rides in the hash, so it never
+   reaches a server, and it still accepts a bare planner code so a link from the
+   other page opens here with the fight left at whatever you had.             */
+const B64URL = str => btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const UNB64URL = str => atob(str.replace(/-/g, "+").replace(/_/g, "/"));
+
+function encodeState() {
+  const slots = S.slots ? Object.entries(S.slots)
+    .map(([k, st]) => [SLOT_ORDER.indexOf(k), st.item.id, st.quality, st.tier]) : null;
+  const payload = {
+    v: 1, c: S.cls, l: S.level, r: S.rank, h: S.healing ? 1 : 0,
+    st: Math.round(S.strength), gr: Math.round(S.grace),
+    al: Math.round(S.alacrity), tp: Math.round(S.tempo),
+    wp: Math.round((S.weaponPower || 0) / 0.00025),
+    ag: S.autoGear ? 1 : 0, at: S.autoTier || 0, sl: slots,
+    sv: S.survival ? 1 : 0, vi: Math.round(S.vitality), fo: Math.round(S.fortitude),
+    df: Math.round(S.defense || 0),
+    f: [FIGHT.duration, FIGHT.resourceMax, FIGHT.resourceStart, FIGHT.targets,
+        FIGHT.inMelee === null ? -1 : (FIGHT.inMelee ? 1 : 0), FIGHT.snapshot ? 1 : 0],
+    e: [-1,
+        FIGHT.enemyTier === null ? -1 : FIGHT.enemyTier,
+        FIGHT.stunnable === false ? 0 : 1,
+        FIGHT.healerHps || 0],
+    /* Flat pairs rather than objects: a link is read far more often than it is
+       written, and this is a third of the characters. */
+    pk: FIGHT.pack ? FIGHT.pack.flatMap(e => [e.id, e.n]) : null,
+  };
+  const bytes = new TextEncoder().encode(JSON.stringify(payload));
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return "o=" + B64URL(bin);
+}
+
+function decodeState(frag) {
+  if (!frag.startsWith("o=")) return false;
+  let p;
+  try {
+    const bin = UNB64URL(frag.slice(2));
+    const bytes = Uint8Array.from(bin, ch => ch.charCodeAt(0));
+    p = JSON.parse(new TextDecoder().decode(bytes));
+  } catch { return false; }
+  if (!p || p.v !== 1) return false;
+
+  S.cls = CLASSES[String(p.c)] ? p.c : S.cls;
+  S.level = Math.min(80, Math.max(1, p.l || 80));
+  S.rank = Math.min(5, Math.max(0, p.r || 1));
+  S.healing = !!p.h;
+  S.survival = !!p.sv;
+  S.autoGear = !!p.ag; S.autoTier = p.at || 0;
+  S.slots = null;
+  if (p.sl) {
+    const back = {};
+    for (const [slotIdx, id, q, t] of p.sl) {
+      const item = D.items.find(i => i.id === id);
+      if (item && SLOT_ORDER[slotIdx]) back[SLOT_ORDER[slotIdx]] = {item, quality: q, tier: t};
+    }
+    if (Object.keys(back).length) S.slots = back;
+  }
+  const f = p.f || [];
+  FIGHT.duration = f[0] || 300; FIGHT.resourceMax = f[1] || 100;
+  FIGHT.resourceStart = f[2] || 0; FIGHT.targets = f[3] || 1;
+  FIGHT.inMelee = f[4] === -1 ? null : !!f[4];
+  FIGHT.snapshot = f[5] !== 0;
+  const e = p.e || [];
+  if (p.pk && p.pk.length) {
+    const back = [];
+    for (let i = 0; i + 1 < p.pk.length; i += 2) back.push({id: p.pk[i], n: p.pk[i + 1]});
+    setPack(back);
+  } else {
+    /* Links written before the pack existed named a single creature. */
+    FIGHT.pack = (e[0] === -1 || e[0] == null) ? null : [{id: e[0], n: 1}];
+  }
+  FIGHT.enemyTier = e[1] === -1 || e[1] == null ? null : e[1];
+  FIGHT.stunnable = e[2] !== 0;
+  FIGHT.healerHps = e[3] || 0;
+
+  if (S.autoGear || S.slots) regear();
+  /* Hand-edited stats are not derivable from anything, so they come across
+     whole — and they must land after regear(), which would overwrite them. */
+  if (!S.autoGear && !S.slots) {
+    S.strength = p.st || 0; S.grace = p.gr || 0;
+    S.alacrity = p.al || 0; S.tempo = p.tp || 0;
+    S.vitality = p.vi || 0; S.fortitude = p.fo || 0; S.defense = p.df || 0;
+    S.weaponPower = (p.wp || 0) * 0.00025;
+  }
+  return true;
+}
+
+document.getElementById("shareBtn").onclick = () => {
+  const url = location.origin + location.pathname + "#" + encodeState();
+  history.replaceState(null, "", "#" + encodeState());
+  navigator.clipboard.writeText(url)
+    .then(() => note("Link copied — it carries the build and the fight.", true))
+    .catch(() => note("Could not reach the clipboard. The link is in the address bar."));
+};
+
+/* ---- how it scales --------------------------------------------------------
+   Two questions a single number cannot answer: what happens when there is more
+   than one of them, and what happens when the fight runs long. Every point is
+   a fresh solve rather than the same rotation replayed, because the rotation is
+   exactly what changes — and where it changes, the chart says so.            */
+const TARGET_STEPS = [1, 2, 3, 4, 5, 6, 8, 10];
+const TIME_STEPS = [30, 45, 60, 90, 120, 180, 240, 300, 420, 600];
+const TIER_STEPS = [0, 25, 50, 75, 100, 125, 150, 175, 200];
+
+/* Survival is not measured in damage, so the curve reads the seconds the health
+   bar lasts, and the question worth asking of a tank is not how long the fight
+   runs but how deep the rift is. */
+/* A build nothing can kill has no number here, and the number it used to get —
+   a million seconds — set the scale for the whole chart and squashed every real
+   point onto the floor. Null instead, and the chart draws those separately. */
+const curveValue = r => S.survival
+  ? (isFinite(r.survivalSeconds) ? r.survivalSeconds : null)
+  : r.dps;
+
+/* Eighteen solves is over a second of arithmetic, and doing it in one go locks
+   the page while it happens. One point per turn of the event loop costs nothing
+   and keeps everything else usable while the curves fill in. */
+const yieldToPage = () => new Promise(r => setTimeout(r, 0));
+
+/* A percent. Below it, two orders are the same advice written twice: the hill
+   climb lands in whichever of two near-equal optima it happened to reach, and
+   ringing that as a finding would send someone to rewrite their bar for
+   nothing. */
+const REORDER_MATTERS = 0.01;
+
+async function sweep(key, values, exclude, token) {
+  const out = [];
+  let prev = null;
+  for (const v of values) {
+    if (token.cancelled) return null;
+    const cfg = baseCfg(exclude ? {exclude} : {});
+    if (key === "enemyTier") cfg.enemies = enemyCfg({tier: v});
+    else cfg[key] = v;
+    const sol = SIM.solve(SIM.model(D, cfg), {
+      restarts: 5,
+      seed: prev ? prev.order.map(a => ({id: a.id, refresh: a.refresh})) : null,
+    });
+
+    /* Two orderings that score the same are not a change worth ringing, and a
+       hill climb from random restarts will happily return either of them. So
+       the question asked is not "is the list different" but "what would it cost
+       to keep playing the previous one here" — which is the only version of the
+       question a reader can act on. */
+    let cost = 0;
+    if (prev) {
+      const kept = SIM.replay(D, cfg, prev.order).result.total;
+      cost = (sol.result.total - kept) / Math.max(1, sol.result.total);
+    }
+    out.push({v, dps: curveValue(sol.result), total: sol.result.total,
+              raw: sol.result,
+              cost, changed: cost > REORDER_MATTERS,
+              lead: sol.order.length ? sol.order[0].name : ""});
+    prev = sol;
+    await yieldToPage();
+  }
+  return out;
+}
+
+function drawCurve(svgId, pts, opts) {
+  const svg = document.getElementById(svgId);
+  const W = 460, H = 190, L = 52, R = 12, T = 12, B = 30;
+  const ns = "http://www.w3.org/2000/svg";
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.replaceChildren();
+
+  const real = pts.filter(p => p.dps != null && isFinite(p.dps));
+  const xs = pts.map(p => p.v);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const X = v => L + (v - x0) / (x1 - x0 || 1) * (W - L - R);
+
+  if (!real.length) {
+    /* Every point is off the top of the scale. A chart of that is a flat line
+       at an arbitrary height; a sentence is the honest version. */
+    const t = document.createElementNS(ns, "text");
+    t.setAttribute("x", W / 2); t.setAttribute("y", H / 2);
+    t.setAttribute("fill", "var(--faint)"); t.setAttribute("font-size", 12);
+    t.setAttribute("text-anchor", "middle");
+    t.textContent = opts.allInfinite || "Nothing here can kill you at any of these.";
+    svg.appendChild(t);
+    return;
+  }
+
+  const ys = real.map(p => p.dps);
+  const y1 = Math.max(...ys) * 1.06, y0 = Math.min(0, Math.min(...ys));
+  const Y = v => H - B - (v - y0) / (y1 - y0 || 1) * (H - T - B);
+  const mk = (tag, attrs, text) => {
+    const el2 = document.createElementNS(ns, tag);
+    for (const [k, v] of Object.entries(attrs)) el2.setAttribute(k, v);
+    if (text != null) el2.textContent = text;
+    svg.appendChild(el2);
+    return el2;
+  };
+
+  /* Four rules and nothing else: the shape is the point, not the ruling. */
+  for (let i = 0; i <= 3; i++) {
+    const v = y0 + (y1 - y0) * i / 3;
+    mk("line", {x1: L, y1: Y(v), x2: W - R, y2: Y(v),
+                stroke: "var(--plot-grid)", "stroke-width": 1});
+    mk("text", {x: L - 8, y: Y(v) + 4, fill: "var(--faint)", "font-size": 10,
+                "text-anchor": "end"}, opts.axis ? opts.axis(v)
+                                                 : Math.round(v / 100) / 10 + "k");
+  }
+  /* Labels only where one fits. The points are not evenly spaced in time, so a
+     label per point crushes the short end into an unreadable smear. */
+  let lastX = -Infinity;
+  for (const p of pts) {
+    const x = X(p.v);
+    if (x - lastX < 34 && p !== pts[pts.length - 1]) continue;
+    if (x - lastX < 34) continue;
+    mk("text", {x, y: H - 10, fill: "var(--faint)", "font-size": 10,
+                "text-anchor": "middle"}, opts.tick(p.v));
+    lastX = x;
+  }
+
+  /* The line runs through the points that have a value and lifts off wherever
+     one does not, rather than diving to the floor and back. */
+  let d = "", pen = false;
+  for (const p of pts) {
+    if (p.dps == null || !isFinite(p.dps)) { pen = false; continue; }
+    d += `${pen ? "L" : "M"}${X(p.v)} ${Y(p.dps)}`;
+    pen = true;
+  }
+  if (d) mk("path", {d, fill: "none", stroke: "var(--s1)", "stroke-width": 2,
+                     "stroke-linejoin": "round"});
+
+  pts.forEach((p, i) => {
+    const changed = !!p.changed;
+    const here = Math.abs(p.v - opts.current) < 1e-9;
+    const off = p.dps == null || !isFinite(p.dps);
+    const cy = off ? T + 4 : Y(p.dps);
+    if (off) {
+      /* Above the top of the chart, drawn as a ring on the ceiling so it reads
+         as "past the scale" rather than as a value. */
+      mk("circle", {cx: X(p.v), cy, r: 4, fill: "var(--bg)",
+                    stroke: here ? "var(--gold)" : "var(--good)", "stroke-width": 2});
+    } else {
+      mk("circle", {cx: X(p.v), cy, r: here ? 5 : changed ? 4 : 2.6,
+                    fill: here ? "var(--gold)" : changed ? "var(--bg)" : "var(--s1)",
+                    stroke: changed && !here ? "var(--gold)" : "none", "stroke-width": 2});
+    }
+    const node = mk("circle", {cx: X(p.v), cy, r: 12, fill: "transparent"});
+    attachTip(node, `<b>${opts.label(p.v)}</b><i>${opts.read(p)}</i>`
+      + (off ? `Off the top of this chart — nothing kills you here.<br>` : "")
+      + (S.survival
+         ? `${fmt(p.raw.dtps)} a second reaching you<br>${fmt(p.total / p.raw.duration)} dps dealt`
+         : `${fmt(p.total)} total`)
+      + (changed
+         ? `<br>Wants its own order — <b>${p.lead}</b> leads, and playing the previous `
+           + `one here costs ${asPct(p.cost)}.`
+         : i > 0 ? `<br><span style="opacity:.7">the order above still plays this `
+           + `within ${asPct(Math.max(p.cost, 0))}</span>` : "")
+      + (here ? `<br><span style="opacity:.7">what the page is showing</span>` : ""));
+  });
+}
+
+let scaleRun = null;
+function drawScaling(exclude) {
+  if (scaleRun) scaleRun.cancelled = true;
+  const token = scaleRun = {cancelled: false};
+  const noteEl = document.getElementById("scaleNote");
+  noteEl.textContent = "Measuring…";
+  setTimeout(async () => {
+    const caps = document.querySelectorAll(".curves figcaption");
+    const secs = v => v >= 1e5 ? "\u221e" : v >= 60 ? Math.round(v / 60) + "m" : Math.round(v) + "s";
+    const readOut = p => S.survival
+      ? (isFinite(p.raw.survivalSeconds) ? asClock(p.raw.survivalSeconds) + " to die"
+                                         : "never dies")
+      : `${fmt(p.dps)} ${S.healing ? "hps" : "dps"}`;
+
+    if (S.survival) {
+      /* One enemy, so there is no pack curve; the depth of the rift takes its
+         place, which is the only axis a tank actually chooses along. */
+      caps[0].textContent = "How long you last";
+      caps[1].textContent = "Damage you deal while doing it";
+      const tiers = await sweep("enemyTier", TIER_STEPS, exclude, token);
+      if (token.cancelled || !tiers) return;
+      drawCurve("curveTargets", tiers,
+        {current: enemyTier(), tick: v => "i" + v, axis: secs, read: readOut,
+         label: v => `Instability ${v}`,
+         allInfinite: FIGHT.healerHps
+           ? "Your healer holds you at every tier measured."
+           : "Nothing here kills you at any of these tiers."});
+      /* The second half of the question a tank actually asks. Same sweep, so it
+         costs nothing to draw, and it is the one number that says whether the
+         defensive rotation has been bought at the price of doing nothing. */
+      drawCurve("curveTime", tiers.map(x => Object.assign({}, x,
+        {dps: x.total / x.raw.duration})),
+        {current: enemyTier(), tick: v => "i" + v, read: p => `${fmt(p.dps)} dps`,
+         label: v => `Instability ${v}`});
+      const dies = tiers.filter(x => !x.raw.survived);
+      const flips = tiers.filter(p => p.changed);
+      document.getElementById("scaleNote").textContent =
+        (dies.length
+          ? `${packSize() > 1 ? "This pull kills" : "This enemy kills"} you from `
+            + `instability ${dies[0].v} up`
+          : `You survive the whole five minutes at every tier measured`)
+        + (flips.length
+            ? `, and the list wants rewriting at ${flips.map(x => "i" + x.v).join(", ")}.`
+            : `, on one order throughout.`);
+      return;
+    }
+    caps[0].textContent = "Against more enemies";
+    caps[1].textContent = "Over a longer fight";
+
+    const single = S.healing;
+    const tgt = single ? null : await sweep("targets", TARGET_STEPS, exclude, token);
+    if (token.cancelled) return;
+    const time = await sweep("duration", TIME_STEPS, exclude, token);
+    if (token.cancelled || !time) return;
+    if (tgt) drawCurve("curveTargets", tgt,
+      {current: FIGHT.targets, tick: v => String(v), read: readOut,
+       label: v => v === 1 ? "One enemy" : v + " enemies"});
+    else document.getElementById("curveTargets").replaceChildren();
+    drawCurve("curveTime", time,
+      {current: FIGHT.duration, tick: v => v >= 60 ? v / 60 + "m" : v + "s", read: readOut,
+       label: v => v >= 60 ? `${v / 60} minute fight` : `${v} second fight`});
+
+    const flips = (tgt || []).filter(p => p.changed);
+    const tflips = time.filter(p => p.changed);
+    const bits = [];
+    if (flips.length)
+      bits.push(`The list wants rewriting at ${flips.map(p => p.v).join(", ")} `
+        + `${flips.length === 1 && flips[0].v === 1 ? "enemy" : "enemies"} — ringed points.`);
+    if (tflips.length)
+      bits.push(`Fight length rewrites it at `
+        + tflips.map(p => p.v >= 60 ? p.v / 60 + "m" : p.v + "s").join(", ") + ".");
+    if (!bits.length)
+      bits.push("One order plays every point on both curves within half a percent "
+        + "of its own best — the list you have is the list you want.");
+    if (S.healing) bits.push("Healing is measured against one target, so there is no pack curve.");
+    noteEl.textContent = bits.join(" ");
+  }, 60);
+}
+
+/* ---- better gear ----------------------------------------------------------
+   The same question raidbots answers, with Elegon's own wrinkle: an item is
+   only worth more at higher instability if it drops somewhere instability
+   applies. Two rifts qualify; everything else is fixed at what it prints.
+
+   Searching every legal item through a full re-solve would be minutes of work,
+   so it goes in two passes. A linear score built from what a point of each stat
+   is currently worth picks a shortlist per slot; every name on that shortlist
+   is then actually played through the fight. The proxy only has to rank well
+   enough to keep the winner in the top few, and the sim decides the rest.    */
+const GEAR = {inst: 0, quality: 4, source: "all", result: null};
+
+function gearTier(item) {
+  return scalesWithInstability(item.id) ? GEAR.inst : 0;
+}
+
+/** Every item this character could legally put in a slot. */
+function gearPool(slot) {
+  return (D.items || []).filter(i =>
+    i.slot === slot && i.lvl <= S.level && usableBy(i, S.cls)
+    && (GEAR.source !== "inst" || scalesWithInstability(i.id)));
+}
+
+const isTwoHand = it => String(it.hand || "").toLowerCase().startsWith("t");
+
+/* Proficiency follows the weapon, so proposing a staff to someone holding a
+   greatsword would show a collapse that is really just an unlevelled skill.
+   The comparison assumes you would train the new one to where the old one is,
+   which is the only reading that compares the items rather than the grind. */
+function profForSlots(slots) {
+  const out = Object.assign({}, S.profLevels || {});
+  const mh = slots["Main Hand"];
+  const sk = mh ? PROF_BY_SUB.get(mh.item.sub) : null;
+  if (sk) out[sk.id] = Math.max(out[sk.id] || 0,
+    Math.round((S.weaponPower || 0) / 0.00025));
+  return out;
+}
+
+function cfgForSlots(slots, enemyOver) {
+  const g = applyGear(slots, S.alloc, profForSlots(slots));
+  /* Every stat the trial gear carries, not just the offensive ones. Leaving
+     Vitality and Fortitude out left baseCfg() to supply the CURRENT build's,
+     so a candidate with three times the health scored identically to the one
+     it was meant to replace and the search reported "keep" all the way down. */
+  const cfg = baseCfg({strength: g.totals.strength, grace: g.totals.grace,
+                       alacrity: g.totals.alacrity, tempo: g.totals.tempo,
+                       vitality: g.totals.vitality, fortitude: g.totals.fortitude,
+                       weaponPower: g.weaponPower});
+  if (enemyOver && cfg.enemies) cfg.enemies = enemyCfg(enemyOver);
+  return cfg;
+}
+
+function runGearSearch() {
+  const sol = window.__sol;
+  if (!sol) return;
+  const order = sol.order;
+  const exclude = sol.model.dropped.filter(d => d.why === SIM.OMIT.exclusive).map(d => d.s.id);
+  const cur = Object.assign({}, S.slots || {});
+  /* A tank is not shopping for damage. Ranking on damage taken alone would make
+     Vitality worthless — it changes no hit — so the figure is the seconds the
+     health bar lasts, which is the only one both defensive stats move. */
+  /* A build nothing can kill has no finite time to live, so it is pinned to a
+     value well past any real fight rather than to Infinity — which would make
+     every difference between two unkillable sets NaN — and the row says
+     "survives it" instead of printing the pin. */
+  const UNKILLABLE = 36000;
+  const metric = r => S.survival
+    ? Math.min(UNKILLABLE, isFinite(r.survivalSeconds) ? r.survivalSeconds : UNKILLABLE)
+    : r.total;
+  /* Gear farmed at instability 100 is worn in a rift that is also at 100, so
+     that is the fight it is judged in. Pricing i100 armour against a tier-0
+     enemy makes every single upgrade unkillable and ranks nothing. */
+  const inRift = S.survival && GEAR.inst > 0 ? {tier: GEAR.inst} : null;
+  const play = slots => metric(SIM.replay(D, Object.assign(cfgForSlots(slots, inRift),
+    exclude.length ? {exclude} : {}), order).result);
+
+  const base = play(cur);
+
+  /* What a point of each stat is worth right now, measured rather than assumed,
+     and only used to shortlist. */
+  const w = {};
+  /* Grace belongs in the tank list: Respite is a heal over time and heals over
+     time scale on Grace, so it is the stat the self-heal is built out of. The
+     proxy has to see it or the shortlist will never offer what the exact pass
+     then picks anyway. */
+  const probeStats = S.survival
+    ? ["vitality", "fortitude", "grace", "strength", "alacrity", "tempo"]
+    : ["strength", "grace", "alacrity", "tempo"];
+  for (const k of probeStats) {
+    const probe = Object.assign(cfgForSlots(cur, inRift),
+                                {[k]: (cfgForSlots(cur, inRift)[k] || 0) + 100});
+    if (exclude.length) probe.exclude = exclude;
+    w[k] = (metric(SIM.replay(D, probe, order).result) - base) / 100;
+  }
+
+  const statsOf = (it, tier) => ATTRS.reduce((o, k) =>
+    (o[k] = scaleStat(it[k] || 0, GEAR.quality, tier), o), {});
+  const gain = (it, tier, was) => ATTRS.reduce((sum, k) =>
+    sum + (w[k] || 0) * (scaleStat(it[k] || 0, GEAR.quality, tier)
+                         - (was ? scaleStat(was.item[k] || 0, was.quality, was.tier) : 0)), 0);
+
+  /* One slot at a time. Stats add, and the sim rises with them, so the slots
+     barely interact — the exception is the pair of hands, which is solved as a
+     pair below because a two-hander takes the off hand with it. */
+  const rows = [];
+  const chosen = Object.assign({}, cur);
+  for (const slot of SLOT_ORDER) {
+    if (slot === "Main Hand" || slot === "Off Hand") continue;
+    const pool = gearPool(slot);
+    if (!pool.length) continue;
+    const was = cur[slot] || null;
+    const shortlist = pool
+      .map(it => ({it, tier: gearTier(it)}))
+      .map(c => Object.assign(c, {proxy: gain(c.it, c.tier, was)}))
+      .sort((a, b) => b.proxy - a.proxy).slice(0, 6);
+
+    /* Measured against the gear you are actually wearing, one slot at a time.
+       Trying each candidate on top of the winners already chosen would make
+       every row carry the ones above it, and the last row would read as though
+       one belt were worth the whole set. */
+    let best = {total: base, pick: was};
+    for (const c of shortlist) {
+      const trial = Object.assign({}, cur);
+      trial[slot] = {item: c.it, quality: GEAR.quality, tier: c.tier};
+      const total = play(trial);
+      if (total > best.total + 1e-9)
+        best = {total, pick: {item: c.it, quality: GEAR.quality, tier: c.tier}};
+    }
+    if (best.pick) chosen[slot] = best.pick;
+    rows.push({slot, was, now: best.pick, delta: best.total - base,
+               capped: best.total >= UNKILLABLE - 1});
+  }
+
+  /* The hands, as one decision. */
+  const twoHands = gearPool("Main Hand").filter(isTwoHand);
+  const oneHands = gearPool("Main Hand").filter(it => !isTwoHand(it));
+  const offHands = gearPool("Off Hand");
+  const top = (list, was, k) => list.map(it => ({it, tier: gearTier(it)}))
+    .map(c => Object.assign(c, {proxy: gain(c.it, c.tier, was)}))
+    .sort((a, b) => b.proxy - a.proxy).slice(0, k);
+
+  let bestHands = null;
+  const tryHands = (mh, oh) => {
+    const trial = Object.assign({}, cur);
+    if (mh) trial["Main Hand"] = mh; else delete trial["Main Hand"];
+    if (oh) trial["Off Hand"] = oh; else delete trial["Off Hand"];
+    const total = play(trial);
+    if (!bestHands || total > bestHands.total) bestHands = {total, mh, oh};
+  };
+  tryHands(cur["Main Hand"] || null, cur["Off Hand"] || null);
+  for (const c of top(twoHands, cur["Main Hand"], 4))
+    tryHands({item: c.it, quality: GEAR.quality, tier: c.tier}, null);
+  const ohTop = top(offHands, cur["Off Hand"], 3);
+  for (const c of top(oneHands, cur["Main Hand"], 3)) {
+    const mh = {item: c.it, quality: GEAR.quality, tier: c.tier};
+    tryHands(mh, null);
+    for (const o of ohTop)
+      tryHands(mh, {item: o.it, quality: GEAR.quality, tier: o.tier});
+  }
+  if (bestHands) {
+    if (bestHands.mh) chosen["Main Hand"] = bestHands.mh; else delete chosen["Main Hand"];
+    if (bestHands.oh) chosen["Off Hand"] = bestHands.oh; else delete chosen["Off Hand"];
+    rows.push({slot: "Main Hand", was: cur["Main Hand"] || null, now: bestHands.mh || null,
+               delta: bestHands.total - base, paired: true});
+    rows.push({slot: "Off Hand", was: cur["Off Hand"] || null, now: bestHands.oh || null,
+               delta: 0, paired: true,
+               emptied: !bestHands.oh && bestHands.mh && isTwoHand(bestHands.mh.item)});
+  }
+
+  /* The per-slot figures hold the rotation still, which is what makes the
+     search fast enough to run. The headline does not: a set this different can
+     want a different order, so the winner is solved from scratch. */
+  const solved = cfgForSlots(chosen, inRift);
+  if (exclude.length) solved.exclude = exclude;
+  const finished = SIM.solve(SIM.model(D, solved), {restarts: 4}).result;
+  const after = metric(finished);
+  const finalStats = applyGear(chosen, S.alloc, profForSlots(chosen)).totals;
+  GEAR.result = {rows, chosen, base, after, order: SLOT_ORDER, inRift: !!inRift,
+                 afterHealed: finished.healed || 0, afterTaken: finished.taken || 0,
+                 afterGrace: finalStats.grace || 0};
+  drawGear();
+}
+
+function drawGear() {
+  const box = document.getElementById("gearRows");
+  const r = GEAR.result;
+  box.replaceChildren();
+  if (!r) return;
+
+  const sorted = r.rows.slice().sort((a, b) =>
+    SLOT_ORDER.indexOf(a.slot) - SLOT_ORDER.indexOf(b.slot));
+  const dur = FIGHT.duration;
+
+  for (const row of sorted) {
+    /* An item is only "the same" if the quality and the instability match too.
+       At a deeper tier it is the same name and a different item entirely, and
+       calling that no change is the one thing this table must not do. */
+    const sameItem = (row.now && row.now.item) === (row.was && row.was.item);
+    const sameThing = sameItem && row.now && row.was
+      && row.now.quality === row.was.quality && row.now.tier === row.was.tier;
+    const changed = !sameThing && !(!row.now && !row.was);
+    const line = el("div", "gearrow" + (changed ? "" : " same")
+      + (row.paired && row.slot === "Off Hand" ? " pair" : ""));
+    line.appendChild(el("div", "gs", SLOT_LABEL_O[row.slot] || row.slot));
+
+    line.appendChild(el("div", "gnow", row.was ? nameWithTier(row.was) : "empty"));
+    line.appendChild(el("div", "arrow", changed ? "\u2192" : "="));
+
+    const now = el("div", "gnew" + (row.now ? " q" + row.now.quality : ""));
+    now.textContent = !row.now
+      ? (row.emptied ? "empty — the two-hander uses both hands" : "empty")
+      : sameItem && changed ? `the same, at ${tierWord(row.now)}`
+      : nameWithTier(row.now);
+    line.appendChild(now);
+
+    line.appendChild(el("div", "gv",
+      row.paired && row.slot === "Off Hand" ? "paired"
+      : changed && row.delta > (S.survival ? 0.05 : 0.5)
+        ? (S.survival
+            ? (row.capped ? "outlives the fight" : "+" + asClock(row.delta) + " alive")
+            : "+" + fmt(row.delta / dur) + (S.healing ? " hps" : " dps"))
+      : changed ? "—" : "keep"));
+
+    const src = row.now ? RIFT_OF.get(row.now.item.id) : null;
+    const pairNote = row.paired && row.slot === "Off Hand"
+      ? `<br><span style="opacity:.75">Both hands are decided together, so the gain is `
+        + `counted once on the main hand.</span>` : "";
+    attachTip(line, row.now
+      ? `<b>${row.now.item.name}</b><i>${SLOT_LABEL_O[row.slot] || row.slot}`
+        + `${row.now.item.sub ? " · " + row.now.item.sub : ""}</i>`
+        + ATTRS.filter(k => row.now.item[k])
+            .map(k => `${cap(k)} +${scaleStat(row.now.item[k], row.now.quality, row.now.tier)}`)
+            .join("<br>")
+        + (src ? `<br><span style="opacity:.75">${src.boss ? "Boss drop" : "Drops"} in `
+                 + `${src.name}${src.scales ? "" : " — does not scale with instability"}`
+                 + `</span>` : "")
+        + pairNote
+      : `<b>Nothing here</b><i>${SLOT_LABEL_O[row.slot] || row.slot}</i>`
+        + (row.emptied ? "A two-handed weapon occupies both hands."
+                       : "No item in the catalogue fits this slot for this class."));
+    box.appendChild(line);
+  }
+
+  const lift = S.survival ? (r.after - r.base) : (r.after - r.base) / dur;
+  const unit = S.survival ? "alive" : S.healing ? "hps" : "dps";
+  const p = el("p", "note");
+  p.style.margin = "14px 2px 0";
+  const scaled = r.rows.filter(x => x.now && x.now.tier > 0).length;
+  const unkillable = S.survival && r.after >= 35999;
+  const shown = v => S.survival ? asClock(v) : fmt(v / dur);
+  p.innerHTML = unkillable
+    ? `<b>${shown(r.base)}</b> in what you are wearing. In this set nothing in the `
+      + `fight can bring you down at all: it puts back `
+      + `<b>${fmt(r.afterHealed)}</b> against the <b>${fmt(r.afterTaken)}</b> that `
+      + `reaches you`
+      + (r.afterGrace > 200
+         ? `, because Respite is a heal over time and heals over time scale on `
+           + `<b>Grace</b> — ${fmt(r.afterGrace)} of it here. Nothing else a Knight `
+           + `wears cares about that stat, which is what makes it worth taking.`
+         : `.`)
+      + ` Each row is that slot swapped on its own against your current set`
+      + (r.inRift ? `, inside the rift at instability ${GEAR.inst}.` : ".")
+    : lift > 0.5
+    ? `<b>${shown(r.base)} ${unit}</b> in what you are wearing, `
+      + `<b>${shown(r.after)} ${unit}</b> in this — `
+      + `<b>+${S.survival ? asClock(lift) : fmt(lift)}</b>, `
+      + `${asPct((r.after - r.base) / Math.max(1, r.base))} more. `
+      + `Each row is that slot swapped on its own against your current set, with the `
+      + `rotation held still; the headline is the whole set re-solved. `
+      + (GEAR.inst
+         ? `${scaled} of these scale with instability and are priced at `
+           + `<b>i${GEAR.inst}</b> — the rest print the same number at any depth.`
+           + (r.inRift ? ` The fight is measured at that tier too, since that is the `
+                         + `rift the gear comes out of.` : "")
+         : `Set an instability above zero to price the Ashenroot and Embermaw drops `
+           + `at the tier you actually farm.`)
+    : `Nothing in the catalogue beats what you are wearing at these settings.`;
+  box.appendChild(p);
+  document.getElementById("gearFoot").hidden = !(lift > 0.5);
+}
+
+const SLOT_LABEL_O = {
+  "Head": "Head", "Neck": "Neck", "Back": "Cloak", "Shoulder": "Pauldron",
+  "Chest": "Chest", "Hands": "Gloves", "Waist": "Belt", "Legs": "Legs",
+  "Feet": "Boots", "Main Hand": "Main hand", "Off Hand": "Off hand",
+};
+const nameWithTier = st => st.item.name + (st.tier ? ` · i${st.tier}` : "");
+const tierWord = st => st.tier ? `instability ${st.tier}` : "instability 0";
+
+/* ---- gear controls -------------------------------------------------------- */
+{
+  const q = document.getElementById("gearQual");
+  for (const [id, name] of [[4, "Flawless"], [2, "Superior"], [3, "Fine"], [1, "Normal"]])
+    q.appendChild(Object.assign(el("option", null, name), {value: String(id)}));
+  q.value = "4";
+  q.onchange = () => { GEAR.quality = Number(q.value); GEAR.result = null; drawGear(); };
+
+  const inst = document.getElementById("gearInst");
+  inst.oninput = () => {
+    GEAR.inst = Math.max(0, Math.round(Number(inst.value) || 0));
+    GEAR.result = null; drawGear();
+  };
+  const src = document.getElementById("gearSrc");
+  src.onchange = () => { GEAR.source = src.value; GEAR.result = null; drawGear(); };
+
+  const run = document.getElementById("gearRun");
+  run.onclick = () => {
+    run.disabled = true; run.textContent = "Searching…";
+    setTimeout(() => {
+      try { runGearSearch(); }
+      finally { run.disabled = false; run.textContent = "Search"; }
+    }, 30);
+  };
+
+  document.getElementById("gearApply").onclick = () => {
+    if (!GEAR.result) return;
+    S.slots = GEAR.result.chosen;
+    S.profLevels = profForSlots(S.slots);
+    S.autoGear = false;
+    S.source = `optimised gear${GEAR.inst ? ", instability " + GEAR.inst : ""}`;
+    regear(); syncInputs(); render();
+    GEAR.result = null;
+    document.getElementById("gearRows").replaceChildren(
+      Object.assign(el("p", "note"), {textContent: "Equipped. Search again to look for more."}));
+    document.getElementById("gearFoot").hidden = true;
+  };
+}
+
+/* ---- the build, as gear ---------------------------------------------------
+   The stats used to be six number fields, which is fine for a what-if and no
+   use at all for the question people actually have: this helmet or that one, at
+   which rarity, farmed how deep. So the panel is the wardrobe now — a row per
+   slot, the two modifiers that get changed on every row, and the totals below
+   as output rather than input.
+
+   It reads the same catalogue and draws the same paperdoll as the planner —
+   the engine's own slot captures, the panel's own empty-slot art, the same two
+   columns and the weapons beneath — so a slot looks and means the same on both
+   pages. Only the scale differs: this one lives in a 340px column beside a page
+   of results, so it is built at the size the planner itself falls back to on a
+   narrow screen. */
+
+const SLOT_LABEL_UI = {
+  "Head": "Head", "Neck": "Neck", "Back": "Cloak", "Shoulder": "Pauldron",
+  "Chest": "Chest armour", "Hands": "Gloves", "Waist": "Belt", "Legs": "Legs",
+  "Feet": "Boots", "Main Hand": "Main hand", "Off Hand": "Off hand",
+};
+const PICK_STATS = ["vitality", "fortitude", "strength", "grace", "alacrity", "tempo"];
+const SHORT_STAT = {vitality: "Vit", fortitude: "Fort", strength: "Str",
+                    grace: "Grace", alacrity: "Alac", tempo: "Tempo"};
+
+const twoHanded = () => {
+  const mh = S.slots && S.slots["Main Hand"];
+  return !!(mh && mh.item && String(mh.item.hand || "").toLowerCase().startsWith("t"));
+};
+
+/* Down the left, down the right, weapons beneath — the planner's own column
+   split, which is the character panel's. */
+const DOLL_COLUMNS = {
+  odollL: ["Head", "Neck", "Back", "Shoulder"],
+  odollR: ["Chest", "Hands", "Waist", "Legs", "Feet"],
+  odollW: ["Main Hand", "Off Hand"],
+};
+
+/* The panel's own art for an empty slot, one file per slot, taken from the
+   game's EquipmentSlot nodes. The planner keeps the same table. */
+const SLOT_PLACEHOLDER = {
+  "Head":      "icon_dark_fantasy_inventory_helmets_01_stroke.png",
+  "Neck":      "icon_dark_fantasy_inventory_necklaces_01_stroke.png",
+  "Back":      "untitled-11.png",
+  "Shoulder":  "icon_dark_fantasy_inventory_shoulder_pads_01_stroke.png",
+  "Chest":     "icon_dark_fantasy_inventory_armor_01_stroke.png",
+  "Hands":     "ICON_DarkFantasy_Inventory_Gauntlets_01_Stroke.png",
+  "Waist":     "icon_dark_fantasy_inventory_belts_01_stroke.png",
+  "Legs":      "icon_dark_fantasy_inventory_leg_armor_01_stroke.png",
+  "Feet":      "icon_dark_fantasy_inventory_boots_01_stroke.png",
+  "Main Hand": "icon_dark_fantasy_inventory_daggers_01_stroke.png",
+  "Off Hand":  "icon_dark_fantasy_inventory_spellbooks_01_stroke.png",
+};
+/* On the site these are files; in the hosted preview, which can reach no other
+   host, the build folds them in and this finds them there instead. */
+const uiArt = f => (window.__ICONS && window.__ICONS["ui/" + f]) || "icons/ui/" + f;
+
+const WEAPON_SLOT = new Set(["Main Hand", "Off Hand"]);
+
+/* Repeating the slot name on an armour piece says nothing ("Chest armour ·
+   Chest armour"); on a weapon the sub type is what picks the proficiency, and
+   nothing else on the panel says which weapon you are holding. */
+function weaponType(slot, item) {
+  if (!item || !WEAPON_SLOT.has(slot) || !item.sub) return "";
+  return (String(item.hand || "").toLowerCase().startsWith("t") ? "two-handed " : "") + item.sub;
+}
+
+/** One paperdoll slot: framed box, item or the panel's empty art, hover detail. */
+function slotButton(slot) {
+  const st = S.slots[slot];
+  const blocked = slot === "Off Hand" && twoHanded();
+  const has = !!(st && st.item) && !blocked;
+
+  const btn = el("button", "eqslot" + (WEAPON_SLOT.has(slot) ? " weapon" : ""));
+  btn.type = "button";
+  btn.disabled = blocked;
+  /* No title attribute: the browser's own tooltip would sit beside the styled
+     one. aria-label carries the same thing for a screen reader. */
+  btn.setAttribute("aria-label",
+    SLOT_LABEL_UI[slot] + (has ? ": " + st.item.name : ": empty"));
+
+  const q = has ? st.quality : 1;
+  const box = el("div", "eqbox");
+  if (SLOT_FRAMES) {
+    box.classList.add("state");
+    box.style.backgroundImage = `url("${slotFrameUrl(q)}")`;
+  } else if (has && q !== 1) {
+    /* Until the slot captures are exported, a tint stands in for the frame. */
+    const glow = el("div", "glow");
+    glow.style.setProperty("--q", QUALITY_HEX[q]);
+    box.appendChild(glow);
+  }
+  if (has) {
+    box.appendChild(icon("items", st.item.id, !!st.item.icon));
+    if (st.tier) box.appendChild(el("span", "inst", "i" + st.tier));
+  } else {
+    const ph = el("img", "ph");
+    ph.src = uiArt(SLOT_PLACEHOLDER[slot]);
+    ph.alt = "";
+    ph.loading = "lazy";
+    box.appendChild(ph);
+  }
+  btn.appendChild(box);
+
+  if (blocked) {
+    attachTip(btn, `<b>${SLOT_LABEL_UI[slot]}</b><i>occupied</i>`
+      + `A two-handed weapon uses both hands.`);
+  } else if (has) {
+    const wt = weaponType(slot, st.item);
+    const src = RIFT_OF.get(st.item.id);
+    attachTip(btn, `<b>${st.item.name}</b><i>${SLOT_LABEL_UI[slot]}`
+      + `${wt ? " \u00b7 " + wt : ""} \u00b7 ${QUALITY[st.quality].n}`
+      + `${st.tier ? " \u00b7 instability " + st.tier : ""}</i>`
+      + PICK_STATS.filter(k => st.item[k])
+          .map(k => `${cap(k)} <b>+${scaleStat(st.item[k], st.quality, st.tier)}</b>`).join("<br>")
+      + (src ? `<br><span style="opacity:.75">${src.boss ? "Boss drop" : "Drops"} in `
+               + `${src.name}${src.scales ? "" : " \u2014 instability does not raise it"}</span>` : "")
+      + `<br><span style="opacity:.6">Click to change it</span>`);
+  } else {
+    attachTip(btn, `<b>${SLOT_LABEL_UI[slot]}</b><i>empty</i>Click to put something in it.`);
+  }
+
+  if (!blocked) btn.onclick = () => openPicker(slot);
+  return btn;
+}
+
+/* app.js probes for the slot captures by loading one, so the answer lands after
+   the first paint; without this the doll would keep the unframed fallback for
+   the rest of the session. */
+document.addEventListener("slotframes", () => drawSlots());
+/* Same for the portrait frame, which the roster cards draw the creature in. */
+document.addEventListener("framebox", () => drawRoster());
+
+function drawSlots() {
+  if (!document.getElementById("odollL")) return;
+  if (!S.slots) S.slots = {};
+
+  for (const [colId, keys] of Object.entries(DOLL_COLUMNS)) {
+    const col = document.getElementById(colId);
+    col.replaceChildren();
+    for (const k of keys) col.appendChild(slotButton(k));
+  }
+
+  /* The figure is the planner's, and is decoration: if it is not there the
+     slots close up around the gap rather than leaving a hole. */
+  const fig = document.getElementById("oCharFig");
+  if (fig && !fig.dataset.tried) {
+    fig.dataset.tried = "1";
+    fig.onerror = () => fig.classList.add("gone");
+    fig.src = uiArt("character_male.png");
+  }
+
+  const left = pointsLeft();
+  const btn = document.getElementById("openAttrs");
+  btn.querySelector("span").textContent = String(left);
+  btn.classList.toggle("hasleft", left > 0);
+}
+
+/* ---- attribute points ---------------------------------------------------
+   One point every two levels since v3489988, two stat points each, twenty-five
+   to a stat. The same numbers the planner spends, so a build carries across. */
+const ALLOC_ATTRS = [...ATTRS, "accuracy"];
+const pointsTotal = () => GAME.attributePoints(S.level);
+const pointsSpent = () => ALLOC_ATTRS.reduce((t, k) => t + ((S.alloc || {})[k] || 0), 0);
+const pointsLeft = () => Math.max(0, pointsTotal() - pointsSpent());
+
+function trimAlloc() {
+  if (!S.alloc) S.alloc = {};
+  let over = pointsSpent() - pointsTotal();
+  for (let i = ALLOC_ATTRS.length - 1; i >= 0 && over > 0; i--) {
+    const take = Math.min(S.alloc[ALLOC_ATTRS[i]] || 0, over);
+    S.alloc[ALLOC_ATTRS[i]] = (S.alloc[ALLOC_ATTRS[i]] || 0) - take;
+    over -= take;
+  }
+}
+
+function drawAlloc() {
+  const rows = document.getElementById("attrRows");
+  rows.replaceChildren();
+  if (!S.alloc) S.alloc = {};
+  for (const k of ALLOC_ATTRS) {
+    const row = el("div", "allocrow");
+    row.appendChild(el("span", "an", cap(k)));
+
+    const minus = el("button", null, "−");
+    minus.type = "button";
+    minus.disabled = !(S.alloc[k] > 0);
+    minus.title = "Remove a point — hold Shift for 5";
+    minus.onclick = e => stepAlloc(k, -(e.shiftKey ? 5 : 1));
+
+    const val = el("span", "av", String(S.alloc[k] || 0));
+    if ((S.alloc[k] || 0) >= GAME.MAX_PER_ATTR) val.classList.add("maxed");
+
+    const plus = el("button", null, "+");
+    plus.type = "button";
+    plus.disabled = (S.alloc[k] || 0) >= GAME.MAX_PER_ATTR || pointsLeft() <= 0;
+    plus.title = "Add a point — hold Shift for 5";
+    plus.onclick = e => stepAlloc(k, e.shiftKey ? 5 : 1);
+
+    row.append(minus, val, plus);
+    row.appendChild(el("span", "amax",
+      ((S.alloc[k] || 0) >= GAME.MAX_PER_ATTR ? "max" : "/ " + GAME.MAX_PER_ATTR)
+      + ((S.alloc[k] || 0) ? `  +${(S.alloc[k] || 0) * GAME.STAT_PER_POINT}` : "")));
+    rows.appendChild(row);
+  }
+  document.getElementById("attrSummary").textContent =
+    `${pointsSpent()} spent, ${pointsLeft()} left of ${pointsTotal()} at level ${S.level}. `
+    + `Each is worth ${GAME.STAT_PER_POINT}, and no stat takes more than ${GAME.MAX_PER_ATTR}.`;
+}
+
+function stepAlloc(k, by) {
+  if (!S.alloc) S.alloc = {};
+  const room = by > 0
+    ? Math.min(by, GAME.MAX_PER_ATTR - (S.alloc[k] || 0), pointsLeft())
+    : Math.max(by, -(S.alloc[k] || 0));
+  if (!room) return;
+  S.alloc[k] = (S.alloc[k] || 0) + room;
+  S.autoGear = false;
+  S.source = "edited by hand";
+  drawAlloc();
+  regear(); drawSlots(); render();
+}
+
+/* ---- the picker ---------------------------------------------------------
+   Everything legal for one slot, priced at the rarity and instability you are
+   choosing, sorted by whichever column you press. Instability only moves the
+   two rifts that carry it, so the rest of the table simply does not react to
+   that field — and the note says so rather than leaving you to notice.        */
+const PICK = {slot: null, quality: 4, tier: 0, q: "", sort: {key: "total", desc: true}};
+
+function openPicker(slot) {
+  PICK.slot = slot;
+  const st = S.slots[slot];
+  PICK.quality = st && st.item ? st.quality : PICK.quality;
+  PICK.tier = st && st.item ? st.tier : PICK.tier;
+  PICK.q = "";
+  document.getElementById("pickSearch").value = "";
+  document.getElementById("pickTitle").textContent = SLOT_LABEL_UI[slot] || slot;
+  document.getElementById("pickClear").disabled = !(st && st.item);
+  pickRarity.setValue(PICK.quality);
+  pickInstIn.value = String(PICK.tier);
+  drawPicker();
+  document.getElementById("pickDlg").showModal();
+}
+
+function pickerPool() {
+  return (D.items || []).filter(i =>
+    i.slot === PICK.slot && i.lvl <= S.level && usableBy(i, S.cls));
+}
+
+function drawPicker() {
+  const cols = [{key: "name", label: "Item", left: true},
+                {key: "lvl", label: "Lvl"},
+                ...PICK_STATS.map(k => ({key: k, label: SHORT_STAT[k]})),
+                {key: "total", label: "Total"}];
+
+  const term = PICK.q.trim().toLowerCase();
+  const rows = pickerPool()
+    .filter(i => !term || i.name.toLowerCase().includes(term))
+    .map(i => {
+      const tier = scalesWithInstability(i.id) ? PICK.tier : 0;
+      const o = {item: i, name: i.name, lvl: i.lvl, tier, scales: scalesWithInstability(i.id)};
+      o.total = 0;
+      for (const k of PICK_STATS) {
+        o[k] = scaleStat(i[k] || 0, PICK.quality, tier);
+        o.total += o[k];
+      }
+      return o;
+    });
+  applySort(rows, PICK.sort);
+  sortableTable(document.getElementById("pickHead"), cols, PICK.sort, drawPicker);
+
+  const body = document.getElementById("pickRows");
+  body.replaceChildren();
+  if (!rows.length) {
+    const tr = el("tr");
+    const td = el("td", "empty", `Nothing a ${(CLASSES[String(S.cls)] || {}).name} `
+      + `can put here at level ${S.level}.`);
+    td.colSpan = cols.length;
+    tr.appendChild(td);
+    body.appendChild(tr);
+  }
+
+  const equipped = S.slots[PICK.slot];
+  for (const r of rows) {
+    const tr = el("tr");
+    tr.style.cursor = "pointer";
+    if (equipped && equipped.item && equipped.item.id === r.item.id) tr.classList.add("on");
+
+    const nameCellEl = el("td", "l");
+    const wrap = el("span");
+    wrap.style.display = "inline-flex";
+    wrap.style.alignItems = "center";
+    wrap.style.gap = "9px";
+    wrap.appendChild(framedIcon(r.item.id, !!r.item.icon, PICK.quality, 34));
+    const label = el("span");
+    label.appendChild(el("b", "q" + PICK.quality, r.name));
+    if (r.item.hand || r.item.sub)
+      label.appendChild(el("span", null, " · " + [r.item.sub, r.item.hand].filter(Boolean).join(" ")));
+    wrap.appendChild(label);
+    nameCellEl.appendChild(wrap);
+    tr.appendChild(nameCellEl);
+
+    tr.appendChild(el("td", null, String(r.lvl)));
+    for (const k of PICK_STATS) {
+      const td = el("td", r[k] ? null : "zero", r[k] ? String(r[k]) : "–");
+      tr.appendChild(td);
+    }
+    tr.appendChild(el("td", null, String(r.total)));
+
+    tr.onclick = () => {
+      S.slots[PICK.slot] = {item: r.item, quality: PICK.quality, tier: r.tier};
+      /* A two-hander occupies both hands, the way the panel does it. */
+      if (PICK.slot === "Main Hand"
+          && String(r.item.hand || "").toLowerCase().startsWith("t"))
+        delete S.slots["Off Hand"];
+      S.autoGear = false;
+      S.source = "picked by hand";
+      document.getElementById("pickDlg").close();
+      regear(); drawSlots(); syncInputs(); render();
+    };
+    body.appendChild(tr);
+  }
+
+  const scaling = rows.filter(r => r.scales).length;
+  document.getElementById("pickNote").innerHTML = PICK.tier
+    ? `Priced at <b>${QUALITY[PICK.quality].n}</b>, instability <b>${PICK.tier}</b>. `
+      + `${scaling} of these ${scaling === 1 ? "drops" : "drop"} in Ashenroot Grotto or `
+      + `Embermaw Caverns and ${scaling === 1 ? "scales" : "scale"} with it; the rest print `
+      + `the same numbers at any depth.`
+    : `Priced at <b>${QUALITY[PICK.quality].n}</b>. Set an instability to see what the two `
+      + `level-80 rifts are worth at the tier you farm them.`;
+}
+
+/* ---- wiring -------------------------------------------------------------- */
+const pickRarity = rarityButtons(4, q => { PICK.quality = q; drawPicker(); });
+document.getElementById("pickRarity").appendChild(pickRarity);
+const pickInstIn = instabilityInput(0, v => { PICK.tier = v; drawPicker(); });
+pickInstIn.id = "pickInstIn";
+document.getElementById("pickInst").appendChild(pickInstIn);
+
+document.getElementById("pickSearch").oninput = e => { PICK.q = e.target.value; drawPicker(); };
+document.getElementById("pickClose").onclick = () => document.getElementById("pickDlg").close();
+document.getElementById("pickClear").onclick = () => {
+  delete S.slots[PICK.slot];
+  S.autoGear = false;
+  S.source = "picked by hand";
+  document.getElementById("pickDlg").close();
+  regear(); drawSlots(); syncInputs(); render();
+};
+
+const bulkRarity = rarityButtons(4, q => { BULK.quality = q; });
+document.getElementById("bulkRar").appendChild(bulkRarity);
+const BULK = {quality: 4, tier: 0};
+const bulkInstIn = instabilityInput(0, v => { BULK.tier = v; });
+/* Not "bulkInst" — that id belongs to the span this goes inside, and two of
+   them makes getElementById a coin toss. */
+bulkInstIn.id = "bulkInstIn";
+document.getElementById("bulkInst").appendChild(bulkInstIn);
+document.getElementById("bulkApply").onclick = () => {
+  for (const slot of SLOT_ORDER) {
+    const st = S.slots[slot];
+    if (!st || !st.item) continue;
+    st.quality = BULK.quality;
+    st.tier = scalesWithInstability(st.item.id) ? BULK.tier : 0;
+  }
+  S.autoGear = false;
+  S.source = `every slot at ${QUALITY[BULK.quality].n}`
+    + (BULK.tier ? `, instability ${BULK.tier}` : "");
+  regear(); drawSlots(); syncInputs(); render();
+};
+
+document.getElementById("openAttrs").onclick = () => {
+  drawAlloc();
+  document.getElementById("attrDlg").showModal();
+};
+document.getElementById("attrClose").onclick = () => document.getElementById("attrDlg").close();
+document.getElementById("attrReset").onclick = () => {
+  ALLOC_ATTRS.forEach(k => S.alloc[k] = 0);
+  S.autoGear = false;
+  drawAlloc(); regear(); drawSlots(); render();
+};
+/* Folded state is part of how the page is set up, so it is remembered with
+   everything else rather than resetting on every visit. */
+function drawGearFold() {
+  const body = document.getElementById("gearBody");
+  const btn = document.getElementById("gearFold");
+  const open = !S.gearFolded;
+  body.hidden = !open;
+  btn.textContent = open ? "Hide gear" : "Show gear";
+  btn.setAttribute("aria-expanded", open ? "true" : "false");
+  btn.title = open ? "Hide the gear" : "Show the gear";
+
+  let sum = document.getElementById("gearSum");
+  if (!sum) {
+    sum = el("div", "gearsum");
+    sum.id = "gearSum";
+    body.parentNode.insertBefore(sum, body.nextSibling);
+  }
+  sum.hidden = open;
+  if (!open) {
+    const worn = SLOT_ORDER.filter(k => S.slots && S.slots[k] && S.slots[k].item);
+    const tiers = worn.map(k => S.slots[k].tier || 0);
+    const qs = new Set(worn.map(k => S.slots[k].quality));
+    /* Seeding the minimum with 0 made every set read "0–120". */
+    const lo = tiers.length ? Math.min(...tiers) : 0;
+    const hi = tiers.length ? Math.max(...tiers) : 0;
+    sum.replaceChildren();
+    sum.appendChild(el("span", null, `${worn.length} of ${SLOT_ORDER.length} slots`));
+    sum.appendChild(el("b", null, worn.length
+      ? (qs.size === 1 ? QUALITY[[...qs][0]].n : "mixed")
+        + " · instability " + (lo === hi ? lo : lo + "–" + hi)
+      : "nothing equipped"));
+  }
+}
+document.getElementById("gearFold").onclick = () => {
+  S.gearFolded = !S.gearFolded;
+  drawGearFold();
+  saveState();
+};
+
+/* ---- keeping the page where you left it ---------------------------------- */
+const KEY = "elegon.optimizer.v1";
+function saveState() {
+  try {
+    /* Only the item id is worth storing; everything else about it is in the
+       catalogue and would go stale the moment the data is rebuilt. */
+    const slots = S.slots ? Object.fromEntries(Object.entries(S.slots)
+      .map(([k, st]) => [k, {item: {id: st.item.id}, quality: st.quality, tier: st.tier}])) : null;
+    localStorage.setItem(KEY, JSON.stringify({S: Object.assign({}, S, {slots}), FIGHT}));
+  } catch {}
+}
+function restore() {
+  const hash = location.hash.replace(/^#/, "");
+  if (hash.startsWith("o=")) { if (decodeState(hash)) { S.source = "a shared link"; return true; } }
+  if (hash) { const b = decodeBuild(codeFrom(hash)); if (b) { adopt(b, "a shared link"); return true; } }
+  try {
+    const raw = JSON.parse(localStorage.getItem(KEY) || "null");
+    if (raw && raw.S) {
+      Object.assign(S, raw.S); Object.assign(FIGHT, raw.FIGHT || {});
+      /* Slots come back as plain objects; the item has to be looked up again so
+         it is the catalogue's row and not last week's copy of it. */
+      if (S.slots) {
+        const back = {};
+        for (const [k, st] of Object.entries(S.slots)) {
+          const item = st && st.item && D.items.find(i => i.id === st.item.id);
+          if (item) back[k] = {item, quality: st.quality, tier: st.tier};
+        }
+        S.slots = Object.keys(back).length ? back : null;
+      }
+      regear();
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
+if (!restore()) Object.assign(S, {cls: 1, level: 80, rank: 5, autoGear: true});
+regear();
+initTimeline();
+if (!S.alloc) S.alloc = {};
+trimAlloc();
+syncInputs();
+render();
+</script>
+</body>
+</html>
