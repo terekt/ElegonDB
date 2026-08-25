@@ -2200,8 +2200,10 @@ select.riftsel:hover{
    starting 30px to its left, so the outer columns' captions run from -6 to 386 - six
    pixels past the canvas at each edge. At 380 with overflow hidden they were being shaved
    on both sides. */
-/* The tree takes the room and the attributes take what they need: seven short rows do not
-   improve at 600px wide, while the tree does. */
+/* The tree column takes the room; the attributes take what they need. The tree itself is
+   380px and stays 380px - the game's own measurement - so the extra width becomes margin
+   either side of it rather than a bigger tree. A panel that is all edge-to-edge grid reads
+   as a wall; the same grid with air around it reads as a diagram. */
 .talentbody{display:grid;grid-template-columns:minmax(392px,1fr) 320px;gap:24px;
   align-items:start}
 .talentcol{min-width:0}
@@ -2212,9 +2214,11 @@ select.riftsel:hover{
    row it can show without scrolling is one less thing to hunt for. The 6px of horizontal
    padding is the caption overhang above. */
 .talentcol.treecol{max-height:82vh;overflow-y:auto;overflow-x:hidden;
-  padding:0 6px;scrollbar-gutter:stable}
-/* Centred when the column is wider than the magnified tree - which happens at the 2x cap
-   on a very wide window, and on the way down to the narrow layout. */
+  /* both-edges, so the room reserved for the scrollbar is matched on the left and the
+     tree ends up optically centred rather than pushed a scrollbar's width off it. */
+  padding:0 6px;scrollbar-gutter:stable both-edges}
+/* Centred in whatever the column is, so the room the wide modal buys lands as an even
+   margin on both sides of the tree instead of a gap on the right of it. */
 .talentcol.treecol > .tree{margin-inline:auto}
 /* Sticky so the attributes and their remaining points stay beside whatever part of the
    tree you have scrolled to. */

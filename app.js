@@ -3081,37 +3081,6 @@ const TALENT = (() => {
   const at = n => ({x: GRID.left + n.col * GRID.colGap,
                     y: GRID.top + (n.row - 1) * GRID.rowGap});
 
-  /** The canvas a class's tree needs at 1:1, in the game's own pixels. */
-  function sizeFor(cls) {
-    const list = forClass(cls);
-    const rows = list.length ? Math.max(...list.map(n => n.row)) : 1;
-    // 392 rather than 380: a caption is a 112px box starting 30px left of its node, so the
-    // outer columns overhang the canvas by six pixels at each edge.
-    return {w: GRID.width + 12, h: GRID.top + rows * GRID.rowGap};
-  }
-
-  /**
-   * How much to magnify the tree to use the room it has been given.
-   *
-   * The layout is the client's and its proportions are not ours to alter, but its absolute
-   * size is: 52px nodes were chosen for a panel inside a game, not for a browser with a
-   * modal the height of the screen. So it scales as one piece.
-   *
-   * Driven by WIDTH, not height. The tree is 380 wide and up to 1,056 tall while a modal is
-   * wide and short, so those two shapes never reconcile: no scale makes a tall narrow thing
-   * fill a wide box. Height is the axis that scrolls, width is the axis going to waste, so
-   * width is the one that decides.
-   *
-   * Never below 1 - shrinking would turn a tree that is merely tall into one that is also
-   * unreadable, and scrolling is the better answer to tall. Capped at 2 for layout's sake
-   * rather than the art's: the icons are 512px square and would take far more.
-   */
-  function scaleFor(cls, avail) {
-    const {w} = sizeFor(cls);
-    if (!avail || !avail.w) return 1;
-    return Math.max(1, Math.min(avail.w / w, 2));
-  }
-
   /** Spend one point, or as many as the budget allows. Returns whether anything moved. */
   function add(node, ranks, level, all) {
     let moved = false;
@@ -3184,22 +3153,11 @@ const TALENT = (() => {
     if (!list.length) { host.replaceChildren(); return; }
     const rows = Math.max(...list.map(n => n.row), 1);
     const height = GRID.top + rows * GRID.rowGap;
+    /* Always at 1:1. These are the sizes the client draws the panel at and they are not
+       ours to change - a tree that has been magnified is no longer the panel a player is
+       looking at in the game. Room around it is the modal's job, not the tree's. */
     host.style.width = GRID.width + "px";
     host.style.height = height + "px";
-
-    /* A transform does not change layout, so the extra size is reserved as margin -
-       otherwise a magnified tree would draw over whatever sits under it and its own
-       scroller would think it had nothing to scroll. */
-    const scale = opts.scale || 1;
-    if (scale > 1.005) {
-      host.style.transformOrigin = "top left";
-      host.style.transform = `scale(${scale})`;
-      host.style.marginRight = (GRID.width * (scale - 1)) + "px";
-      host.style.marginBottom = (height * (scale - 1)) + "px";
-    } else {
-      host.style.transform = "";
-      host.style.marginRight = host.style.marginBottom = "";
-    }
     host.replaceChildren();
 
     const left = spellPointsAt(opts.level) - spent(cls, opts.ranks);
@@ -3290,8 +3248,7 @@ const TALENT = (() => {
 
   return {ST, POWER_PER_RANK, GRID, spellPointsAt, attrPointsAt, forClass, attrs, spellOf,
           rivalOf, prereqMet, grantFree, spent, attrSpent, stateOf, parentsOf, at,
-          sizeFor, scaleFor, add, remove, reconcile, rankScaling, draw, spellRanksOf,
-          fromSpellRanks};
+          add, remove, reconcile, rankScaling, draw, spellRanksOf, fromSpellRanks};
 })();
 
 /* ---- the footer ----------------------------------------------------------
