@@ -564,8 +564,13 @@ td .framed{margin:-7px 0}
 .tip i{display:block;font-style:normal;font-family:var(--game-font);font-size:11.5px;
   color:var(--parchment);margin-bottom:7px}
 
+/* The height is divided by the zoom for the same reason every other 100vh sum in this file
+   is: vh is measured against the UNZOOMED viewport, and past 1700px the root is scaled
+   1.15, past 2200px 1.35. An 88vh dialog is 101% of the screen at 1.15 and 119% at 1.35 -
+   it bleeds off the top and the bottom, evenly, because a dialog is centred. */
 dialog{background:var(--panel);color:var(--ink);border:1px solid var(--line);
-  border-radius:10px;padding:0;width:min(1180px,94vw);max-height:88vh}
+  border-radius:10px;padding:0;width:min(1180px,94vw);
+  max-height:calc(88vh / var(--zoom))}
 /* A column, so the body gets exactly the room the header leaves and the dialog itself never
    has anything to scroll. It used to be a fixed 62vh body under a header of whatever height
    the hero came to: on a 1080p screen at 125% scaling those add up past the dialog's own cap,
@@ -581,7 +586,7 @@ dialog[open]{display:flex;flex-direction:column}
    rows of a Knight are 1,056px at the size the game draws them. So this dialog takes
    nearly the whole window rather than the 440px it needed when it held seven rows of
    attributes, and the tree is magnified into whatever that leaves - see scaleFor. */
-#attrDlg{width:min(1240px,96vw);max-height:94vh}
+#attrDlg{width:min(1240px,96vw);max-height:calc(94vh / var(--zoom))}
 dialog::backdrop{background:var(--scrim);backdrop-filter:blur(2px)}
 
 /* Two rows, not one wrapping row. The filters used to share a line with Close, so on a
@@ -2213,7 +2218,7 @@ select.riftsel:hover{
    of the dialog to give it, so it takes 74vh - a Knight's ten rows are 1,056px and every
    row it can show without scrolling is one less thing to hunt for. The 6px of horizontal
    padding is the caption overhang above. */
-.talentcol.treecol{max-height:82vh;overflow-y:auto;overflow-x:hidden;
+.talentcol.treecol{max-height:calc(82vh / var(--zoom));overflow-y:auto;overflow-x:hidden;
   /* both-edges, so the room reserved for the scrollbar is matched on the left and the
      tree ends up optically centred rather than pushed a scrollbar's width off it. */
   padding:0 6px;scrollbar-gutter:stable both-edges}
