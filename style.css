@@ -573,8 +573,11 @@ dialog{background:var(--panel);color:var(--ink);border:1px solid var(--line);
    dialog with display:none, which a bare display:flex here would override. */
 dialog[open]{display:flex;flex-direction:column}
 /* Seven short rows do not need the item picker's width. */
-#attrDlg{width:min(440px,94vw)}
-#attrDlg .dbody{max-height:none}
+/* Wide enough for the tree at its true 380px beside the attribute rows, and no wider:
+   the tree's measurements are the game's, so the panel is sized to them rather than the
+   other way round. 440px was the old attributes-only width and made the two columns wrap,
+   which put the attributes a full tree-length below the thing they are spent alongside. */
+#attrDlg{width:min(820px,94vw)}
 dialog::backdrop{background:var(--scrim);backdrop-filter:blur(2px)}
 
 /* Two rows, not one wrapping row. The filters used to share a line with Close, so on a
@@ -2179,3 +2182,29 @@ select.riftsel:hover{
 .talentcol{min-width:0}
 .talentcol .ssection{margin-top:0}
 .talentcol .note{margin:4px 0 12px}
+
+/* ---- talents beside attributes --------------------------------------------
+   Two budgets, spent from one panel, so both have to stay in view. The tree is fixed at
+   the width the game draws it and can run to 1,056px tall for a Knight; the attributes are
+   seven short rows. Letting the whole body scroll would mean scrolling a tree-length past
+   the attributes to reach them, so instead the TREE scrolls in its own column and the
+   attributes stay put beside it.
+
+   Below 760px there is no room for two columns and it stacks, tree first - which is the
+   order they are read in. */
+.talentbody{display:grid;grid-template-columns:380px minmax(240px,1fr);gap:22px;
+  align-items:start}
+.talentcol{min-width:0}
+.talentcol .ssection{margin-top:0}
+.talentcol .note{margin:4px 0 12px}
+/* The tree's own scroller. 62vh leaves the dialog's head and the legend on screen. */
+.talentcol.treecol{max-height:62vh;overflow-y:auto;overflow-x:hidden;
+  padding-right:6px;scrollbar-gutter:stable}
+/* Sticky so the attributes and their remaining points stay beside whatever part of the
+   tree you have scrolled to. */
+.talentcol.attrcol{position:sticky;top:0}
+@media (max-width:760px){
+  .talentbody{grid-template-columns:1fr}
+  .talentcol.treecol{max-height:none;overflow:visible}
+  .talentcol.attrcol{position:static}
+}
