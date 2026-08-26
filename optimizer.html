@@ -225,6 +225,24 @@
 .gval b{display:block;font-size:16px;font-weight:600;color:var(--good,#4c9a4c)}
 .gval span{font-size:10px;letter-spacing:.7px;text-transform:uppercase;color:var(--faint)}
 .laneall{font-size:11.5px;padding:3px 9px;margin-right:2px}
+
+/* ---- the progress bar ------------------------------------------------------
+   A solve holds the thread, so this cannot animate while one runs - it steps. Which is
+   why it says what it is DOING rather than pretending to a smooth percentage: a label
+   that changes four times, and a count through the tree shapes where the long wait is,
+   are honest about the shape of the work in a way a spinner is not. */
+#feedProg{display:flex;flex-direction:column;align-items:center;gap:10px;
+  padding:34px 20px 30px}
+#feedProg[hidden]{display:none}
+.progsay{margin:0;font-family:var(--panel-font);font-size:15.5px;color:var(--ink)}
+.progtrack{width:min(340px,100%);height:6px;border-radius:3px;overflow:hidden;
+  background:color-mix(in oklab,var(--panel2) 80%,transparent);
+  box-shadow:inset 0 0 0 1px var(--line-soft)}
+.progtrack i{display:block;height:100%;width:0;border-radius:3px;background:var(--gold);
+  transition:width .28s ease}
+.progof{margin:0;font-size:12px;color:var(--faint);font-variant-numeric:tabular-nums;
+  min-height:1.2em}
+@media (prefers-reduced-motion:reduce){ .progtrack i{transition:none} }
 .feedsum{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:0 0 12px;
   font-variant-numeric:tabular-nums}
 .feedsum .from{color:var(--faint);font-size:14px}
@@ -555,6 +573,14 @@
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- Shown only while a search is running. It replaces the invitation rather than
+             sitting beside it, so the panel always says exactly one thing. -->
+        <div id="feedProg" hidden>
+          <p class="progsay" id="progSay"></p>
+          <div class="progtrack"><i id="progFill"></i></div>
+          <p class="progof" id="progOf"></p>
         </div>
 
         <div id="lanes"></div>
@@ -4225,7 +4251,7 @@ function solveAlloc() {
  * The whole search. Returns the ranks it would spend and what they measure, against what
  * the build measures now.
  */
-function solveTalents() {
+async function solveTalents(tick) {
   const budget = TALENT.spellPointsAt(S.level);
   const shapes = talentShapes(S.cls);
   /* What the build measures NOW, as the page has it - which is not the same as scoring the
@@ -4237,7 +4263,10 @@ function solveTalents() {
   /* Shapes that differ only in a pair the rotation never casts allocate to the same spend,
      and solving the same spend three times is three hundred milliseconds each. */
   const seen = new Set(), tried = [];
+  let done = 0;
   for (const shape of shapes) {
+    if (tick) { await tick(done, shapes.length); }
+    done++;
     const cand = fillShape(shape, budget);
     const sig = TALENT.forClass(S.cls).map(n => cand.ranks[n.id] | 0).join(",");
     if (seen.has(sig)) continue;
@@ -4314,9 +4343,19 @@ async function whileSolving(id, work) {
     requestAnimationFrame(() => setTimeout(r, 0));
     setTimeout(r, 80);
   });
-  try { work(); }
+  try { await work(); }
   finally { btn.disabled = false; btn.textContent = was; }
 }
+
+/* One painted frame. A solve holds the thread for seconds at a time, so nothing on screen
+   can move DURING one - the most a progress bar can honestly do is advance between them,
+   which means yielding here often enough that each step gets drawn before the next starts.
+   Raced against a timer for the same reason the button repaint is: a hidden tab never
+   paints, and a search that never starts is worse than one that starts unannounced. */
+const paint = () => new Promise(r => {
+  requestAnimationFrame(() => setTimeout(r, 0));
+  setTimeout(r, 60);
+});
 
 /**
  * How much better, in the terms the mode is actually measured in.
@@ -4647,11 +4686,33 @@ function gearRowEl(r) {
   return row;
 }
 
-function findChanges() {
+/* The search, in the four phases it actually has, each announcing itself before it takes
+   the thread. The weights are not guesses: on a level 80 Knight the baseline is under a
+   second, the slot search two or three, the tree the best part of ten, and the points
+   about one - so the bar spends its time where the work is rather than moving in equal
+   quarters and then hanging on the third. */
+const FIND_PHASES = [
+  {at: 0.00, say: "Measuring the build you have"},
+  {at: 0.12, say: "Searching every slot for something better"},
+  {at: 0.40, say: "Solving the talent tree"},
+  {at: 0.88, say: "Spreading the attribute points"},
+];
+
+async function findChanges(report) {
+  const say = async (i, extra) => {
+    if (!report) return;
+    const p = FIND_PHASES[i];
+    const next = FIND_PHASES[i + 1] ? FIND_PHASES[i + 1].at : 1;
+    report(p.say, extra ? p.at + (next - p.at) * extra.frac : p.at, extra && extra.of);
+    await paint();
+  };
+
+  await say(0);
   const before = buildScore(SIM.solve(SIM.model(D, baseCfg()), {restarts: 6}).result);
 
   /* Gear: the search the page already runs, read as a list of slots worth changing rather
      than as a finished set to accept whole. */
+  await say(1);
   runGearSearch();
   const g = GEAR.result || {rows: []};
   /* The gear search reports a slot's worth as damage across the whole fight; the two
@@ -4696,7 +4757,9 @@ function findChanges() {
 
   /* Talents and attributes are one row each. Both solvers produce a whole spend rather than
      a sequence of moves, and splitting one into rows would invite ticking half of it. */
-  const t = solveTalents();
+  await say(2);
+  const t = await solveTalents(async (done, total) =>
+    say(2, {frac: done / total, of: `${done} of ${total} tree shapes`}));
   /* Measured against the tree as it stands, which is now the same baseline every other
      lane uses. An untouched tree is a real answer here - forty points unspent - rather than
      a tie against a build nobody can hold. */
@@ -4706,6 +4769,7 @@ function findChanges() {
     .map(n => ((TALENT.spellOf(n) || {}).name || n.id) + " " + t.best.ranks[n.id])
     .join(", ") : "";
 
+  await say(3);
   const keepAlloc = S.alloc;
   const a = solveAlloc();
   S.alloc = keepAlloc;
@@ -4903,9 +4967,35 @@ function drawLanes() {
   drawSummary();
 }
 
-const runFeed = id => whileSolving(id, () => { findChanges(); drawLanes(); });
+const runFeed = id => whileSolving(id, async () => {
+  showProgress(true);
+  try { await findChanges(setProgress); }
+  finally { showProgress(false); }
+  drawLanes();
+});
 document.getElementById("feedRun").onclick = () => runFeed("feedRun");
 document.getElementById("feedAgain").onclick = () => runFeed("feedAgain");
+
+function showProgress(on) {
+  const box = document.getElementById("feedProg");
+  const cta = document.getElementById("feedCta");
+  const lanes = document.getElementById("lanes");
+  if (!box) return;
+  box.hidden = !on;
+  if (cta) cta.hidden = on || !!LANES.data;
+  lanes.style.display = on ? "none" : "";
+  if (on) setProgress("Starting", 0);
+}
+
+function setProgress(say, frac, of) {
+  const t = document.getElementById("progSay");
+  const f = document.getElementById("progFill");
+  const o = document.getElementById("progOf");
+  if (!t) return;
+  t.textContent = say;
+  f.style.width = Math.round(Math.max(0, Math.min(1, frac)) * 100) + "%";
+  o.textContent = of || "";
+}
 
 document.getElementById("feedClear").onclick = () => {
   LANES.basket.clear(); LANES.combined = null; drawLanes();
