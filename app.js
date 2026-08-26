@@ -981,6 +981,14 @@ function paintSheet() {
   SHEET.key = view.key;
 
   if (!dlg.open) dlg.showModal();
+
+  /* Anything that had to measure itself gets its chance now. A closed dialog has no
+     layout, so a canvas built inside one is sized 300x150 - its default - and a
+     ResizeObserver is no help either: those deliver before a paint, and a background tab
+     never paints. Asking the sheet's own drawables to redraw once it is on screen is the
+     only order that always holds. */
+  for (const box of dlg.querySelectorAll(".qmap"))
+    if (typeof box.redraw === "function") box.redraw();
 }
 
 /** Opens a view, replacing anything already open. */
@@ -2277,27 +2285,123 @@ function questMap(group, opts) {
     box.style.backgroundPosition = `${pct(x, map.w - w)} ${pct(y, map.h - h)}`;
   }
 
-  // People last, so a giver standing in a field of wolves is still the thing you see.
+  /* ---- the objectives, on a canvas ----------------------------------------
+     A person's whole map is 633 marks for a busy warden - 593 of them wolf spawns - and as
+     633 absolutely positioned elements that is 85% of the dialog's nodes, each one laid
+     out, styled and painted over a 4096x3072 photograph every time anything in the sheet
+     moves. The marks are 9px flat discs; nothing about them needs an element.
+
+     So the small ones are drawn, and the few that are not small stay as elements: a giver,
+     a turn-in and a portal carry gradients, a glyph and a shadow, there are never more than
+     a handful, and they are the marks the eye is looking for. Fidelity where it is seen,
+     one node where it is not.                                                            */
+  const DOT_KINDS = new Set(["kill", "gather"]);
+  const DOT_STYLE = {
+    kill:   {fill: "#c0392b", r: compact ? 3.5 : 4.5},
+    gather: {fill: "#3f9c5a", r: compact ? 3.5 : 4.5},
+  };
+  /* The CSS dims what is not lit with opacity .16 and saturate(.35); a canvas has to do
+     both itself, so the desaturation is worked out here rather than approximated. */
+  const desaturate = (hex, s) => {
+    const n = parseInt(hex.slice(1), 16);
+    const R = (n >> 16) & 255, G = (n >> 8) & 255, B = n & 255;
+    const m = (a, b, c) => Math.max(0, Math.min(255, Math.round(a * R + b * G + c * B)));
+    return `rgb(${m(.213 + .787 * s, .715 - .715 * s, .072 - .072 * s)},`
+         + `${m(.213 - .213 * s, .715 + .285 * s, .072 - .072 * s)},`
+         + `${m(.213 - .213 * s, .715 - .715 * s, .072 + .928 * s)})`;
+  };
+
   const order = {kill: 0, gather: 1, portal: 2, turnin: 3, giver: 4};
-  marks.map((m, i) => ({m, p: pixels[i]}))
-       .sort((a, b) => order[a.m.kind] - order[b.m.kind])
-       .forEach(({m, p}) => {
+  const placed = marks.map((m, i) => ({m, p: pixels[i]}))
+                      .sort((a, b) => order[a.m.kind] - order[b.m.kind]);
+
+  // Where each drawn mark sits, as a fraction of the box, so a resize needs no recompute.
+  const dots = placed.filter(({m}) => DOT_KINDS.has(m.kind)).map(({m, p}) => ({
+    fx: (p[0] - x) / w, fy: (p[1] - y) / h, kind: m.kind, name: m.name,
+    quests: m.quests ? [...m.quests].map(String) : [],
+  }));
+
+  const canvas = el("canvas", "qmkdots");
+  box.appendChild(canvas);
+  let focusId = null;
+
+  function drawDots() {
+    const bw = box.clientWidth, bh = box.clientHeight;
+    if (!bw || !bh) return;
+    // The backing store carries the page zoom as well as the device ratio, or the discs are
+    // drawn at 1/zoom of the resolution they are shown at - the same correction the
+    // optimizer's strip makes for the same reason.
+    const dpr = Math.min(4, (window.devicePixelRatio || 1) * (pageZoom() || 1));
+    if (canvas.width !== Math.round(bw * dpr) || canvas.height !== Math.round(bh * dpr)) {
+      canvas.width = Math.round(bw * dpr);
+      canvas.height = Math.round(bh * dpr);
+    }
+    const g = canvas.getContext("2d");
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, bw, bh);
+    g.lineWidth = 1;
+    for (const d of dots) {
+      const lit = focusId == null || d.quests.includes(String(focusId));
+      const st = DOT_STYLE[d.kind];
+      g.globalAlpha = lit ? 1 : .16;
+      g.fillStyle = lit ? st.fill : desaturate(st.fill, .35);
+      g.strokeStyle = "rgba(0,0,0,.55)";
+      g.beginPath();
+      g.arc(d.fx * bw, d.fy * bh, st.r, 0, Math.PI * 2);
+      g.fill();
+      g.stroke();
+    }
+    g.globalAlpha = 1;
+  }
+
+  /* A drawn disc has no title of its own, so the canvas carries whichever one the pointer
+     is over. Nearest within its own radius, so a cloud of spawns still names the one being
+     pointed at rather than the first in the list. */
+  canvas.addEventListener("pointermove", e => {
+    const r = canvas.getBoundingClientRect();
+    if (!r.width) return;
+    const px = (e.clientX - r.left) / r.width, py = (e.clientY - r.top) / r.height;
+    let best = null, bestD = Infinity;
+    for (const d of dots) {
+      const dx = (d.fx - px) * r.width, dy = (d.fy - py) * r.height;
+      const dist = dx * dx + dy * dy;
+      if (dist < bestD) { bestD = dist; best = d; }
+    }
+    const reach = (DOT_STYLE.kill.r + 2) ** 2;
+    canvas.title = (best && bestD <= reach)
+      ? `${best.name} — ${QUEST_MARK[best.kind].label}` : "";
+  });
+
+  // The people and the portals, which are few and are worth their elements.
+  for (const {m, p} of placed) {
+    if (DOT_KINDS.has(m.kind)) continue;
     const dot = el("span", "qmk qmk-" + m.kind, QUEST_MARK[m.kind].glyph || "");
     dot.style.left = (((p[0] - x) / w) * 100).toFixed(3) + "%";
     dot.style.top = (((p[1] - y) / h) * 100).toFixed(3) + "%";
     dot.title = `${m.name} — ${QUEST_MARK[m.kind].label}`;
-    // Focusing dims rather than removes: a quest's own dots mean more when you can still
-    // see the rest of the person's work behind them.
     if (m.quests) dot.dataset.q = [...m.quests].join(" ");
     dot.dataset.target = m.name;
     box.appendChild(dot);
-  });
+  }
+
+  /* Focusing dims rather than removes: a quest's own places mean more when you can still
+     see the rest of the person's work behind them. */
   box.focusQuest = id => {
+    focusId = id;
     box.classList.toggle("focused", id != null);
     for (const dot of box.querySelectorAll(".qmk"))
       dot.classList.toggle("lit", id == null
         || (dot.dataset.q || "").split(" ").includes(String(id)));
+    drawDots();
   };
+
+  /* The box is sized by its aspect ratio against whatever width it is given, so its pixel
+     size is not known until it is laid out - and changes with the dialog. */
+  /* Drawn once now for anything already on screen, again when the sheet is shown - see
+     paintSheet - and again whenever the box is resized. */
+  box.redraw = drawDots;
+  drawDots();
+  if (window.ResizeObserver) new ResizeObserver(() => drawDots()).observe(box);
 
   const wrap = el("div", "qmapwrap");
   wrap.appendChild(box);

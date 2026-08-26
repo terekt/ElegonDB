@@ -2243,3 +2243,22 @@ select.riftsel:hover{
   .talentcol.treecol{max-height:none;overflow:visible}
   .talentcol.attrcol{position:static}
 }
+
+/* The objective marks are drawn rather than built: 593 wolf spawns is 593 elements laid out
+   and painted over a photograph, and a 9px flat disc needs none of that. The canvas covers
+   the box exactly and sits under the few marks that are still elements. */
+.qmkdots{position:absolute;inset:0;width:100%;height:100%;display:block;z-index:0}
+.qmap .qmk{z-index:1}
+
+/* ---- the map, while a sheet is over it -------------------------------------
+   Opening a modal promotes it to the top layer, and the browser re-processes the document
+   behind it. On this page that document holds 1,743 markers, and they cost 88ms of the
+   ~92ms it took to open an NPC's sheet - which is why the sheet, not the map, was what felt
+   slow. Nothing about them is visible at that moment: they sit behind a 55% black scrim
+   with a 2px blur over it.
+
+   content-visibility:hidden skips rendering the subtree entirely and takes that to 11ms.
+   Keyed off the open dialog in CSS rather than from script, so it cannot fall out of step
+   with a sheet that was closed by the Escape key, the backdrop, or a nested push. */
+body:has(dialog[open]) .mapmarkers,
+body:has(dialog[open]) .maplive{content-visibility:hidden}
