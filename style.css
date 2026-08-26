@@ -189,6 +189,14 @@ header nav a{color:var(--dim);font-size:15px;padding:2px 0;border-bottom:2px sol
   transition:color .12s}
 header nav a:hover{color:var(--ink)}
 header nav a.on{color:var(--gold);border-bottom-color:var(--gold)}
+/* A tag on a nav entry, for a page honest about not being finished. It sits INSIDE the
+   anchor rather than beside it, so it inherits the hover, travels with the active
+   underline, and cannot drift out of line with the word it qualifies. */
+header nav a .navtag{margin-left:6px;padding:1px 5px;border-radius:5px;
+  font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  vertical-align:2px;color:var(--gold);
+  background:color-mix(in oklab, var(--gold) 14%, transparent);
+  border:1px solid color-mix(in oklab, var(--gold) 32%, transparent)}
 
 /* Theme switch, hard right. It shows the theme you would GET, not the one you are in:
    a moon while light, a sun while dark, which is what a reader reaches for. */
@@ -218,6 +226,15 @@ header nav a.on{color:var(--gold);border-bottom-color:var(--gold)}
 .hero{margin:0 2px 18px}
 .hero h1{margin:0 0 4px;font-size:27px;color:var(--strong);letter-spacing:.2px}
 .hero p{margin:0;color:var(--faint);font-size:14px;max-width:70ch}
+/* The PAGE says it is in beta, not only the menu entry. Beside the title rather than under
+   it, so it is read together with the name and cannot be mistaken for part of the answer
+   the page prints next to it. Larger and rounder than the nav badge on purpose: the menu
+   marks the destination, this marks the thing you are standing in. */
+.hero h1 .betamark{margin-left:10px;padding:3px 10px;border-radius:999px;
+  font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+  vertical-align:5px;white-space:nowrap;color:var(--gold);
+  background:color-mix(in oklab, var(--gold) 13%, transparent);
+  border:1px solid color-mix(in oklab, var(--gold) 38%, transparent)}
 
 /* ---- filter bar ---------------------------------------------------------- */
 .bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--panel);

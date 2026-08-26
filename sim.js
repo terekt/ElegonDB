@@ -112,6 +112,7 @@ const OMIT = {
   wrongClass:"another class",
   tooHigh:   "not learned at this level",
   exclusive: "the other half of an either/or choice",
+  untaken:   "no talent points in it",
 };
 
 /** Every spell this class could bring to the given rotation, and what it does. */
@@ -123,6 +124,14 @@ function candidates(D, opts) {
     if (s.name === "Recall" || s.id === (D.spellTiming || {}).autoAttackSpellId) continue;
     if (String(s.cls) !== cls) continue;
     if (s.lvl > level) { dropped.push({s, why: OMIT.tooHigh}); continue; }
+    /* A talent tree, when one is given, decides what is on the bar at all - not just how
+       hard it hits. Without this a spell with no points in it still fought at rank 1
+       (talentMul(0) is 1), so taking a node and not taking it produced the same fight and
+       nothing could tell the two apart. */
+    if (opts.ranks && s.talent && !(opts.ranks[s.id] > 0)) {
+      dropped.push({s, why: OMIT.untaken});
+      continue;
+    }
 
     const periodic = isPeriodic(s);
     const hots = periodic && healsOverTime(s);
@@ -302,6 +311,55 @@ function procFor(D, cls, actions) {
 }
 
 
+/* ---- what a swing is actually worth -----------------------------------------
+ * Two things happen to every landed hit that the rest of this file does not model, and
+ * they pull in opposite directions. Both were measured on 2026-08-26; the numbers and the
+ * confidence in them are very different, which is why only one of them is on by default.
+ *
+ * CRIT is settled. 1,174 auto attacks against two level-78 creatures: the non-crit hit was
+ * 23 damage every single time across 1,063 hits - the base is deterministic - and the 111
+ * crits ran 32 to 37, mean 34.60. Fitting the multiplier as a uniform range with the result
+ * rounded gives x[1.40, 1.60] at chi2 4.61 on 5 df, and every alternative fails outright:
+ * x[1.35,1.65] would have produced 31s and 38s that never appeared, x[1.45,1.55] cannot
+ * produce the 32s and 37s that did, a flat x1.5 would produce nothing but 34, and flooring
+ * rather than rounding can never reach 37. The tell is the shape - the two end values turn
+ * up about a third as often as the middle four, which is exactly what rounding a flat range
+ * does. Crit chance is 10%, confirmed by the developer and measured here at 9.4%.
+ *
+ * So an average hit is worth 0.9 + 0.1 x 1.5 = 1.05 of its base.
+ *
+ * Ticks are excluded on the evidence: 0 crits in 46 recorded damage-over-time ticks, which
+ * at 10% would happen 0.8% of the time. Healing is excluded for want of evidence rather
+ * than against it - nothing here has ever measured a heal crit.
+ *
+ * MISSES are not settled, which is why they are off unless asked for. The direction is
+ * real - 30 misses in 648 swings at 0 Accuracy against 12 in 571 at 50, Fisher p = 0.018 -
+ * but the size is loose: the reduction is somewhere between 12% and 77%. Turning this on
+ * moves every number on the page by a few per cent on the strength of ~600 swings an arm,
+ * and pinning the ratio even to +/-50% would need about 1,600.
+ *
+ * Worth knowing while it is off: at zero Accuracy the two effects very nearly cancel. The
+ * miss rate costs 4.63% and crit adds 5.00%, so a simulation modelling NEITHER is within
+ * 0.15% of one modelling both. That is luck, not design, and it stops being true the moment
+ * a point goes into Accuracy.
+ */
+/* The two weapons a swing does not put your back into. Staff and Wand are the whole of it:
+   the class weapon lists are Knight {Axe, Dagger, Great Axe, Greatsword, Hammer, Mace,
+   Polearm, Spear, Sword}, Mage {Dagger, Staff, Wand}, Cleric {Mace, Staff, Wand} - so a
+   Cleric with a Mace swings like a Knight and the class alone cannot answer this. */
+const CASTER_WEAPONS = new Set(["Staff", "Wand"]);
+
+const CRIT_CHANCE = 0.10;
+const CRIT_MIN = 1.40, CRIT_MAX = 1.60;
+const CRIT_FACTOR = 1 + CRIT_CHANCE * ((CRIT_MIN + CRIT_MAX) / 2 - 1);
+
+/* The two measured points, and a straight line between them. Two points cannot tell a line
+   from a curve; this is the simplest thing consistent with them and is not to be mistaken
+   for a fitted model. */
+const MISS_AT_0 = 0.0463, MISS_AT_50 = 0.0210, MISS_MEASURED_AT = 50;
+const missRateFor = accuracy =>
+  Math.max(0, MISS_AT_0 + (MISS_AT_50 - MISS_AT_0) * (accuracy || 0) / MISS_MEASURED_AT);
+
 function model(D, cfg) {
   const C = {
     targets: Math.max(1, Math.round(cfg.targets || 1)),
@@ -312,13 +370,20 @@ function model(D, cfg) {
     weaponPower: cfg.weaponPower || 0,
     healing: !!cfg.healing,
     survival: !!cfg.survival,
+    /* Crit is on unless a caller deliberately turns it off - it is the better measured of
+       the two and leaving it out understates every build by 5%. Misses are the reverse. */
+    weaponSub: cfg.weaponSub || "",
+    crit: cfg.crit !== false,
+    misses: !!cfg.misses,
+    accuracy: cfg.accuracy || 0,
     vitality: cfg.vitality || 0, fortitude: cfg.fortitude || 0,
     defense: Math.min(400, Math.max(0, cfg.defense || 0)) * DEFENSE_PER_POINT,
     timing: D.spellTiming || {},
     range: cfg.range,
   };
   const {kept, dropped} = candidates(D, {cls: C.cls, level: C.level,
-                                        healing: C.healing, survival: C.survival});
+                                        healing: C.healing, survival: C.survival,
+                                        ranks: C.ranks});
   const picked = cfg.exclude ? kept.filter(s => !cfg.exclude.includes(s.id)) : kept;
   for (const id of cfg.exclude || [])
     if (kept.some(s => s.id === id)) dropped.push({s: kept.find(s => s.id === id), why: OMIT.exclusive});
@@ -351,8 +416,18 @@ function model(D, cfg) {
      everyone else to off, and the panel says which was assumed. */
   const auto = (D.spells || []).find(s => s.id === (D.spellTiming || {}).autoAttackSpellId);
   const inMelee = cfg.inMelee == null ? C.cls === "1" : !!cfg.inMelee;
+  /* Strength scales a swing you make with your arms, and not one you make with a wand.
+     Measured in game: two wands differing by 5 Strength and nothing else both hit for 23,
+     and so did every staff regardless of its own damage value. A melee weapon is the other
+     story - Strength plainly moves it - so the term is kept for those and dropped for the
+     two caster types. Unknown weapon falls back to applying it, which is what every melee
+     class equips and what this did before the distinction existed. */
+  const casterWeapon = CASTER_WEAPONS.has(C.weaponSub || "");
   const autoDmg = (!C.healing && auto)
-    ? auto.base * levelMul(C.level) * (1 + 0.01 * C.strength) * (1 + C.weaponPower) : 0;
+    ? auto.base * levelMul(C.level)
+      * (casterWeapon ? 1 : 1 + 0.01 * C.strength)
+      * (1 + C.weaponPower)
+    : 0;
   const autoRange = auto ? auto.maxR : 0;
 
   /* What is hitting you, and how hard once instability has scaled it. The
@@ -406,6 +481,13 @@ function model(D, cfg) {
     alacrityBonus: ratingBonus(C.alacrity, C.level),
     tempoBonus: ratingBonus(C.tempo, C.level),
     autoDmg, autoInterval: D.attackInterval || 3, autoRange, inMelee,
+    /* Applied where damage is credited rather than folded into a.direct, so the breakdown
+       and the priority solver both see the same number a player would. Healing is left
+       alone: a heal crit has never been measured here either way. */
+    critFactor: (C.crit && !C.healing) ? CRIT_FACTOR : 1,
+    /* A miss takes the whole application with it - no hit, and no periodic either, which is
+       why this one reaches the ticks and crit does not. */
+    landFactor: C.misses ? 1 - missRateFor(C.accuracy) : 1,
     autoOn: cfg.autoAttack !== false && !C.healing && inMelee,
     duration: cfg.duration || 300,
     resourceMax: cfg.resourceMax || 100,
@@ -575,14 +657,17 @@ function simulate(M, order, opts) {
 
     if (kind === "tick") {
       const amp = M.snapshot ? which.amp : ampAt(t);
-      credit(which.id, val(which.base, amp) * which.mul, t, "tick", which.name);
+      // No crit on a tick: 0 of 46 recorded ticks crit. The miss factor does reach here,
+      // because an application that missed never started ticking in the first place.
+      credit(which.id, val(which.base, amp) * which.mul * M.landFactor, t, "tick", which.name);
       which.left -= 1;
       if (which.left <= 0) live.delete(which.key);
       else which.nextTick = t + which.interval;
       continue;
     }
     if (kind === "auto") {
-      credit(-1, val(M.autoDmg, ampAt(t)), t, "auto", "Auto Attack");
+      credit(-1, val(M.autoDmg, ampAt(t)) * M.critFactor * M.landFactor,
+             t, "auto", "Auto Attack");
       const pa = per.get(-1); if (pa) pa.casts += 1;
       nextAuto = t + M.autoInterval;
       continue;
@@ -710,7 +795,7 @@ function simulate(M, order, opts) {
       if (pick.hitsAll) dealt *= N;
       else if (pick.chains)
         dealt += val(pick.direct * CHAIN_FRACTION, amp) * Math.min(CHAIN_EXTRA, N - 1);
-      credit(pick.id, dealt, landAt, "hit", pick.name);
+      credit(pick.id, dealt * M.critFactor * M.landFactor, landAt, "hit", pick.name);
     }
     if (pick.tracksPeriodic) {
       const key = pick.hitsAll ? String(pick.id) : pick.id + ":" + onTarget;
@@ -1184,5 +1269,6 @@ return {
   DEFENSE_PER_POINT,
   seedOrder, solve, statWeights, conditionText, actionFacts,
   directReach, REACHES_ALL, DLV_CHAIN, CHAIN_EXTRA, CHAIN_FRACTION,
+  CRIT_CHANCE, CRIT_MIN, CRIT_MAX, CRIT_FACTOR, missRateFor,
 };
 }));

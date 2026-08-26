@@ -3,10 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache">
 <title>Elegon DB — Character planner</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2032%2032%27%3E%3Cdefs%3E%3ClinearGradient%20id%3D%27t%27%20x1%3D%270%27%20y1%3D%270%27%20x2%3D%27.45%27%20y2%3D%271%27%3E%3Cstop%20offset%3D%270%27%20stop-color%3D%27%23ffe455%27%2F%3E%3Cstop%20offset%3D%271%27%20stop-color%3D%27%23e9a200%27%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D%2732%27%20height%3D%2732%27%20rx%3D%277%27%20fill%3D%27url%28%23t%29%27%2F%3E%3Cg%20fill%3D%27%23110c09%27%20font-family%3D%27Alice%2CGeorgia%2Cserif%27%3E%3Ctext%20x%3D%276.5%27%20y%3D%2723%27%20font-size%3D%2717%27%3EE%3C%2Ftext%3E%3Ctext%20x%3D%2717.5%27%20y%3D%2723%27%20font-size%3D%279%27%20opacity%3D%27.72%27%3Edb%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fsvg%3E">
-<link rel="stylesheet" href="style.css?v=28185f5b">
-<link rel="stylesheet" href="elegon-redesign.css?v=28185f5b">
+<link rel="stylesheet" href="style.css?v=841d3e52">
+<link rel="stylesheet" href="elegon-redesign.css?v=841d3e52">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -32,7 +33,7 @@
     <a href="maps.html">Maps</a>
     <a href="scaling.html">Scaling</a>
     <a href="planner.html" class="on"><span class="navlong">Character </span>Planner</a>
-    <a href="optimizer.html">Optimizer</a>
+    <a href="optimizer.html">Optimizer<span class="navtag">beta</span></a>
   </nav>
     <button type="button" id="themebtn" class="themebtn" aria-label="Switch theme">
       <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.4"/><g><path d="M12 1.8v3M12 19.2v3M1.8 12h3M19.2 12h3M4.8 4.8l2.1 2.1M17.1 17.1l2.1 2.1M19.2 4.8l-2.1 2.1M6.9 17.1l-2.1 2.1"/></g></svg>
@@ -251,9 +252,9 @@
   </div>
 </dialog>
 
-<script src="data.js?v=28185f5b"></script>
+<script src="data.js?v=841d3e52"></script>
 <!-- Written by the mod when you log in; absent until then. -->
-<script src="app.js?v=28185f5b"></script>
+<script src="app.js?v=841d3e52"></script>
 <script>
 /* The game's slot set and order, from InGameUi.EnumerateCharacterPanelSlots:
    main weapon, off hand, head, neck, shoulder, back, chest, waist, leg, foot, hands. */
@@ -382,9 +383,9 @@ const alloc = Object.fromEntries(ATTRS.map(k => [k, 0]));
    This takes the first, which keeps the old formula's shape - nothing at level 1, then a
    point every other level. CharacterExport now records earned and spent per character, so
    the next export settles it. */
-const pointsTotal = () => GAME.attributePoints(level);
-const pointsSpent = () => ATTRS.reduce((a, k) => a + alloc[k], 0);
-const pointsLeft = () => pointsTotal() - pointsSpent();
+const pointsTotal = () => attrPointsTotal(level);
+const pointsSpent = () => attrPointsSpent(alloc);
+const pointsLeft = () => attrPointsLeft(level, alloc);
 
 /* The build survives a reload. Only ids are stored, so a rebuilt data.js with
    different items simply drops the ones that no longer exist. */
@@ -647,41 +648,10 @@ const tip = el("div", "tip");
 tip.hidden = true;
 document.body.appendChild(tip);
 
-/* Where a hovering card goes. Lifted out of attachTip because the talent tree wants the
-   same placement and the same element - one tooltip on the page, not two that disagree. */
-function placeTip(e) {
-
-    /* Two frames of reference meet here and they must not be mixed. clientX and
-       getBoundingClientRect are PAINTED pixels; `left` and `top` are CSS lengths, which
-       the root zoom (1.15 past 1700px, 1.35 past 2200) scales again. Writing a painted
-       number into a CSS length put the card zoom-times further from the cursor than it
-       should be - a whole panel away on a wide screen. So the sums are done in painted
-       pixels, including the viewport they are clamped against, and divided once at the end. */
-    const pad = 14, z = pageZoom(), r = tip.getBoundingClientRect();
-    const vw = document.documentElement.clientWidth * z;
-    const vh = document.documentElement.clientHeight * z;
-    let x = e.clientX + pad, y = e.clientY + pad;
-    if (x + r.width > vw - 8) x = e.clientX - r.width - pad;
-    if (y + r.height > vh - 8) y = e.clientY - r.height - pad;
-    tip.style.left = Math.max(8, x) / z + "px";
-    tip.style.top = Math.max(8, y) / z + "px";
-}
-
-function attachTip(node, html) {
-  node.classList.add("hastip");
-  const show = e => {
-    // Callers pass a string or a built node; the spell tooltip is structured, so it builds
-    // its own rather than concatenating markup.
-    if (html instanceof Node) tip.replaceChildren(html.cloneNode(true));
-    else tip.innerHTML = html;
-    tip.hidden = false;
-    place(e);
-  };
-  const place = placeTip;
-  node.addEventListener("mouseenter", show);
-  node.addEventListener("mousemove", place);
-  node.addEventListener("mouseleave", () => { tip.hidden = true; });
-}
+/* Both live in app.js now: the planner and the optimizer were carrying their own copies
+   and the copies drifted. These bind them to this page's single tooltip element. */
+const placeTip = e => placeTipAt(tip, e);
+const attachTip = (node, html) => attachTipTo(tip, node, html);
 
 /** One paperdoll slot: bordered square, quality backdrop, icon, caption. */
 function slotButton(s) {
@@ -1873,37 +1843,9 @@ function step(attr, by) {
 
 function drawAlloc() {
   aLevel.value = String(level);
-  const rows = document.getElementById("aRows");
-  rows.replaceChildren();
-
-  for (const k of ATTRS) {
-    const row = el("div", "allocrow");
-    row.appendChild(el("span", "an", cap(k)));
-
-    const minus = el("button", null, "−");
-    minus.type = "button";
-    minus.disabled = alloc[k] <= 0;
-    minus.title = `Remove a point — hold Shift for ${BULK_STEP}`;
-    minus.onclick = e => step(k, -(e.shiftKey ? BULK_STEP : 1));
-
-    const val = el("span", "av", String(alloc[k]));
-    if (alloc[k] >= MAX_PER_ATTR) val.classList.add("maxed");
-    val.title = `${alloc[k]} point${alloc[k] === 1 ? "" : "s"} = `
-              + `+${alloc[k] * STAT_PER_POINT} ${cap(k)}`;
-
-    const plus = el("button", null, "+");
-    plus.type = "button";
-    plus.disabled = alloc[k] >= MAX_PER_ATTR || pointsLeft() <= 0;
-    plus.title = `Add a point — hold Shift for ${BULK_STEP}`;
-    plus.onclick = e => step(k, e.shiftKey ? BULK_STEP : 1);
-
-    row.append(minus, val, plus);
-    row.appendChild(el("span", "amax",
-      (alloc[k] >= MAX_PER_ATTR ? "max" : `/ ${MAX_PER_ATTR}`)
-      + (alloc[k] ? `  +${alloc[k] * STAT_PER_POINT}` : "")));
-    rows.appendChild(row);
-  }
-
+  // The rows themselves are shared with the optimizer - see allocRows in app.js.
+  allocRows(document.getElementById("aRows"),
+            {alloc, level, bulk: BULK_STEP, step});
   syncPointCounts();
 }
 

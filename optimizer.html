@@ -3,10 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache">
 <title>Elegon DB — Optimizer</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2032%2032%27%3E%3Cdefs%3E%3ClinearGradient%20id%3D%27t%27%20x1%3D%270%27%20y1%3D%270%27%20x2%3D%27.45%27%20y2%3D%271%27%3E%3Cstop%20offset%3D%270%27%20stop-color%3D%27%23ffe455%27%2F%3E%3Cstop%20offset%3D%271%27%20stop-color%3D%27%23e9a200%27%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D%2732%27%20height%3D%2732%27%20rx%3D%277%27%20fill%3D%27url%28%23t%29%27%2F%3E%3Cg%20fill%3D%27%23110c09%27%20font-family%3D%27Alice%2CGeorgia%2Cserif%27%3E%3Ctext%20x%3D%276.5%27%20y%3D%2723%27%20font-size%3D%2717%27%3EE%3C%2Ftext%3E%3Ctext%20x%3D%2717.5%27%20y%3D%2723%27%20font-size%3D%279%27%20opacity%3D%27.72%27%3Edb%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fsvg%3E">
-<link rel="stylesheet" href="style.css?v=28185f5b">
-<link rel="stylesheet" href="elegon-redesign.css?v=28185f5b">
+<link rel="stylesheet" href="style.css?v=841d3e52">
+<link rel="stylesheet" href="elegon-redesign.css?v=841d3e52">
 <script>
 (function () {
   var saved = null;
@@ -84,7 +85,7 @@
 /* Narrow: the condition needs the full width to stay one readable line, so the
    figure moves under it rather than squeezing both into a third of the row. */
 @media (max-width:620px){
-  .wrow{grid-template-columns:minmax(0,1fr) 116px;row-gap:4px}
+  .wrow{grid-template-columns:minmax(0,1fr) 70px 46px;row-gap:4px}
   .wrow .wbar{grid-column:1 / -1;order:3}
   .prow{grid-template-columns:24px 32px minmax(0,1fr);row-gap:2px;padding:11px 4px}
   .prow .ico,.prow .ico.ph{width:32px;height:32px;line-height:30px}
@@ -113,13 +114,17 @@
   font-variant-numeric:tabular-nums}
 .tltip .row span{color:var(--faint)}
 
-.wrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(90px,180px) 136px;gap:12px;
+.wrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(90px,180px) 84px 52px;gap:12px;
   align-items:center;padding:7px 2px;font-size:13px}
 .wrow + .wrow{border-top:1px solid var(--line-soft)}
 .wrow .wn{color:var(--ink)}
 .wbar{height:6px;border-radius:3px;background:var(--panel2);overflow:hidden}
 .wbar i{display:block;height:100%;background:var(--s1);border-radius:3px}
 .wrow .wv{text-align:right;font-variant-numeric:tabular-nums;color:var(--dim);font-size:12.5px}
+/* The share is its own cell rather than more text in the damage one. Run together they
+   wandered with the width of the number in front of them, so no two rows agreed on where
+   either figure began - which is the one thing a column of numbers is for. */
+.wrow .wp{text-align:right;font-variant-numeric:tabular-nums;color:var(--faint);font-size:12.5px}
 /* The same row in a 290px sidebar: the figures shrink so the name still has
    somewhere to go, rather than being run over by the bar. */
 .wrow.mini{grid-template-columns:minmax(0,1fr) 62px 58px;gap:9px}
@@ -306,7 +311,7 @@
     <a href="maps.html">Maps</a>
     <a href="scaling.html">Scaling</a>
     <a href="planner.html"><span class="navlong">Character </span>Planner</a>
-    <a href="optimizer.html" class="on">Optimizer</a>
+    <a href="optimizer.html" class="on">Optimizer<span class="navtag">beta</span></a>
   </nav>
   <button type="button" id="themebtn" class="themebtn" aria-label="Switch theme">
     <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.4"/><g><path d="M12 1.8v3M12 19.2v3M1.8 12h3M19.2 12h3M4.8 4.8l2.1 2.1M17.1 17.1l2.1 2.1M19.2 4.8l-2.1 2.1M6.9 17.1l-2.1 2.1"/></g></svg>
@@ -316,7 +321,7 @@
 
 <div class="wrap">
   <div class="hero herorow">
-    <h1>Optimizer</h1>
+    <h1>Optimizer<span class="betamark">beta</span></h1>
     <!-- The page opens on the answer rather than on the setup that produced it.
          drawHeadline() fills this; the card that used to hold it below the setup bar is
          gone, and .herorow is the same title-plus-figures row the changelog uses. -->
@@ -464,11 +469,10 @@
                   aria-label="Cast timeline. Drag to pan, scroll to zoom, arrow keys to move, plus and minus to zoom."></canvas>
           <div class="tltip" id="tlTip" hidden></div>
         </div>
-        <p class="note" id="tlNote" style="margin:10px 0 0"></p>
-      </div>
-
-      <div class="attrs" style="margin-top:16px">
-        <h3 id="breakTitle">Where it came from</h3>
+        <!-- The per-ability totals live in this panel rather than one of their own: the
+             strip above and the table below are the same fight counted two ways, and
+             reading one against the other is the whole point of looking at either. -->
+        <div class="panelhead" id="breakTitle" style="margin-top:18px">Where it came from</div>
         <div class="divider"></div>
         <div id="breakdown"></div>
       </div>
@@ -572,6 +576,8 @@
       <b>Talents &amp; attributes</b>
       <span class="count" id="attrSummary"></span>
       <span class="spacer"></span>
+      <button type="button" id="solveTalents" class="gold">Solve talents</button>
+      <button type="button" id="solveAttrs" class="gold">Solve attributes</button>
       <button type="button" id="attrReset">Reset</button>
       <button type="button" id="attrClose" class="gold">Close</button>
     </div>
@@ -603,9 +609,9 @@
        id="fightBody"></div>
 </dialog>
 
-<script src="data.js?v=28185f5b"></script>
-<script src="app.js?v=28185f5b"></script>
-<script src="sim.js?v=28185f5b"></script>
+<script src="data.js?v=841d3e52"></script>
+<script src="app.js?v=841d3e52"></script>
+<script src="sim.js?v=841d3e52"></script>
 <script>
 /* ---- the optimizer page --------------------------------------------------
    The arithmetic lives in sim.js so it can be tested outside a browser; this
@@ -780,17 +786,45 @@ function bestInSlot(cls, level, quality, tier, mode) {
     : mode === "survival" ? {vitality: 1, fortitude: 1.4, strength: .35, tempo: .3}
     : {strength: 1, alacrity: .5, tempo: .5};
   const score = it => ATTRS.reduce((s, k) => s + (w[k] || 0) * scaleStat(it[k] || 0, quality, tier), 0);
+  const usable = i => i.lvl <= level && (i.cls === 0 || i.cls === cls);
   const slots = {};
   for (const slot of SLOT_ORDER) {
-    const pool = (D.items || []).filter(i => i.slot === slot && i.lvl <= level
-      && (i.cls === 0 || i.cls === cls)
-      && ((slot !== "Main Hand" && slot !== "Off Hand") || allowed.has(i.sub)));
+    if (slot === "Main Hand" || slot === "Off Hand") continue;   // decided together, below
+    const pool = (D.items || []).filter(i => i.slot === slot && usable(i));
     if (!pool.length) continue;
     pool.sort((a, b) => score(b) - score(a));
     slots[slot] = {item: pool[0], quality, tier};
   }
-  const mh = slots["Main Hand"];
-  if (mh && String(mh.item.hand || "").toLowerCase().startsWith("t")) delete slots["Off Hand"];
+
+  /* ---- the hands, as one decision ------------------------------------------
+   * A two-hander and a one-hander are not comparable on their own: the one-hander
+   * brings an off hand with it, and the pair is what has to be weighed against the
+   * greatsword. Picking each slot independently could not express that, so it did not
+   * try - and the off hand was doubly lost, because it was also filtered through
+   * classWeapons, which lists what goes in your MAIN hand. Shield and Tome appear in no
+   * class's list, so the off-hand pool came out empty for every class and every build:
+   * 54 shields and 36 tomes that no search could ever return.
+   *
+   * Off hands are gated by required_class alone, which is the game's own field - the 36
+   * tomes are marked for Mage or Cleric and the 54 shields for nobody in particular.
+   * Nothing in the client validates equipping, so that field is the only evidence there
+   * is; if the server turns out to refuse a shield to a Mage, this is where to say so.  */
+  const twoHanded = i => String(i.hand || "").toLowerCase().startsWith("t");
+  const hands = (D.items || []).filter(i => i.slot === "Main Hand" && usable(i)
+                                            && allowed.has(i.sub));
+  const offs = (D.items || []).filter(i => i.slot === "Off Hand" && usable(i));
+  const best = list => list.length
+    ? list.reduce((a, b) => (score(b) > score(a) ? b : a)) : null;
+
+  const twoH = best(hands.filter(twoHanded));
+  const oneH = best(hands.filter(i => !twoHanded(i)));
+  const off = best(offs);
+  const put = (slot, item) => { if (item) slots[slot] = {item, quality, tier}; };
+
+  const twoScore = twoH ? score(twoH) : -Infinity;
+  const pairScore = oneH ? score(oneH) + (off ? score(off) : 0) : -Infinity;
+  if (pairScore > twoScore) { put("Main Hand", oneH); put("Off Hand", off); }
+  else put("Main Hand", twoH);
   return slots;
 }
 
@@ -1924,15 +1958,6 @@ function drawTimeline(sol) {
   TL.data = buildTimeline(sol);
   TL.view = keep || {t0: 0, t1: TL.data.duration};
   drawTL();
-  document.getElementById("tlNote").textContent =
-    "Every cast in the fight, at its real width — an action wider than its "
-    + "neighbours took longer than the global cooldown. Drag to move, scroll or "
-    + "pinch to zoom, hover anything for its numbers. A gap in an effect's row "
-    + "is uptime lost"
-    + (S.survival
-       ? "; the red row is what it landed on you and the green line is the health "
-         + "bar those hits came out of."
-       : "; the line at the bottom is energy against the " + FIGHT.resourceMax + " cap.");
 }
 
 function drawBreakdown(sol) {
@@ -1958,8 +1983,8 @@ function drawBreakdown(sol) {
     if (b.id === -1) fill.style.background = "var(--faint)";
     if (b.buff) fill.style.background = "var(--s2)";
     bar.appendChild(fill); row.appendChild(bar);
-    row.appendChild(el("div", "wv",
-      `${b.buff ? "+" : ""}${fmt(b.amount)}  ·  ${asPct(b.share)}`));
+    row.appendChild(el("div", "wv", `${b.buff ? "+" : ""}${fmt(b.amount)}`));
+    row.appendChild(el("div", "wp", asPct(b.share)));
     attachTip(row, `<b>${b.name}</b><i>${b.casts} casts</i>`
       + (b.buff
          ? `Deals nothing itself. Removing it and re-solving costs `
@@ -1984,8 +2009,8 @@ function drawBreakdown(sol) {
       fill.style.width = Math.max(0, f.amount / worst * 100).toFixed(1) + "%";
       fill.style.background = "var(--bad)";
       bar.appendChild(fill); row.appendChild(bar);
-      row.appendChild(el("div", "wv",
-        `${fmt(f.amount)}  ·  ${asPct(f.amount / Math.max(1, res.taken))}`));
+      row.appendChild(el("div", "wv", fmt(f.amount)));
+      row.appendChild(el("div", "wp", asPct(f.amount / Math.max(1, res.taken))));
       attachTip(row, `<b>${f.name}</b><i>${f.count} of them</i>`
         + `<div class="row"><span>swings landed</span>${f.swings}</div>`
         + `<div class="row"><span>damage through</span>${fmt(f.amount)}</div>`
@@ -2150,6 +2175,13 @@ function baseCfg(extra) {
     alacrity: S.alacrity, tempo: S.tempo,
     weaponPower: S.weaponPower, healing: S.healing, survival: S.survival,
     vitality: S.vitality, fortitude: S.fortitude, defense: S.defense,
+    /* Accuracy reaches the model but does nothing unless misses are switched on, which they
+       are not by default - the measurement behind them is one session and a wide interval.
+       Passed anyway so flipping the switch needs no other change. */
+    accuracy: ((S.alloc || {}).accuracy | 0) * GAME.STAT_PER_POINT,
+    // Which arm the auto attack swings: Strength scales a blade and not a wand.
+    weaponSub: ((S.slots || {})["Main Hand"] || {}).item
+      ? S.slots["Main Hand"].item.sub : "",
     enemies: S.survival ? enemyCfg() : null,
     healerHps: S.survival ? (FIGHT.healerHps || 0) : 0,
     duration: FIGHT.duration, resourceMax: FIGHT.resourceMax,
@@ -2586,33 +2618,10 @@ document.body.appendChild(tip);
 /* pageZoom() is app.js's, and reads the computed `zoom` rather than the --zoom
    token that mirrors it — maps and quests already place their own overlays
    through it. */
-/* Where a hovering card goes. Lifted out of attachTip because the talent tree wants the
-   same placement and the same element - one tooltip on the page, not two that disagree. */
-function placeTip(e) {
-
-    /* Two frames of reference meet here and they must not be mixed. clientX and
-       getBoundingClientRect are PAINTED pixels; `left` and `top` are CSS lengths, which
-       the root zoom (1.15 past 1700px, 1.35 past 2200) scales again. Writing a painted
-       number into a CSS length put the card zoom-times further from the cursor than it
-       should be - a whole panel away on a wide screen. So the sums are done in painted
-       pixels, including the viewport they are clamped against, and divided once at the end. */
-    const pad = 14, z = pageZoom(), r = tip.getBoundingClientRect();
-    const vw = document.documentElement.clientWidth * z;
-    const vh = document.documentElement.clientHeight * z;
-    let x = e.clientX + pad, y = e.clientY + pad;
-    if (x + r.width > vw - 8) x = e.clientX - r.width - pad;
-    if (y + r.height > vh - 8) y = e.clientY - r.height - pad;
-    tip.style.left = Math.max(8, x) / z + "px";
-    tip.style.top = Math.max(8, y) / z + "px";
-}
-
-function attachTip(node, html) {
-  node.classList.add("hastip");
-  const place = placeTip;
-  node.addEventListener("mouseenter", e => { tip.innerHTML = html; tip.hidden = false; place(e); });
-  node.addEventListener("mousemove", place);
-  node.addEventListener("mouseleave", () => { tip.hidden = true; });
-}
+/* Both live in app.js now - see the note there about the two copies drifting. These bind
+   them to this page's single tooltip element. */
+const placeTip = e => placeTipAt(tip, e);
+const attachTip = (node, html) => attachTipTo(tip, node, html);
 
 /* ---- a link that rebuilds this exactly ------------------------------------
    The planner's own link carries a character. This one has to carry a
@@ -3442,9 +3451,9 @@ function drawSlots() {
    One point every two levels since v3489988, two stat points each, twenty-five
    to a stat. The same numbers the planner spends, so a build carries across. */
 const ALLOC_ATTRS = [...ATTRS, "accuracy"];
-const pointsTotal = () => GAME.attributePoints(S.level);
-const pointsSpent = () => ALLOC_ATTRS.reduce((t, k) => t + ((S.alloc || {})[k] || 0), 0);
-const pointsLeft = () => Math.max(0, pointsTotal() - pointsSpent());
+const pointsTotal = () => attrPointsTotal(S.level);
+const pointsSpent = () => attrPointsSpent(S.alloc);
+const pointsLeft = () => attrPointsLeft(S.level, S.alloc);
 
 function trimAlloc() {
   if (!S.alloc) S.alloc = {};
@@ -3466,34 +3475,10 @@ function syncAttrButton() {
 
 function drawAlloc() {
   syncAttrButton();
-  const rows = document.getElementById("attrRows");
-  rows.replaceChildren();
   if (!S.alloc) S.alloc = {};
-  for (const k of ALLOC_ATTRS) {
-    const row = el("div", "allocrow");
-    row.appendChild(el("span", "an", cap(k)));
-
-    const minus = el("button", null, "−");
-    minus.type = "button";
-    minus.disabled = !(S.alloc[k] > 0);
-    minus.title = "Remove a point — hold Shift for 5";
-    minus.onclick = e => stepAlloc(k, -(e.shiftKey ? 5 : 1));
-
-    const val = el("span", "av", String(S.alloc[k] || 0));
-    if ((S.alloc[k] || 0) >= GAME.MAX_PER_ATTR) val.classList.add("maxed");
-
-    const plus = el("button", null, "+");
-    plus.type = "button";
-    plus.disabled = (S.alloc[k] || 0) >= GAME.MAX_PER_ATTR || pointsLeft() <= 0;
-    plus.title = "Add a point — hold Shift for 5";
-    plus.onclick = e => stepAlloc(k, e.shiftKey ? 5 : 1);
-
-    row.append(minus, val, plus);
-    row.appendChild(el("span", "amax",
-      ((S.alloc[k] || 0) >= GAME.MAX_PER_ATTR ? "max" : "/ " + GAME.MAX_PER_ATTR)
-      + ((S.alloc[k] || 0) ? `  +${(S.alloc[k] || 0) * GAME.STAT_PER_POINT}` : "")));
-    rows.appendChild(row);
-  }
+  // The rows themselves are shared with the planner - see allocRows in app.js.
+  allocRows(document.getElementById("attrRows"),
+            {alloc: S.alloc, level: S.level, bulk: 5, step: stepAlloc});
   syncPointCounts();
 }
 
@@ -3686,6 +3671,391 @@ function optTalentRanks() {
   return TALENT.spent(S.cls, optTalents) ? TALENT.spellRanksOf(S.cls, optTalents) : null;
 }
 
+/* ---- solving the tree -------------------------------------------------------
+ * Where forty points go is not a question anyone can answer by reading the tree, and that
+ * is the whole reason for doing it here. Each either-or pair changes what is reachable
+ * below it, so a node cannot be judged on its own: taking Encase shuts Stonewall and
+ * rewrites every tier under both. A Knight has sixteen possible shapes, and inside each one
+ * forty points to spread over ten nodes that all feed the same rotation.
+ *
+ * Two phases, because the two costs are wildly different: a fight is 0.16ms to simulate and
+ * a rotation is ~360ms to solve. So the inner loop simulates and the outer loop solves.
+ *
+ *   1. every shape allocated once - which spells it would cast, the points to reach them,
+ *      then the rest spread across them by measurement
+ *   2. the best three shapes solved properly, and the winner of those is the answer
+ *
+ * What makes phase one trustworthy is that usefulness is decided BEFORE the spending, on a
+ * tree with every node maxed. Deciding it from the current spend is circular - an untaken
+ * spell is not on the bar, and a spell not on the bar measures the same at every rank - and
+ * that circularity is what sent three earlier attempts at this to a build 14% worse than
+ * doing nothing. The answer is checked against the build you already had either way, so it
+ * can never report a loss.
+ */
+function talentShapes(cls) {
+  const nodes = TALENT.forClass(cls);
+  const groups = [...new Set(nodes.filter(n => n.choice).map(n => n.choice))];
+  const out = [];
+  (function walk(i, picked) {
+    if (i === groups.length) { out.push(new Set(picked)); return; }
+    for (const n of nodes.filter(x => x.choice === groups[i])) {
+      picked.push(n.id); walk(i + 1, picked); picked.pop();
+    }
+  })(0, []);
+  return out;
+}
+
+/** The model for one set of talent ranks, everything else held as it is.
+
+    The tree counts ranks by NODE and the simulator by SPELL, and they are different
+    numbers - node 101 is spell 1. Handing the node map straight to the model matched
+    nothing, so every talent spell dropped off the bar and each shape scored the same
+    Auto-Attack-only fight. */
+function modelForRanks(ranks) {
+  return SIM.model(D, baseCfg({ranks: TALENT.spellRanksOf(S.cls, ranks)}));
+}
+
+/* A priority list to judge candidates against, when there is no solved one to hand.
+
+   seedOrder builds one from the model itself, but its own list can place the filler in the
+   middle - and everything below a filler is dead, because the filler costs nothing and is
+   always ready, so the loop never reaches past it. That alone made a rank-5 Fellstrike
+   score exactly the same as a rank-1 one, 7,304 either way, where a real solve separates
+   them by 8,868 against 10,189.
+
+   Putting the filler last is not a tweak to the heuristic, it is the only place it can go
+   in a priority list. simulate falls back to it anyway when nothing else is ready. */
+function quickOrder(M) {
+  const o = SIM.seedOrder(M).slice();
+  const i = o.indexOf(M.generator);
+  if (i >= 0) { o.splice(i, 1); o.push(M.generator); }
+  return o;
+}
+
+/* How two builds are compared.
+ *
+ * Survival cannot be scored on seconds survived alone: every build that lives out the
+ * fight ties at infinity, and a search whose candidates all tie keeps whichever it tried
+ * first. Nor on damage held alone, which is what sim.js uses to order a ROTATION - held
+ * has a gradient everywhere, but it is a proxy, and the two part company. Measured on this
+ * Knight, the spread that holds least damage survives 21m 26s while the one that survives
+ * longest, 21m 46s, holds four more damage. The clock is the headline on the page, so a
+ * solver that quietly optimised the proxy would be reporting a number it did not chase.
+ *
+ * So: outlive first, and damage held only among builds that cannot be told apart on the
+ * clock - which is the whole of the gradient once nothing dies any more. */
+const buildScore = res => S.survival
+  ? {key: isFinite(res.survivalSeconds) ? res.survivalSeconds : 1e9,
+     tie: -res.held, show: res.held, secs: res.survivalSeconds}
+  : {key: res.dps, tie: 0, show: res.dps};
+const beats = (a, b) => a.key > b.key + 0.5
+  || (Math.abs(a.key - b.key) <= 0.5 && a.tie > b.tie + 1e-9);
+
+/* What a candidate measures against a rotation already known to cast the spells in it.
+   simulate is 0.16ms and solve is 360ms, so the allocation runs on simulate and the
+   rotation is solved once a shape, not once a candidate. */
+function orderLike(order, M) {
+  const byId = new Map();
+  for (const a of M.actions) if (!byId.has(a.id)) byId.set(a.id, a);
+  const out = [], seen = new Set();
+  for (const a of order) {
+    const m = byId.get(a.id), k = m && (m.key || m.id);
+    if (m && !seen.has(k)) { out.push(m); seen.add(k); }
+  }
+  for (const a of M.actions) {
+    const k = a.key || a.id;
+    if (!seen.has(k)) { out.push(a); seen.add(k); }
+  }
+  return out;
+}
+const scoreWith = (ranks, order) => {
+  const M = modelForRanks(ranks);
+  return buildScore(SIM.simulate(M, order ? orderLike(order, M) : quickOrder(M), {}));
+};
+
+/* ---- which nodes are worth anything at all ---------------------------------
+ * Asked once a shape, of a tree with every node maxed and the budget ignored, because the
+ * question is which spells this build would CAST if points were free - and that is a
+ * property of the spell and the fight, not of what has been bought so far.
+ *
+ * It has to be asked that way round. A rank-1 spell can be weak enough that the rotation
+ * solver prunes it, and a spell that is not on the bar measures the same at rank 5 as at
+ * rank 1 - zero - so a search that decides usefulness from the current spend can never buy
+ * its way into a spell it has not already bought. That is the whole failure this replaces:
+ * Fellstrike, the largest single source of damage a Knight has, sat at rank 1 while twenty
+ * points went to Guard, Encase, Intercept and Daze, which the damage rotation drops
+ * outright as "movement", "crowd control" and "reduces damage taken".
+ *
+ * In survival mode the same question answers itself differently, and correctly: the
+ * defensive spells are the ones that get cast, so they are the ones that come back useful.
+ */
+function usefulNodes(allowed) {
+  const ranks = TALENT.grantFree(S.cls, S.level, {});
+  for (const n of allowed) ranks[n.id] = n.max;
+  const M = modelForRanks(ranks);
+  const solved = SIM.solve(M, {restarts: 0});   // which, not how well
+
+  // What it actually cast, and how much each was worth, so a tight budget unlocks the
+  // valuable ones first.
+  const worth = new Map();
+  for (const row of solved.result.breakdown)
+    if (row.casts) worth.set(row.id, (worth.get(row.id) || 0) + (row.amount || 0));
+
+  const keep = allowed.filter(n => worth.has((TALENT.spellOf(n) || {}).id))
+    .sort((a, b) => (worth.get(TALENT.spellOf(b).id) || 0)
+                  - (worth.get(TALENT.spellOf(a).id) || 0));
+  return {keep, order: solved.order};
+}
+
+/** Every node that must hold a point before `node` is legal, nearest first. */
+function unlockChain(node, allowed) {
+  const out = [];
+  (function walk(n) {
+    for (const p of TALENT.parentsOf(n)) {
+      // parentsOf names both halves of a pair; the shape has already chosen one.
+      if (!allowed.includes(p) || out.includes(p)) continue;
+      out.push(p);
+      walk(p);
+    }
+  })(node);
+  return out;
+}
+
+/** Open the way to `node`, or leave the spend exactly as it was found. */
+function payUnlock(node, ranks, allowed, budget) {
+  const need = unlockChain(node, allowed).filter(p => !(ranks[p.id] > 0));
+  if (!need.length) return true;
+  if (TALENT.spent(S.cls, ranks) + need.length > budget) return false;
+  for (const p of need) ranks[p.id] = 1;
+  return true;
+}
+
+/**
+ * Spend a shape's points.
+ *
+ * Three steps, in the order the tree itself imposes: open the way to the spells that get
+ * cast, spread the points across those spells by what they measure, and put whatever is
+ * left somewhere legal. Only the middle step is a search, and it is a search over five or
+ * six nodes rather than the whole tree.
+ */
+function fillShape(shape, budget) {
+  const cls = S.cls, nodes = TALENT.forClass(cls);
+  // A node is on this shape's bar if it is not one of a pair, or it is the half chosen.
+  const allowed = nodes.filter(n => !n.choice || shape.has(n.id));
+  const {keep, order} = usefulNodes(allowed);
+  const ranks = TALENT.grantFree(cls, S.level, {});
+
+  // 1. Reach them, most valuable first, so a budget that cannot afford every chain spends
+  //    what it has on the spells that pay most.
+  const reached = [];
+  for (const n of keep) {
+    if (!payUnlock(n, ranks, allowed, budget)) continue;
+    if (!(ranks[n.id] > 0)) {
+      if (TALENT.spent(cls, ranks) >= budget) continue;
+      ranks[n.id] = 1;
+    }
+    reached.push(n);
+  }
+
+  // 2. The rest, a point at a time, judged against the rotation solved above - which casts
+  //    every one of these, so a rank added to any of them is visible in the score.
+  for (let guard = 0; guard < budget + 1; guard++) {
+    const left = budget - TALENT.spent(cls, ranks);
+    if (left <= 0) break;
+    let best = null, bestScore = null;
+    for (const n of reached) {
+      if (TALENT.stateOf(n, ranks, S.level, left) !== TALENT.ST.AVAILABLE) continue;
+      ranks[n.id] = (ranks[n.id] || 0) + 1;
+      const sc = scoreWith(ranks, order);
+      // Strictly better, so a tie leaves the point where it is rather than moving it into
+      // whichever node happens to come first in the tree.
+      if (!best || beats(sc, bestScore)) { bestScore = sc; best = n; }
+      ranks[n.id] -= 1;
+    }
+    if (!best) break;
+    ranks[best.id] = (ranks[best.id] || 0) + 1;
+  }
+
+  // 3. A point that buys nothing still has to go somewhere: an unspent point is not a
+  //    build, and the tree will not let you hold one back.
+  for (const n of allowed.slice().sort((a, b) => a.row - b.row || a.col - b.col)) {
+    for (let i = 0; i < n.max; i++) {
+      const left = budget - TALENT.spent(cls, ranks);
+      if (left <= 0) break;
+      if (TALENT.stateOf(n, ranks, S.level, left) !== TALENT.ST.AVAILABLE) break;
+      ranks[n.id] = (ranks[n.id] || 0) + 1;
+    }
+  }
+  return {ranks, order, rough: scoreWith(ranks, order)};
+}
+
+/** Is this spend one a character could actually hold? */
+function legalSpend(cls, ranks) {
+  for (const n of TALENT.forClass(cls)) {
+    if (!(ranks[n.id] > 0)) continue;
+    if (!TALENT.prereqMet(n, ranks)) return false;
+    if (TALENT.rivalOf(n, ranks)) return false;
+  }
+  return true;
+}
+
+const bestOf = (ranks, restarts) => {
+  const M = modelForRanks(ranks);
+  return buildScore(SIM.solve(M, {restarts}).result);
+};
+
+/* ---- spending the attribute points -----------------------------------------
+ * Thirty-nine points at level 80, two stat points each, twenty-five to a stat. Unlike the
+ * tree there is nothing structural to discover - every stat is already "in the rotation"
+ * from the first point, so the blindness the tree search had to be built around does not
+ * arise here and a greedy is very nearly exact. Two things it does have to be careful of,
+ * and both are real:
+ *
+ *   - Granularity. Alacrity and Tempo buy time, and time is spent in whole global
+ *     cooldowns, so one point can measure as nothing where five measure as a lot. Blocks of
+ *     one, three and five are tried and judged on gain PER POINT, so a stat that only pays
+ *     in steps is not dismissed on the strength of its first one.
+ *   - The rotation. More Alacrity can change which spell is worth casting at all. So the
+ *     spread runs against a solved priority, the priority is re-solved against the result,
+ *     and if that moved anything the spread runs again.
+ *
+ * Accuracy is not spent on, and that is a statement about the model rather than the game:
+ * it appears nowhere in the simulator and nowhere in the stat totals, so nothing here can
+ * measure it. Points it would have taken go to the six stats that do move a number.
+ */
+const ALLOC_STEPS = [1, 3, 5];
+
+/** The stats a candidate allocation would actually give, gear included. */
+function statsForAlloc(alloc) {
+  const g = applyGear(S.slots, alloc, S.profLevels);
+  return {strength: g.totals.strength, grace: g.totals.grace,
+          alacrity: g.totals.alacrity, tempo: g.totals.tempo,
+          vitality: g.totals.vitality, fortitude: g.totals.fortitude,
+          weaponPower: g.weaponPower};
+}
+const allocScore = (alloc, order) => {
+  const M = SIM.model(D, baseCfg(statsForAlloc(alloc)));
+  return buildScore(SIM.simulate(M, order ? orderLike(order, M) : quickOrder(M), {}));
+};
+const allocSolved = (alloc, restarts) =>
+  SIM.solve(SIM.model(D, baseCfg(statsForAlloc(alloc))), {restarts});
+
+/* Rates, not totals, so the comparison is between "what this point bought" rather than
+   "what the build is worth" - and lexicographic for the same reason the score is. */
+const betterRate = (a, b) => a.key > b.key + 1e-12
+  || (Math.abs(a.key - b.key) <= 1e-12 && a.tie > b.tie + 1e-12);
+
+/** Spend the budget, best block first, against a fixed priority. */
+function spreadAlloc(alloc, budget, order) {
+  const cap = GAME.MAX_PER_ATTR;
+  for (let guard = 0; guard <= budget; guard++) {
+    const left = budget - attrPointsSpent(alloc);
+    if (left <= 0) break;
+    const base = allocScore(alloc, order);
+    let best = null;
+    for (const k of ATTRS) {
+      for (const step of ALLOC_STEPS) {
+        const n = Math.min(step, left, cap - (alloc[k] | 0));
+        if (n <= 0) continue;
+        alloc[k] = (alloc[k] | 0) + n;
+        const sc = allocScore(alloc, order);
+        alloc[k] -= n;
+        const rate = {key: (sc.key - base.key) / n, tie: (sc.tie - base.tie) / n};
+        if (!best || betterRate(rate, best.rate)) best = {k, n, rate};
+      }
+    }
+    /* A point that measures as a loss is better held than spent - the panel lets you carry
+       them, and spending one to look tidy is spending it wrong. */
+    if (!best || best.rate.key < 0) break;
+    alloc[best.k] = (alloc[best.k] | 0) + best.n;
+  }
+  return alloc;
+}
+
+/** Move single points between stats for as long as it pays. */
+function refineAlloc(alloc, order) {
+  let base = allocScore(alloc, order);
+  for (let pass = 0; pass < 4; pass++) {
+    let moved = false;
+    for (const from of ATTRS) {
+      if (!(alloc[from] > 0)) continue;
+      for (const to of ATTRS) {
+        if (to === from || (alloc[to] | 0) >= GAME.MAX_PER_ATTR) continue;
+        alloc[from] -= 1;
+        alloc[to] = (alloc[to] | 0) + 1;
+        const sc = allocScore(alloc, order);
+        if (beats(sc, base)) { base = sc; moved = true; }
+        else { alloc[to] -= 1; alloc[from] += 1; }
+      }
+    }
+    if (!moved) break;
+  }
+  return alloc;
+}
+
+/**
+ * The whole spread. Returns the allocation and what it measures, against what the build
+ * measures now.
+ */
+function solveAlloc() {
+  if (!S.slots) return null;              // nothing equipped, so nothing to measure against
+  const budget = attrPointsTotal(S.level);
+  const before = buildScore(allocSolved(S.alloc || {}, 6).result);
+
+  let alloc = {}, order = allocSolved({}, 2).order, sig = "";
+  for (let round = 0; round < 3; round++) {
+    alloc = {};
+    spreadAlloc(alloc, budget, order);
+    refineAlloc(alloc, order);
+    const solved = allocSolved(alloc, 2);
+    const next = solved.order.map(a => a.key || a.id).join(",");
+    if (next === sig) break;              // the priority stopped moving: this is the answer
+    sig = next;
+    order = solved.order;
+  }
+  return {budget, before, alloc, score: buildScore(allocSolved(alloc, 10).result),
+          spent: attrPointsSpent(alloc)};
+}
+
+/**
+ * The whole search. Returns the ranks it would spend and what they measure, against what
+ * the build measures now.
+ */
+function solveTalents() {
+  const budget = TALENT.spellPointsAt(S.level);
+  const shapes = talentShapes(S.cls);
+  /* What the build measures NOW, as the page has it - which is not the same as scoring the
+     current tree, because an untouched tree means the Talent rank box is speaking for every
+     spell. Comparing against anything else would let this claim an improvement over a build
+     nobody is looking at. */
+  const before = buildScore(SIM.solve(SIM.model(D, baseCfg()), {restarts: 6}).result);
+
+  /* Shapes that differ only in a pair the rotation never casts allocate to the same spend,
+     and solving the same spend three times is three hundred milliseconds each. */
+  const seen = new Set(), tried = [];
+  for (const shape of shapes) {
+    const cand = fillShape(shape, budget);
+    const sig = TALENT.forClass(S.cls).map(n => cand.ranks[n.id] | 0).join(",");
+    if (seen.has(sig)) continue;
+    seen.add(sig);
+    tried.push(cand);
+  }
+  tried.sort((a, b) => beats(a.rough, b.rough) ? -1 : beats(b.rough, a.rough) ? 1 : 0);
+
+  // Phase two: the shortlist, solved properly.
+  let best = null;
+  for (const cand of tried.slice(0, 3)) {
+    // Nothing here should be able to produce a spend a character could not hold, and a
+    // build the page cannot draw is worse than no answer - so it is checked rather than
+    // assumed, at the one point where it costs nothing.
+    if (!legalSpend(S.cls, cand.ranks)) continue;
+    const score = bestOf(cand.ranks, 10);
+    if (!best || beats(score, best.score)) best = {ranks: cand.ranks, score};
+  }
+  return {shapes: shapes.length, spends: tried.length, budget, before, best,
+          untouched: !optTalentRanks()};
+}
+
 function drawOptTree() {
   const host = document.getElementById("oTree");
   if (!host) return;
@@ -3725,6 +4095,91 @@ document.getElementById("openAttrs").onclick = () => {
   document.getElementById("attrDlg").showModal();
 };
 document.getElementById("attrClose").onclick = () => document.getElementById("attrDlg").close();
+/* Both solvers take the thread for a second or more, so both want the same dance: say so
+   on the button, let the page repaint, run, and put the button back whatever happens. */
+async function whileSolving(id, work) {
+  const btn = document.getElementById(id);
+  const was = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Solving…";
+  /* A frame, so the button repaints before the search takes the thread - but raced against
+     a timer, because a hidden tab never paints and never fires the callback, and a click
+     that starts nothing until you come back is worse than a click that starts without
+     repainting first. */
+  await new Promise(r => {
+    requestAnimationFrame(() => setTimeout(r, 0));
+    setTimeout(r, 80);
+  });
+  try { work(); }
+  finally { btn.disabled = false; btn.textContent = was; }
+}
+
+/**
+ * How much better, in the terms the mode is actually measured in.
+ *
+ * Survival needs saying carefully. The solver improves damage HELD - sim.js's own
+ * objective, and the only one with a gradient, since seconds survived is infinity for
+ * every build that lives out the fight and a search whose candidates all tie keeps
+ * whichever it tried first. But the headline on the page is the clock. So when the clock
+ * moves, the clock is what gets reported; when it does not, the note says what did.
+ */
+function gainText(before, after) {
+  if (S.survival) {
+    const a = before.secs, b = after.secs;
+    if (isFinite(a) && (!isFinite(b) || b > a + .5))
+      return ` — survives ${isFinite(b) ? asClock(b) : "the whole fight"} instead of `
+           + `${asClock(a)}`;
+    const pct = before.show > 0 ? 100 * (before.show - after.show) / before.show : 0;
+    return pct > 0.05
+      ? ` — holds ${pct.toFixed(1)}% less damage`
+        + (isFinite(b) ? "" : " (you already survive the fight)")
+      : "";
+  }
+  const pct = before.show > 0 ? 100 * (after.show - before.show) / before.show : 0;
+  return pct > 0.05 ? ` — ${pct.toFixed(1)}% better` : "";
+}
+
+document.getElementById("solveAttrs").onclick = () => whileSolving("solveAttrs", () => {
+  const found = solveAlloc();
+  if (!found) { note("Equip something first — there is nothing to spend points on yet."); return; }
+  if (!beats(found.score, found.before)) {
+    note(`Spread ${found.budget} attribute points; nothing beat what you have.`);
+    return;
+  }
+  S.alloc = found.alloc;
+  trimAlloc();
+  const spare = found.spent < found.budget
+    ? ` ${found.budget - found.spent} held back — nothing left measured as a gain.` : "";
+  note(`Spread ${found.spent} of ${found.budget} attribute points`
+       + `${gainText(found.before, found.score)}.${spare}`, true);
+  drawAlloc(); regear(); drawSlots(); render();
+});
+
+document.getElementById("solveTalents").onclick = () => whileSolving("solveTalents", () => {
+  const found = solveTalents();
+  /* An empty tree is not a build to be measured against. With no ranks spent the model
+     falls back to the Talent rank box, which speaks for all fourteen spells at once - at
+     rank 5 that is around seventy points on a character who has forty, and it is why an
+     untouched page can show a figure the solver "fails" to beat. So an empty tree always
+     takes the spend: whatever it measures, it is one a character can actually hold. */
+  const better = found.best && beats(found.best.score, found.before);
+  if (found.best && (better || found.untouched)) {
+    optTalents = found.best.ranks;
+    S.ranks = optTalentRanks();
+    const gain = better ? gainText(found.before, found.best.score) : "";
+    const head = `Searched ${found.shapes} tree shapes for ${found.budget} points`;
+    note(found.untouched && !better
+      ? `${head}. Your tree was empty, so the old figure had every spell at the Talent `
+        + `rank box's rank — more ranks than ${found.budget} points can buy. This spend `
+        + `is one you can hold: ${fmt(found.best.score.show)}`
+        + `${S.survival ? " damage taken" : " dps"}.`
+      : `${head}${gain}.`, true);
+    drawOptTree(); drawAlloc(); render();
+  } else {
+    note(`Searched ${found.shapes} tree shapes; nothing beat what you have.`);
+  }
+});
+
 document.getElementById("attrReset").onclick = () => {
   ALLOC_ATTRS.forEach(k => S.alloc[k] = 0);
   optTalents = {};

@@ -660,8 +660,15 @@ for (const [mapId, points] of Object.entries(D.spawns || {}))
       for (const m of targets) {
         let src = byId.get(m.id);
         if (!src) {
-          // A creature with no measured loot of its own still needs a row to hang on.
-          src = {i: DROP.sources.length, id: m.id, name: m.name, node: false};
+          /* A creature with no measured loot of its own still needs a row to hang on - and
+             the row has to look like the ones the builder makes, not just carry an id and a
+             name. Leaving off icon, lvl and boss cost every such creature its portrait, its
+             level and its boss styling in the item sheet, and it showed up worst exactly
+             where the synthesis does the most work: Ashenroot's seven creatures share three
+             loot_table_entries between them, so almost every source in the newest rift was
+             one of these, and almost every one of them drew the empty circle. */
+          src = {i: DROP.sources.length, id: m.id, name: m.name, node: false,
+                 lvl: m.lvl, boss: !!m.boss, icon: !!m.icon};
           DROP.sources.push(src);
           byId.set(m.id, src);
         }
@@ -3098,6 +3105,107 @@ function openChange(entry, cat, kind, e, old) {
   };
 })();
 
+
+/* ---- things the planner and the optimizer both do --------------------------
+ * These lived twice, once in each page, and the copies drifted. The tooltip placement is
+ * the cautionary tale: the zoom correction below was written into the optimizer's copy and
+ * not the planner's, so for weeks the planner put its card a whole panel away from the
+ * cursor on any screen wide enough to trigger the page zoom. Nobody could see that from
+ * either file alone.
+ *
+ * Anything both pages do to the same model belongs here.
+ */
+
+/** Where a hovering card goes, in the one frame of reference that works. */
+function placeTipAt(tip, e) {
+  /* clientX and getBoundingClientRect are PAINTED pixels; `left` and `top` are CSS lengths,
+     which the root zoom (1.15 past 1700px, 1.35 past 2200) scales again. Writing a painted
+     number into a CSS length puts the card zoom-times further from the cursor than it
+     should be. So the sums are done in painted pixels, including the viewport they are
+     clamped against, and divided once at the end. */
+  const pad = 14, z = pageZoom(), r = tip.getBoundingClientRect();
+  const vw = document.documentElement.clientWidth * z;
+  const vh = document.documentElement.clientHeight * z;
+  let x = e.clientX + pad, y = e.clientY + pad;
+  if (x + r.width > vw - 8) x = e.clientX - r.width - pad;
+  if (y + r.height > vh - 8) y = e.clientY - r.height - pad;
+  tip.style.left = Math.max(8, x) / z + "px";
+  tip.style.top = Math.max(8, y) / z + "px";
+}
+
+/**
+ * Show `html` (a string or a built node) in `tip` while the pointer is over `node`.
+ * Returns the node, so it can be used inline.
+ */
+function attachTipTo(tip, node, html) {
+  node.classList.add("hastip");
+  const show = e => {
+    // Callers pass a string or a built node; a structured tooltip builds its own rather
+    // than concatenating markup.
+    if (html instanceof Node) tip.replaceChildren(html.cloneNode(true));
+    else tip.innerHTML = html;
+    tip.hidden = false;
+    placeTipAt(tip, e);
+  };
+  node.addEventListener("mouseenter", show);
+  node.addEventListener("mousemove", e => placeTipAt(tip, e));
+  node.addEventListener("mouseleave", () => { tip.hidden = true; });
+  return node;
+}
+
+/* ---- attribute points ------------------------------------------------------
+   One point every two levels since v3489988, two stat points each, twenty-five to a stat.
+   The same numbers both pages spend, so a build carries across. */
+const ATTR_KEYS = ["vitality", "fortitude", "strength", "grace", "alacrity", "tempo",
+                   "accuracy"];
+const attrPointsTotal = level => GAME.attributePoints(level);
+const attrPointsSpent = alloc => ATTR_KEYS.reduce((t, k) => t + ((alloc || {})[k] | 0), 0);
+const attrPointsLeft = (level, alloc) =>
+  Math.max(0, attrPointsTotal(level) - attrPointsSpent(alloc));
+
+/**
+ * The seven +/- rows, into `host`.
+ *
+ * cfg: {alloc, level, step(key, by), bulk}
+ *   alloc  the object being spent from
+ *   step   what to call when a button is pressed; the caller owns clamping and redrawing
+ *   bulk   how many a held Shift moves - the planner walks in tens because a single
+ *          attribute takes twenty-five, the optimizer in fives
+ */
+function allocRows(host, cfg) {
+  host.replaceChildren();
+  const alloc = cfg.alloc || {};
+  const left = attrPointsLeft(cfg.level, alloc);
+  const bulk = cfg.bulk || 5;
+  for (const k of ATTR_KEYS) {
+    const have = alloc[k] | 0;
+    const row = el("div", "allocrow");
+    row.appendChild(el("span", "an", cap(k)));
+
+    const minus = el("button", null, "−");
+    minus.type = "button";
+    minus.disabled = have <= 0;
+    minus.title = `Remove a point — hold Shift for ${bulk}`;
+    minus.onclick = e => cfg.step(k, -(e.shiftKey ? bulk : 1));
+
+    const val = el("span", "av", String(have));
+    if (have >= GAME.MAX_PER_ATTR) val.classList.add("maxed");
+    val.title = `${have} point${have === 1 ? "" : "s"} = `
+              + `+${have * GAME.STAT_PER_POINT} ${cap(k)}`;
+
+    const plus = el("button", null, "+");
+    plus.type = "button";
+    plus.disabled = have >= GAME.MAX_PER_ATTR || left <= 0;
+    plus.title = `Add a point — hold Shift for ${bulk}`;
+    plus.onclick = e => cfg.step(k, e.shiftKey ? bulk : 1);
+
+    row.append(minus, val, plus);
+    row.appendChild(el("span", "amax",
+      (have >= GAME.MAX_PER_ATTR ? "max" : `/ ${GAME.MAX_PER_ATTR}`)
+      + (have ? `  +${have * GAME.STAT_PER_POINT}` : "")));
+    host.appendChild(row);
+  }
+}
 
 /* ---- the talent tree -------------------------------------------------------
  * The rules and the drawing, once, because two pages want them: the planner's own panel
