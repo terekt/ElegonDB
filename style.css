@@ -428,6 +428,13 @@ button.gold:hover{filter:brightness(1.08);color:var(--gold-ink)}
 /* QualityBackdrop stand-in. The real one is drawn by item_quality_backdrop.gdshader with
    the quality colour as a uniform; this approximates it until that shader is exported.
    Hidden at Normal, matching GetBorderColor returning null there. */
+/* The item level, along the bottom of the slot. Centred rather than tucked in a corner
+   because it is the number people compare between two pieces, and a column of them down
+   the doll only reads as a column if they all start in the same place. */
+.eqbox .ilvl{position:absolute;left:0;right:0;bottom:0;z-index:2;text-align:center;
+  font-family:var(--game-font);font-size:9.5px;line-height:1.4;letter-spacing:.2px;
+  color:var(--gold);background:color-mix(in oklab,var(--bg) 78%,transparent);
+  font-variant-numeric:tabular-nums;pointer-events:none}
 .eqbox .glow{position:absolute;inset:6%;
   background:radial-gradient(circle at 50% 55%,
     color-mix(in oklab,var(--q) 46%,transparent) 0%,

@@ -139,6 +139,30 @@ function scaleStat(base, quality, tier) {
   if (!tier || tier <= 0) return q;
   return Math.max(1, round(f32(f32(q) * instabilityMult(tier))));
 }
+/* EquippedItemLevelCalculator.CalculateItemLevel:
+     round(levelRequirement x ITEM_LEVEL_PER_REQ x qualityMult x instabilityMult)
+
+   Every term here has moved at least once, which is the point of writing them down:
+
+     the multiplier  was 10 until build 3498872 and is now 4, so the whole scale shifted by
+                     2.5x in a single patch
+     quality         had a gentle curve of its own until v3489988 - 1.05 / 1.1 / 1.15 - and
+                     is now whatever the stats use, ItemQuality.StatMultiplier, which
+                     v3492098 then cut to 1.15 / 1.3 / 1.5
+
+   Three patches between them, so an item level from before any of them is not comparable
+   with one from now - and that applies to the item_level column in our own damage and
+   progress logs as much as to anything on screen. The whole product is float32 in the
+   client and rounds away from zero, and both are reproduced here. */
+const ITEM_LEVEL_PER_REQ = 4;
+function itemLevelOf(item, quality, tier) {
+  const lvl = Math.max(0, (item && item.lvl) || 0);
+  if (!lvl) return 0;
+  const q = (QUALITY[quality] || QUALITY[1]).m;
+  return Math.max(0, round(f32(f32(f32(lvl * ITEM_LEVEL_PER_REQ) * f32(q))
+                               * instabilityMult(tier))));
+}
+
 const scaled = (item, stat, q, t) => scaleStat(item[stat] || 0, q, t);
 const itemTotal = (item, q, t) => D.stats.reduce((s, k) => s + scaled(item, k, q, t), 0);
 

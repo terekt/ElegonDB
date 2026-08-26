@@ -6,8 +6,8 @@
 <meta http-equiv="Cache-Control" content="no-cache">
 <title>Elegon DB — Character planner</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2032%2032%27%3E%3Cdefs%3E%3ClinearGradient%20id%3D%27t%27%20x1%3D%270%27%20y1%3D%270%27%20x2%3D%27.45%27%20y2%3D%271%27%3E%3Cstop%20offset%3D%270%27%20stop-color%3D%27%23ffe455%27%2F%3E%3Cstop%20offset%3D%271%27%20stop-color%3D%27%23e9a200%27%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D%2732%27%20height%3D%2732%27%20rx%3D%277%27%20fill%3D%27url%28%23t%29%27%2F%3E%3Cg%20fill%3D%27%23110c09%27%20font-family%3D%27Alice%2CGeorgia%2Cserif%27%3E%3Ctext%20x%3D%276.5%27%20y%3D%2723%27%20font-size%3D%2717%27%3EE%3C%2Ftext%3E%3Ctext%20x%3D%2717.5%27%20y%3D%2723%27%20font-size%3D%279%27%20opacity%3D%27.72%27%3Edb%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fsvg%3E">
-<link rel="stylesheet" href="style.css?v=841d3e52">
-<link rel="stylesheet" href="elegon-redesign.css?v=841d3e52">
+<link rel="stylesheet" href="style.css?v=82ef37c3">
+<link rel="stylesheet" href="elegon-redesign.css?v=82ef37c3">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -252,9 +252,9 @@
   </div>
 </dialog>
 
-<script src="data.js?v=841d3e52"></script>
+<script src="data.js?v=82ef37c3"></script>
 <!-- Written by the mod when you log in; absent until then. -->
-<script src="app.js?v=841d3e52"></script>
+<script src="app.js?v=82ef37c3"></script>
 <script>
 /* The game's slot set and order, from InGameUi.EnumerateCharacterPanelSlots:
    main weapon, off hand, head, neck, shoulder, back, chest, waist, leg, foot, hands. */
@@ -316,20 +316,10 @@ const SLOT_PLACEHOLDER = {
   "Off Hand":  "icon_dark_fantasy_inventory_spellbooks_01_stroke.png",
 };
 
-/* EquippedItemLevelCalculator.CalculateItemLevel:
-     round(levelRequirement × 10 × qualityMult × instabilityMult)
-
-   Quality here had a gentle curve of its own until v3489988 - 1.05 / 1.1 / 1.15 - and is now
-   whatever the stats use, ItemQuality.StatMultiplier, which v3492098 then cut to
-   1.15 / 1.3 / 1.5. Two patches running, so an item level from before either is not
-   comparable to one from now. The whole product is float32 in the client and rounds away
-   from zero, and both are reproduced here. */
-function itemLevelOf(item, quality, tier) {
-  if (!item) return 0;
-  const base = Math.max(0, item.lvl || 0) * 10;
-  const q = (QUALITY[quality] || QUALITY[1]).m;
-  return round(f32(f32(f32(base) * f32(q)) * instabilityMult(tier)));
-}
+/* itemLevelOf lives in app.js - this page had its own copy, still on the multiplier of ten
+   that build 3498872 replaced with four, and it quietly won because an inline script is
+   parsed after the file it duplicates. Every item level the planner printed was 2.5x the
+   game's. One implementation, shared, so the next change to that constant is made once. */
 
 /** Average item level, weapons averaged together into a single normalised slot. */
 function equippedItemLevel() {
@@ -683,6 +673,8 @@ function slotButton(s) {
   }
   if (st.item) {
     box.appendChild(icon("items", st.item.id, !!st.item.icon));
+    // The game's own item level for this piece at this quality and depth.
+    box.appendChild(el("span", "ilvl", String(itemLevelOf(st.item, st.quality, st.tier))));
   } else {
     // The panel's own empty-slot art rather than a generic placeholder.
     const ph = el("img", "ph");
