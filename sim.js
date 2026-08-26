@@ -328,9 +328,9 @@ function procFor(D, cls, actions) {
  *
  * So an average hit is worth 0.9 + 0.1 x 1.5 = 1.05 of its base.
  *
- * Ticks are excluded on the evidence: 0 crits in 46 recorded damage-over-time ticks, which
- * at 10% would happen 0.8% of the time. Healing is excluded for want of evidence rather
- * than against it - nothing here has ever measured a heal crit.
+ * Neither a periodic tick nor a heal can crit - confirmed, not inferred. The measurement
+ * agreed in advance for ticks (0 crits in 46 recorded, which at 10% would happen 0.8% of
+ * the time) and was simply silent on healing, which had never been observed either way.
  *
  * MISSES are not settled, which is why they are off unless asked for. The direction is
  * real - 30 misses in 648 swings at 0 Accuracy against 12 in 571 at 50, Fisher p = 0.018 -
@@ -482,12 +482,17 @@ function model(D, cfg) {
     tempoBonus: ratingBonus(C.tempo, C.level),
     autoDmg, autoInterval: D.attackInterval || 3, autoRange, inMelee,
     /* Applied where damage is credited rather than folded into a.direct, so the breakdown
-       and the priority solver both see the same number a player would. Healing is left
-       alone: a heal crit has never been measured here either way. */
+       and the priority solver both see the same number a player would. Healing mode gets 1:
+       heals cannot crit, and in this mode a.direct IS the heal. */
     critFactor: (C.crit && !C.healing) ? CRIT_FACTOR : 1,
     /* A miss takes the whole application with it - no hit, and no periodic either, which is
-       why this one reaches the ticks and crit does not. */
-    landFactor: C.misses ? 1 - missRateFor(C.accuracy) : 1,
+       why this one reaches the ticks and crit does not.
+
+       Healing is left out of it as well, for a different reason: nobody has measured
+       whether a heal can miss, and the rate here was fitted to melee auto attacks swung at
+       an enemy. Applying it to a heal would be carrying a number well outside the ground it
+       was measured on. */
+    landFactor: (C.misses && !C.healing) ? 1 - missRateFor(C.accuracy) : 1,
     autoOn: cfg.autoAttack !== false && !C.healing && inMelee,
     duration: cfg.duration || 300,
     resourceMax: cfg.resourceMax || 100,
