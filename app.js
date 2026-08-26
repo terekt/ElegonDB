@@ -760,6 +760,38 @@ const pct = (offset, leeway) => (leeway > 0.0001 ? (offset / leeway) * 100 : 0) 
    enough that a 10-unit aggro circle is most of the frame, which is the point of zooming. */
 const MAP_ZOOM_MIN_WORLD = 26;
 
+/* ---- the hillshade, on every map the site draws ---------------------------
+ * The Maps page has shown the terrain relief over the overworld for a while; the sheets did
+ * not, so the same ground looked flat in a monster's spawn map and modelled on the page next
+ * to it.
+ *
+ * Layered as a second BACKGROUND rather than an overlay element, because these renders are
+ * crops: one background-size and one background-position then crop both images identically.
+ * A separate <img> would have to reproduce the crop arithmetic, and would drift apart from
+ * it the first time either was touched.
+ *
+ * Only the overworld has one. depthmap.py derives the relief from that zone's Terrain3D
+ * heights, and a breach is a repeating texture with no terrain under it to read - which is
+ * also why those maps are drawn as plans rather than photographs.
+ */
+const MAP_RELIEF = "terrain-relief.png";
+const hasRelief = map => !!map && !map.plan && map.img === "overworld.jpg";
+
+/** Paint a map into `box`, hillshade included where there is one. */
+function paintMapBg(box, map, size, pos) {
+  const base = `url("maps/${map.img}")`;
+  const lit = hasRelief(map);
+  box.style.backgroundImage = lit ? `url("maps/${MAP_RELIEF}"), ${base}` : base;
+  /* One value per LAYER, and the second one matters: a bare "soft-light" applies to every
+     layer including the bottom one, which then blends with the element's own
+     background-color - and both of these boxes set that to var(--bg), the page ground.
+     Soft-light against a near-black ground is what turned every map on the site to mud.
+     The relief blends onto the photograph; the photograph sits on the ground normally. */
+  box.style.backgroundBlendMode = lit ? "soft-light, normal" : "";
+  if (size) box.style.backgroundSize = size;
+  if (pos) box.style.backgroundPosition = pos;
+}
+
 function spawnMap(entry, radiusWorld) {
   const {map, points} = entry;
   const pixels = points.map(([x, z]) => worldToPixel(map, x, z));
@@ -812,7 +844,7 @@ function spawnMap(entry, radiusWorld) {
   let frame = null;
   if (map.img) {
     const loc = el("div", "spawnloc");
-    loc.style.backgroundImage = `url("maps/${map.img}")`;
+    paintMapBg(loc, map);
     loc.style.aspectRatio = (map.w / map.h).toFixed(4);
     loc.title = "Where this view sits in " + map.name;
     frame = el("span", "spawnframe");
@@ -823,9 +855,9 @@ function spawnMap(entry, radiusWorld) {
   function render() {
     if (map.img) {
       // Scale the whole image up so the window fills the box, then slide it into view.
-      box.style.backgroundImage = `url("maps/${map.img}")`;
-      box.style.backgroundSize = `${(map.w / V.w) * 100}% ${(map.h / V.h) * 100}%`;
-      box.style.backgroundPosition = `${pct(V.x, map.w - V.w)} ${pct(V.y, map.h - V.h)}`;
+      paintMapBg(box, map,
+        `${(map.w / V.w) * 100}% ${(map.h / V.h) * 100}%`,
+        `${pct(V.x, map.w - V.w)} ${pct(V.y, map.h - V.h)}`);
     } else {
       // The breaches have no terrain for the map camera to draw - the render is one
       // repeating texture - so there is no picture to show. A ruled grid is honest about
@@ -2311,9 +2343,9 @@ function questMap(group, opts) {
        point with the container's P% point, so the divisor is the LEEWAY (how much bigger
        the scaled image is than the box), not the window. Dividing by the window instead
        slid every map to the wrong ground. pct() is the same helper spawnMap uses. */
-    box.style.backgroundImage = `url("maps/${map.img}")`;
-    box.style.backgroundSize = `${(map.w / w) * 100}% ${(map.h / h) * 100}%`;
-    box.style.backgroundPosition = `${pct(x, map.w - w)} ${pct(y, map.h - h)}`;
+    paintMapBg(box, map,
+      `${(map.w / w) * 100}% ${(map.h / h) * 100}%`,
+      `${pct(x, map.w - w)} ${pct(y, map.h - h)}`);
   }
 
   /* ---- the objectives, on a canvas ----------------------------------------

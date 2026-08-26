@@ -432,9 +432,27 @@ button.gold:hover{filter:brightness(1.08);color:var(--gold-ink)}
    because it is the number people compare between two pieces, and a column of them down
    the doll only reads as a column if they all start in the same place. */
 .eqbox .ilvl{position:absolute;left:0;right:0;bottom:0;z-index:2;text-align:center;
-  font-family:var(--game-font);font-size:9.5px;line-height:1.4;letter-spacing:.2px;
-  color:var(--gold);background:color-mix(in oklab,var(--bg) 78%,transparent);
-  font-variant-numeric:tabular-nums;pointer-events:none}
+  font-family:var(--game-font);font-size:9.5px;line-height:1.4;
+  /* Tracked out, because the outline is what makes it cramped: 1.5px of black on every side
+     of every digit eats most of the gap between them, so at the old .2px a 480 read as one
+     shape. The text-indent puts back the trailing space letter-spacing adds after the last
+     digit. HALF the tracking, not all of it: the trailing space sits inside the centred
+     content box, so it pushes the glyphs half its width to the left, and indenting by the
+     full amount simply overshoots the same distance to the right. */
+  letter-spacing:.9px;text-indent:.45px;
+  color:var(--gold);font-variant-numeric:tabular-nums;pointer-events:none;
+  /* Outlined rather than sat on a band: the band cut a straight edge across the bottom of
+     the artwork, and the number needs separating from the icon behind it, not the icon
+     hiding behind it. Eight offsets rather than -webkit-text-stroke, which strokes inward
+     and thins a 9.5px glyph until it looks broken. Black on purpose and not a token - it is
+     there to be read against the item art in either theme, not to match the surface.
+
+     1.5px rather than 1 or 2: one was thin enough that a gold digit over pale artwork still
+     swam, and two closes the counters of an 8 or a 0 at this size. The half lands on a whole
+     device pixel on any 2x screen, which is most of them. */
+  text-shadow:0 1.5px 0 #000, 1.5px 0 0 #000, 0 -1.5px 0 #000, -1.5px 0 0 #000,
+              1.5px 1.5px 0 #000, 1.5px -1.5px 0 #000, -1.5px 1.5px 0 #000,
+              -1.5px -1.5px 0 #000}
 .eqbox .glow{position:absolute;inset:6%;
   background:radial-gradient(circle at 50% 55%,
     color-mix(in oklab,var(--q) 46%,transparent) 0%,

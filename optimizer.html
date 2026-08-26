@@ -6,8 +6,8 @@
 <meta http-equiv="Cache-Control" content="no-cache">
 <title>Elegon DB — Optimizer</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2032%2032%27%3E%3Cdefs%3E%3ClinearGradient%20id%3D%27t%27%20x1%3D%270%27%20y1%3D%270%27%20x2%3D%27.45%27%20y2%3D%271%27%3E%3Cstop%20offset%3D%270%27%20stop-color%3D%27%23ffe455%27%2F%3E%3Cstop%20offset%3D%271%27%20stop-color%3D%27%23e9a200%27%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D%2732%27%20height%3D%2732%27%20rx%3D%277%27%20fill%3D%27url%28%23t%29%27%2F%3E%3Cg%20fill%3D%27%23110c09%27%20font-family%3D%27Alice%2CGeorgia%2Cserif%27%3E%3Ctext%20x%3D%276.5%27%20y%3D%2723%27%20font-size%3D%2717%27%3EE%3C%2Ftext%3E%3Ctext%20x%3D%2717.5%27%20y%3D%2723%27%20font-size%3D%279%27%20opacity%3D%27.72%27%3Edb%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fsvg%3E">
-<link rel="stylesheet" href="style.css?v=e8b15dc3">
-<link rel="stylesheet" href="elegon-redesign.css?v=e8b15dc3">
+<link rel="stylesheet" href="style.css?v=d14f40b9">
+<link rel="stylesheet" href="elegon-redesign.css?v=d14f40b9">
 <script>
 (function () {
   var saved = null;
@@ -114,6 +114,128 @@
   font-variant-numeric:tabular-nums}
 .tltip .row span{color:var(--faint)}
 
+/* ---- the call to action --------------------------------------------------
+   The feed is what the page is for, so its empty state is not a placeholder line - it is
+   the invitation. One sentence, one button sized like it matters, and the search settings
+   underneath in the quietest type on the panel so they read as fine print rather than a
+   form to fill in before you are allowed to press anything. */
+.feedcard{border-color:color-mix(in oklab,var(--gold) 34%,var(--line))}
+#feedCta{display:flex;flex-direction:column;align-items:center;gap:20px;
+  padding:30px 20px 26px}
+#feedCta[hidden]{display:none}
+.ctabtn{font-family:var(--panel-font);font-size:16.5px;padding:12px 34px;border-radius:9px;
+  letter-spacing:.3px}
+.ctabtn:hover{filter:brightness(1.06)}
+/* The same label-over-control grouping the setup bar uses, so these read as part of the
+   page rather than as three controls someone dropped into a sentence. */
+.ctaopts{display:flex;gap:18px;flex-wrap:wrap;justify-content:center;align-items:flex-end}
+.ctaopts .grp{gap:5px}
+.ctaopts label{font-size:11px;letter-spacing:.5px}
+.ctaopts input{width:74px}
+.ctaopts .seg button{padding:6px 13px;font-size:13px}
+/* The quality segment carries the game's own rarity colours. Every button wears its hue
+   whatever the state, so the four read as a scale; the chosen one fills with a wash of the
+   same hue rather than the segment's usual solid gold, which would have thrown away the
+   one piece of information the control exists to convey. Both themes already define these
+   tokens - light mode darkens them, because Normal at 0.86 grey is invisible on paper. */
+#gearQual button{font-weight:500;transition:background .12s}
+#gearQual button.r1{color:var(--normal)}
+#gearQual button.r3{color:var(--fine)}
+#gearQual button.r2{color:var(--superior)}
+#gearQual button.r4{color:var(--flawless)}
+#gearQual button:not(.on){opacity:.62}
+#gearQual button:not(.on):hover{opacity:1;background:color-mix(in oklab,currentColor 10%,transparent)}
+#gearQual button.on{background:color-mix(in oklab,currentColor 22%,transparent);
+  box-shadow:inset 0 0 0 1px color-mix(in oklab,currentColor 55%,transparent)}
+/* Working: the button says so rather than freezing with its old label on. */
+.ctabtn:disabled{opacity:1;filter:none}
+
+/* ---- the lanes -----------------------------------------------------------
+   A lane is a kind of change, not a panel: it carries its own headline gain and opens to
+   the individual changes underneath. Ticking is per ROW, and the header total is re-solved
+   from whatever is ticked rather than summed - two changes that each help can overlap, and
+   a sum would quietly promise a number the build will not reach. */
+.lane{border:1px solid var(--line);border-radius:var(--radius);margin-bottom:10px;
+  background:color-mix(in oklab,var(--panel) 60%,transparent)}
+.lane.empty{opacity:.55}
+.lanehead{display:grid;grid-template-columns:22px minmax(0,1fr) auto auto;gap:10px;
+  align-items:center;padding:10px 12px;cursor:pointer;user-select:none}
+.lane.empty .lanehead{cursor:default}
+.lanehead:hover{background:color-mix(in oklab,var(--panel2) 55%,transparent)}
+.lane.empty .lanehead:hover{background:none}
+.laneglyph{color:var(--faint);font-size:11px;text-align:center;transition:transform .12s}
+.lane.open .laneglyph{transform:rotate(90deg)}
+.lanename{font-family:var(--panel-font);color:var(--ink);font-size:15px}
+.lanesub{display:block;font-family:var(--body-font,inherit);color:var(--faint);font-size:12px}
+.lanegain{font-variant-numeric:tabular-nums;color:var(--good,#4c9a4c);font-weight:600;
+  font-size:14.5px;white-space:nowrap}
+.lane.empty .lanegain{color:var(--faint);font-weight:400}
+.lanecount{font-size:12px;color:var(--faint);white-space:nowrap}
+.lanerows{display:none;border-top:1px solid var(--line-soft);padding:4px 0}
+.lane.open .lanerows{display:block}
+.lrow{display:grid;grid-template-columns:24px minmax(0,1fr) 82px;gap:10px;align-items:baseline;
+  padding:8px 12px}
+.lrow + .lrow{border-top:1px solid var(--line-soft)}
+.lrow:hover{background:color-mix(in oklab,var(--panel2) 45%,transparent)}
+.lrow input{margin:0;cursor:pointer}
+.lrow .what{color:var(--ink);font-size:14px}
+.lrow .where{display:block;color:var(--faint);font-size:12px;line-height:1.45;margin-top:2px}
+.lrow .val{text-align:right;font-variant-numeric:tabular-nums;color:var(--good,#4c9a4c);
+  font-size:13.5px}
+
+/* ---- a gear row --------------------------------------------------------------
+   Four columns: the tick, the item as the game draws it, everything the swap changes, and
+   what it is worth. The middle column is built from objects - a name in its quality colour,
+   the piece it replaces, chips for the stats that move and chips for where the thing drops
+   - because a row you compare against ten others has to be scannable down a column, and a
+   sentence never is. */
+.lrow.gearrow{grid-template-columns:24px 46px minmax(0,1fr) 76px;gap:12px;
+  align-items:start;padding:12px;cursor:pointer;border-radius:7px}
+.lrow.gearrow input{margin-top:16px}
+.lrow.gearrow .framed{margin-top:2px}
+.lrow.gearrow.picked{background:color-mix(in oklab,var(--gold) 9%,transparent);
+  box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--gold) 26%,transparent)}
+.lrow.picked{background:color-mix(in oklab,var(--gold) 9%,transparent)}
+.gmid{display:flex;flex-direction:column;gap:5px;min-width:0}
+.ghead{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.gslot{font-size:10.5px;letter-spacing:.9px;text-transform:uppercase;color:var(--faint)}
+.gname{font-family:var(--panel-font);font-size:15px;line-height:1.25}
+.gtier{font-size:10.5px;color:var(--gold);border:1px solid color-mix(in oklab,var(--gold) 40%,transparent);
+  border-radius:3px;padding:0 4px}
+.gwas{display:flex;align-items:baseline;gap:6px;font-size:12.5px;color:var(--faint)}
+.garrow{opacity:.8}
+.gempty{font-style:italic}
+.gstats,.gwhere{display:flex;flex-wrap:wrap;gap:5px}
+.gstat{display:inline-flex;align-items:baseline;gap:4px;font-size:11.5px;line-height:1.7;
+  padding:1px 7px;border-radius:20px;font-variant-numeric:tabular-nums}
+.gstat b{font-weight:600}
+.gstat span{opacity:.82}
+.gstat.up{color:var(--good,#4c9a4c);background:color-mix(in oklab,var(--good,#4c9a4c) 13%,transparent)}
+.gstat.down{color:var(--bad,#b4544a);background:color-mix(in oklab,var(--bad,#b4544a) 13%,transparent)}
+.gsrc{display:inline-flex;align-items:baseline;gap:5px;font-size:11px;line-height:1.7;
+  padding:1px 7px;border-radius:4px;color:var(--dim);
+  background:color-mix(in oklab,var(--panel2) 70%,transparent);
+  border:1px solid var(--line-soft)}
+.gsrc b{font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink)}
+.gsrc.s-rift{color:var(--gold);border-color:color-mix(in oklab,var(--gold) 32%,transparent);
+  background:color-mix(in oklab,var(--gold) 10%,transparent)}
+.gsrc.s-boss b{color:var(--gold)}
+.gsrc.s-none{font-style:italic;opacity:.7}
+.gval{text-align:right;font-variant-numeric:tabular-nums;line-height:1.15;margin-top:2px}
+.gval b{display:block;font-size:16px;font-weight:600;color:var(--good,#4c9a4c)}
+.gval span{font-size:10px;letter-spacing:.7px;text-transform:uppercase;color:var(--faint)}
+.laneall{font-size:11.5px;padding:3px 9px;margin-right:2px}
+.feedsum{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:0 0 12px;
+  font-variant-numeric:tabular-nums}
+.feedsum .from{color:var(--faint);font-size:14px}
+.feedsum .to{font-family:var(--panel-font);font-size:22px;color:var(--gold)}
+.feedsum .up{color:var(--good,#4c9a4c);font-size:14px;font-weight:600}
+.feedsum .wait{color:var(--faint);font-size:13px}
+/* Changed the build without looking again? The figures are still true of something, just
+   not of what the headline now says - so they are dimmed rather than left reading as
+   current, and the note above says which. */
+#lanes.stale .lane,#lanes.stale .feedsum{opacity:.42}
+#lanes.stale .lrow input{pointer-events:none}
 .wrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(90px,180px) 84px 52px;gap:12px;
   align-items:center;padding:7px 2px;font-size:13px}
 .wrow + .wrow{border-top:1px solid var(--line-soft)}
@@ -337,10 +459,6 @@
       <label for="oLevel">Level</label>
       <input type="number" id="oLevel" min="1" max="80" step="1" value="80">
     </div>
-    <div class="grp">
-      <label for="oRank">Talent rank</label>
-      <input type="number" id="oRank" min="0" max="5" step="1" value="5">
-    </div>
     <div class="grp" id="targetGrp">
       <label for="oTargets">Enemies</label>
       <input type="number" id="oTargets" min="1" max="40" step="1" value="1">
@@ -365,10 +483,6 @@
       <div class="attrs">
         <div class="rifthead">
           <div class="opthead"><h3>Build</h3></div>
-          <div class="grpline">
-            <button type="button" id="gearFold" aria-expanded="true"
-                    aria-controls="gearBody" title="Hide the gear">Hide gear</button>
-          </div>
         </div>
         <div class="divider"></div>
         <div id="gearBody">
@@ -397,18 +511,57 @@
         </div>
         <div class="divider" style="margin:12px 0 10px"></div>
         <div id="statInputs"></div>
-        <div class="divider" style="margin:12px 0 10px"></div>
-        <div id="derived"></div>
-      </div>
-      <div class="attrs" style="margin-top:16px">
-        <h3>What a stat is worth</h3>
-        <div class="divider"></div>
-        <div id="weights"><p class="note" style="margin:2px">Measuring…</p></div>
       </div>
     </div>
 
     <div>
-      <div class="attrs">
+      <!-- ---- the feed --------------------------------------------------------
+           Three lanes, because the fourth one everybody expects - rotation - can never
+           carry a change you could apply. The page already solves the best cast order for
+           whatever build you hold, so that lane would read "+0, already the best order"
+           for ever. It stays below, as evidence. -->
+      <div class="attrs" id="feedCard">
+        <div class="rifthead">
+          <div class="opthead">
+            <h3>What to change</h3>
+            <p class="note" id="feedNote"></p>
+          </div>
+          <div class="grpline" id="feedBar">
+            <button type="button" id="feedApply" class="gold" hidden>Apply</button>
+            <button type="button" id="feedClear" hidden>Clear</button>
+            <button type="button" id="feedAgain" hidden>Look again</button>
+          </div>
+        </div>
+        <div class="divider"></div>
+
+        <!-- The empty state IS the call to action: one sentence naming what the button will
+             do, the button at a size that matches how central it is, and the search settings
+             below it where they read as fine print rather than a second task. -->
+        <!-- No sentence here. The panel's own note already says what this does, and saying
+             it twice on one card is what made it read oddly. The settings use the same
+             label-over-control grouping as the setup bar rather than a sentence with
+             dropdowns wedged into it, which never aligns and cannot wrap. -->
+        <div id="feedCta">
+          <button type="button" id="feedRun" class="gold ctabtn">Find changes</button>
+          <div class="ctaopts" id="gearCtl">
+            <div class="grp">
+              <label>Gear quality</label>
+              <div class="grpline"><div class="seg" id="gearQual"></div></div>
+            </div>
+            <div class="grp">
+              <label for="gearInst">Instability</label>
+              <div class="grpline">
+                <input type="number" id="gearInst" min="0" max="400" step="10" value="0">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="lanes"></div>
+      </div>
+
+
+      <div class="attrs" style="margin-top:16px">
         <div class="rifthead">
           <div class="opthead">
             <h3 id="prioTitle">Priority</h3>
@@ -419,6 +572,17 @@
         <div class="divider"></div>
         <div id="priority"></div>
         <div id="benched"></div>
+      </div>
+
+      <!-- Under the priority list rather than under the feed. Both are reading material
+           about the build you have rather than changes to make to it, and the rotation is
+           the thing a stat weight is true OF: Tempo is worth what it is worth because of
+           the order above it, and Alacrity is worth nothing because nothing in that order
+           has a cast time. -->
+      <div class="attrs" style="margin-top:16px">
+        <h3>What a stat is worth</h3>
+        <div class="divider"></div>
+        <div id="weights"><p class="note" style="margin:2px">Measuring…</p></div>
       </div>
 
       <div class="attrs" style="margin-top:16px" id="choiceCard" hidden>
@@ -477,32 +641,16 @@
         <div id="breakdown"></div>
       </div>
 
-      <div class="attrs" style="margin-top:16px">
-        <div class="rifthead">
-          <div class="opthead">
-            <h3>Better gear</h3>
-            <p class="note">the best thing in the catalogue for each slot</p>
-          </div>
-          <div class="grpline" id="gearCtl">
-            <label for="gearInst">Instability</label>
-            <input type="number" id="gearInst" min="0" max="400" step="10" value="0" style="width:88px">
-            <select id="gearQual"></select>
-            <select id="gearSrc">
-              <option value="all">From anywhere</option>
-              <option value="inst">Only the two scaling rifts</option>
-            </select>
-            <button type="button" id="gearRun" class="gold">Search</button>
-          </div>
-        </div>
-        <div class="divider"></div>
-        <div id="gearRows"><p class="note" style="margin:2px">
-          Instability only raises an item if it drops in <b>Ashenroot Grotto</b> or
-          <b>Embermaw Caverns</b>; everything else is fixed at its printed value however
-          deep you push. Set the tier you actually farm and press Search — every result
-          respects what your class can hold, and a two-hander empties the off hand.</p></div>
-        <div class="grpline" id="gearFoot" hidden style="margin-top:14px">
-          <button type="button" id="gearApply" class="gold">Equip all of it</button>
-          <span class="savenote" id="gearApplied"></span>
+      <!-- The Better gear panel used to sit here, with its own Search button and its own
+           copy of the answer. The gear lane in the feed IS that search, read as rows you can
+           tick, so the panel is gone and only its controls survive - moved up into the feed,
+           where they belong to the one question the page asks. These nodes remain because
+           runGearSearch and drawGear write into them; nothing reads them on screen. -->
+      <div id="gearShadow" hidden>
+        <div id="gearRows"></div>
+        <div id="gearFoot" hidden>
+          <button type="button" id="gearApply"></button>
+          <span id="gearApplied"></span>
         </div>
       </div>
 
@@ -609,9 +757,9 @@
        id="fightBody"></div>
 </dialog>
 
-<script src="data.js?v=e8b15dc3"></script>
-<script src="app.js?v=e8b15dc3"></script>
-<script src="sim.js?v=e8b15dc3"></script>
+<script src="data.js?v=d14f40b9"></script>
+<script src="app.js?v=d14f40b9"></script>
+<script src="sim.js?v=d14f40b9"></script>
 <script>
 /* ---- the optimizer page --------------------------------------------------
    The arithmetic lives in sim.js so it can be tested outside a browser; this
@@ -981,7 +1129,10 @@ function procRow(res) {
 
 
 function drawDerived(M, res) {
+  // The panel was dropped from this layout - health, energy and the rest are true but not
+  // things anyone came to the page to read. Kept callable so the solve path is unchanged.
   const box = document.getElementById("derived");
+  if (!box) return;
   box.replaceChildren();
   const rows = S.survival
     ? [["Health", fmt(res.health)],
@@ -2107,7 +2258,10 @@ function drawWeights(cfg, sol) {
   clearTimeout(weightTimer);
   box.classList.add("solving");
   weightTimer = setTimeout(() => {
-    const step = 100;
+    /* Ten, not a hundred. A level 80 character has thirty-nine attribute points in total,
+       so "per 100 points" priced a quantity nobody can ever hold - and the panel sits
+       beside a lane that spends the real budget. */
+    const step = 10;
     const out = SIM.statWeights(D, cfg, step);
     box.classList.remove("solving");
     box.replaceChildren();
@@ -2138,9 +2292,10 @@ function drawWeights(cfg, sol) {
         + `wrong rotation is worse than none.</span>`);
       box.appendChild(row);
     }
-    const note = el("p", "note", `Per ${step} points, at this build and this fight, `
-      + (S.survival ? "measured as seconds before it kills you. " : "")
-      + `The rotation is re-optimised for each.`);
+    const note = el("p", "note", `Per ${step} points, at this build and this fight`
+      + (S.survival ? ", measured as seconds before it kills you" : "")
+      + `. The rotation is re-solved for each, because a speed stat can change which `
+      + `order is best.`);
     note.style.margin = "10px 2px 0";
     box.appendChild(note);
   }, 40);
@@ -2170,7 +2325,11 @@ function deadStatReason(k, sol) {
 /* ---- putting it together ------------------------------------------------- */
 function baseCfg(extra) {
   return Object.assign({
-    cls: S.cls, level: S.level, rank: S.rank, ranks: S.ranks,
+    /* rank is fixed at 1 and no longer settable. Only Recall and Auto Attack have no talent
+       node, and neither is rank-scaled, so with the tree speaking for every other spell the
+       box had nothing left to say - it existed to stand in for a tree the page could not
+       draw, and the page draws it now. */
+    cls: S.cls, level: S.level, rank: 1, ranks: treeRanks(),
     strength: S.strength, grace: S.grace,
     alacrity: S.alacrity, tempo: S.tempo,
     weaponPower: S.weaponPower, healing: S.healing, survival: S.survival,
@@ -2288,7 +2447,6 @@ function syncInputs() {
   syncAttrButton();          // the doll button carries the same figure as the panel
   clsSel.value = String(S.cls);
   document.getElementById("oLevel").value = String(S.level);
-  document.getElementById("oRank").value = String(S.rank);
   document.getElementById("oTargets").value = String(FIGHT.targets);
   document.getElementById("targetGrp").hidden = S.healing || S.survival;
 
@@ -2304,7 +2462,7 @@ function syncInputs() {
     seg.appendChild(btn);
   }
   drawStatInputs();
-  if (typeof drawSlots === "function") { drawSlots(); drawGearFold(); }
+  if (typeof drawSlots === "function") drawSlots();
 }
 
 /* Bound once, here, rather than re-bound on every sync. */
@@ -2324,12 +2482,6 @@ document.getElementById("oLevel").oninput = e => {
   S.level = Math.min(80, Math.max(1, Number(e.target.value) || 1));
   if (typeof trimAlloc === "function") trimAlloc();
   regear(); syncInputs(); render();
-};
-document.getElementById("oRank").oninput = e => {
-  S.rank = Math.min(5, Math.max(0, Number(e.target.value) || 0));
-  S.ranks = null;                 // one number for every spell overrides the tree
-  optTalents = {};
-  render();
 };
 
 /* ---- load dialog --------------------------------------------------------- */
@@ -2983,7 +3135,12 @@ function gearTier(item) {
 function gearPool(slot) {
   return (D.items || []).filter(i =>
     i.slot === slot && i.lvl <= S.level && usableBy(i, S.cls)
-    && (GEAR.source !== "inst" || scalesWithInstability(i.id)));
+    /* The "where from" filter is gone. It offered to search only the two rifts whose gear
+       scales with instability, and it never once changed the answer: every winning slot at
+       level 80 is a Pyroclast piece, which drops in those rifts anyway. Checked at
+       instability 0 and at 40 - identical sets both times. A control that cannot alter the
+       result is a question the page should not be asking. */
+    );
 }
 
 const isTwoHand = it => String(it.hand || "").toLowerCase().startsWith("t");
@@ -3254,28 +3411,43 @@ const tierWord = st => st.tier ? `instability ${st.tier}` : "instability 0";
 
 /* ---- gear controls -------------------------------------------------------- */
 {
+  /* Four buttons rather than a dropdown - the same segmented control the Measuring switch
+     uses. There are only four qualities and they never change, so hiding three of them
+     behind a click bought nothing, and a segment shows which one you are on without
+     opening anything.
+
+     Ordered by what they are worth rather than by id, which is not the same thing: the
+     multipliers run Normal 1.0, Fine 1.15, Superior 1.3, Flawless 1.5, while the ids run
+     1, 3, 2, 4. Left to right is the scale, so Flawless - the default - sits at the end. */
+  const QUALITY_STEPS = [[1, "Normal"], [3, "Fine"], [2, "Superior"], [4, "Flawless"]];
   const q = document.getElementById("gearQual");
-  for (const [id, name] of [[4, "Flawless"], [2, "Superior"], [3, "Fine"], [1, "Normal"]])
-    q.appendChild(Object.assign(el("option", null, name), {value: String(id)}));
-  q.value = "4";
-  q.onchange = () => { GEAR.quality = Number(q.value); GEAR.result = null; drawGear(); };
+  const paintQuality = () => {
+    q.replaceChildren();
+    for (const [id, name] of QUALITY_STEPS) {
+      // r1/r3/r2/r4 are the site's quality colour classes - the same ones item names and
+      // slot frames use, so the segment teaches the colour code rather than inventing one.
+      const btn = el("button", "r" + id + (GEAR.quality === id ? " on" : ""), name);
+      btn.type = "button";
+      btn.setAttribute("aria-pressed", GEAR.quality === id ? "true" : "false");
+      btn.onclick = () => {
+        GEAR.quality = id;
+        GEAR.result = null;
+        paintQuality();
+        drawGear();
+      };
+      q.appendChild(btn);
+    }
+  };
+  paintQuality();
 
   const inst = document.getElementById("gearInst");
   inst.oninput = () => {
     GEAR.inst = Math.max(0, Math.round(Number(inst.value) || 0));
     GEAR.result = null; drawGear();
   };
-  const src = document.getElementById("gearSrc");
-  src.onchange = () => { GEAR.source = src.value; GEAR.result = null; drawGear(); };
 
-  const run = document.getElementById("gearRun");
-  run.onclick = () => {
-    run.disabled = true; run.textContent = "Searching…";
-    setTimeout(() => {
-      try { runGearSearch(); }
-      finally { run.disabled = false; run.textContent = "Search"; }
-    }, 30);
-  };
+  /* The Search button went with the panel. runGearSearch is now called by the feed, which
+     runs it alongside the two solvers so all three lanes are measured from one press. */
 
   document.getElementById("gearApply").onclick = () => {
     if (!GEAR.result) return;
@@ -3673,6 +3845,34 @@ let optTalents = {};
 
 function optTalentRanks() {
   return TALENT.spent(S.cls, optTalents) ? TALENT.spellRanksOf(S.cls, optTalents) : null;
+}
+
+/* ---- the tree is the only thing that speaks for a spell ---------------------
+ * On the optimizer proper, an untouched tree falls back to the Talent rank box - one number
+ * standing in for all fourteen spells at once. At rank 5 that is around seventy points on a
+ * character who has forty, and it is why the talent lane reported nothing to change: the
+ * solver's legal 40-point spend scored 12,698 and so did the impossible build it was being
+ * measured against, so the gain came out as exactly zero.
+ *
+ * Here the ranks always come from the tree. Spells with no points in them are absent from
+ * the map, and sim.js drops those outright rather than reaching for the box, so an empty
+ * tree is what it actually is: a character who has not spent anything. The talent lane then
+ * has something true to say, and so does the headline.
+ */
+function treeRanks() { return ranksOf(optTalents); }
+
+/* The one way a set of tree ranks becomes spell ranks. Everything that scores a build has
+   to go through here, or two of them will disagree about what the character can cast.
+ *
+ * That is not hypothetical: scoreState used to fall back to S.ranks when a tree had no
+ * points in it, while baseCfg fell back to the free grants. Load a saved build - whose
+ * S.ranks carries imported spell ranks while its tree is empty - and the basket priced the
+ * imported spells while the baseline and the real build priced an empty tree. The header
+ * promised 12,316 on a build that was worth 8,815, and applying it looked like the respec
+ * had failed when the respec was never what the promise had measured. */
+function ranksOf(ranks) {
+  return TALENT.spellRanksOf(S.cls,
+    TALENT.grantFree(S.cls, S.level, Object.assign({}, ranks || {})));
 }
 
 /* ---- solving the tree -------------------------------------------------------
@@ -4193,42 +4393,6 @@ document.getElementById("attrReset").onclick = () => {
 };
 /* Folded state is part of how the page is set up, so it is remembered with
    everything else rather than resetting on every visit. */
-function drawGearFold() {
-  const body = document.getElementById("gearBody");
-  const btn = document.getElementById("gearFold");
-  const open = !S.gearFolded;
-  body.hidden = !open;
-  btn.textContent = open ? "Hide gear" : "Show gear";
-  btn.setAttribute("aria-expanded", open ? "true" : "false");
-  btn.title = open ? "Hide the gear" : "Show the gear";
-
-  let sum = document.getElementById("gearSum");
-  if (!sum) {
-    sum = el("div", "gearsum");
-    sum.id = "gearSum";
-    body.parentNode.insertBefore(sum, body.nextSibling);
-  }
-  sum.hidden = open;
-  if (!open) {
-    const worn = SLOT_ORDER.filter(k => S.slots && S.slots[k] && S.slots[k].item);
-    const tiers = worn.map(k => S.slots[k].tier || 0);
-    const qs = new Set(worn.map(k => S.slots[k].quality));
-    /* Seeding the minimum with 0 made every set read "0–120". */
-    const lo = tiers.length ? Math.min(...tiers) : 0;
-    const hi = tiers.length ? Math.max(...tiers) : 0;
-    sum.replaceChildren();
-    sum.appendChild(el("span", null, `${worn.length} of ${SLOT_ORDER.length} slots`));
-    sum.appendChild(el("b", null, worn.length
-      ? (qs.size === 1 ? QUALITY[[...qs][0]].n : "mixed")
-        + " · instability " + (lo === hi ? lo : lo + "–" + hi)
-      : "nothing equipped"));
-  }
-}
-document.getElementById("gearFold").onclick = () => {
-  S.gearFolded = !S.gearFolded;
-  drawGearFold();
-  saveState();
-};
 
 /* ---- keeping the page where you left it ---------------------------------- */
 const KEY = "elegon.optimizer.v1";
@@ -4273,6 +4437,520 @@ if (!S.alloc) S.alloc = {};
 trimAlloc();
 syncInputs();
 render();
+
+/* ---- what to change, in three lanes ----------------------------------------
+ * The page's second question, answered in one place instead of three. Gear, talents and
+ * attributes each become a lane carrying its own headline gain; ticking rows fills a
+ * basket, and the basket is RE-SOLVED rather than summed.
+ *
+ * That distinction is the whole reason this is worth building. The off-hand pairing is
+ * worth about ten per cent on its own and less once the talent respec has landed, because
+ * both lean on the same rotation - so adding the two headline numbers together promises a
+ * total the build will never reach. Re-solving the ticked set costs a full solve per tick
+ * and is the only version that does not lie.
+ *
+ * There is no fourth lane for the rotation. The page already solves the best cast order for
+ * whatever build you are holding, so that lane could only ever read "nothing to change" -
+ * it is evidence, and it stays below with the breakdown.
+ */
+const LANES = {data: null, basket: new Set(), stale: true, busy: false, combined: null};
+
+const allRows = () => LANES.data
+  ? [...LANES.data.gear.rows, ...LANES.data.talents.rows, ...LANES.data.attrs.rows] : [];
+
+/* Re-spend the attribute points FOR this trial, rather than carrying over the spread the
+   lane measured on its own.
+ *
+ * Each lane is measured against the build as it stands, which makes a respec suggestion a
+ * fact about that build and not about the one you are assembling. Ticking talents and
+ * attributes together showed it: the attribute solver had been run on a tree with nothing
+ * in it, where Tempo 25 edges ahead, and once forty talent points landed the Strength 16 /
+ * Tempo 23 already on the character was better. The basket dutifully applied the worse one
+ * and the total went DOWN as a change was added - which, for a page whose whole promise is
+ * that every row is worth something, is the one result it must never produce.
+ *
+ * So the respec is solved against the trial. The current spread is kept if it still wins,
+ * which is both the honest answer and a guarantee that ticking a row can never cost you. */
+function allocForTrial(slots, ranks, fallback) {
+  const keep = {slots: S.slots, tree: optTalents, alloc: S.alloc, auto: S.autoGear,
+                prof: S.profLevels};
+  try {
+    S.autoGear = false;              // or regear would throw the trial gear away
+    S.slots = slots;
+    S.profLevels = profForSlots(slots);
+    optTalents = ranks;              // treeRanks() reads this
+    regear();
+    const solved = solveAlloc();
+    if (!solved) return fallback;
+    const mine = scoreInTrial(slots, ranks, fallback);
+    const theirs = scoreInTrial(slots, ranks, solved.alloc);
+    return beats(theirs, mine) ? solved.alloc : fallback;
+  } catch (e) {
+    return fallback;
+  } finally {
+    S.slots = keep.slots; optTalents = keep.tree; S.alloc = keep.alloc;
+    S.profLevels = keep.prof; S.autoGear = keep.auto; regear();
+  }
+}
+
+/** One build, one number, with nothing read from the live page. */
+function scoreInTrial(slots, ranks, alloc) {
+  const g = applyGear(slots, alloc, profForSlots(slots));
+  const mh = slots["Main Hand"];
+  return buildScore(SIM.solve(SIM.model(D, baseCfg({
+    strength: g.totals.strength, grace: g.totals.grace,
+    alacrity: g.totals.alacrity, tempo: g.totals.tempo,
+    vitality: g.totals.vitality, fortitude: g.totals.fortitude,
+    weaponPower: g.weaponPower,
+    ranks: ranksOf(ranks),
+    weaponSub: mh && mh.item ? mh.item.sub : "",
+  })), {restarts: 4}).result);
+}
+
+/** A trial build with the ticked changes applied, without touching the real one. */
+function basketState() {
+  const d = LANES.data;
+  const slots = Object.assign({}, S.slots || {});
+  let ranks = optTalents, alloc = S.alloc, respec = false;
+  for (const row of allRows()) {
+    if (!LANES.basket.has(row.id)) continue;
+    if (row.kind === "gear") for (const c of row.changes) slots[c.slot] = c.now;
+    if (row.kind === "talents") ranks = d.talents.ranks;
+    if (row.kind === "attributes") respec = true;
+  }
+  if (respec) alloc = allocForTrial(slots, ranks, S.alloc);
+  return {slots, ranks, alloc};
+}
+
+/** What that trial actually measures, solved properly rather than added up. */
+function scoreState(st) {
+  const g = applyGear(st.slots, st.alloc, profForSlots(st.slots));
+  const mh = st.slots["Main Hand"];
+  const cfg = baseCfg({
+    strength: g.totals.strength, grace: g.totals.grace,
+    alacrity: g.totals.alacrity, tempo: g.totals.tempo,
+    vitality: g.totals.vitality, fortitude: g.totals.fortitude,
+    weaponPower: g.weaponPower,
+    ranks: ranksOf(st.ranks),
+    weaponSub: mh && mh.item ? mh.item.sub : "",
+  });
+  return buildScore(SIM.solve(SIM.model(D, cfg), {restarts: 6}).result);
+}
+
+/* Where an item comes from, as the pieces to build chips out of rather than one sentence.
+   A sentence forced every route into the same run-on line - a rift, three creatures, a
+   drop rate and a merchant, separated by middots - and the eye had to parse it before it
+   could compare two rows. Chips let each route be its own object. */
+function sourceChips(item) {
+  const out = [];
+  for (const r of riftsDropping(item.id)) out.push({kind: "rift", label: r.name});
+  const drops = sourcesOf(item.id).filter(e => !e.src.node)
+    .sort((a, b) => (b.chance || 0) - (a.chance || 0));
+  for (const e of drops.slice(0, 3)) {
+    out.push({kind: e.src.boss ? "boss" : "drop", label: e.src.name,
+              rate: e.chance != null ? asPct(e.chance / 100) : "?"});
+  }
+  if (drops.length > 3) out.push({kind: "more", label: "+" + (drops.length - 3) + " more"});
+  for (const v of vendorsOf(item.id).slice(0, 1))
+    if (v.shop) out.push({kind: "shop", label: v.shop.name});
+  if (!out.length) out.push({kind: "none", label: "no known source"});
+  return out;
+}
+
+/** What the swap does to each stat, biggest move first, zeroes dropped. */
+function statMoves(was, now) {
+  const moves = [];
+  for (const k of (D.stats || [])) {
+    const a = was && was.item ? scaled(was.item, k, was.quality, was.tier) : 0;
+    const b = now && now.item ? scaled(now.item, k, now.quality, now.tier) : 0;
+    if (b - a) moves.push({stat: k, by: b - a});
+  }
+  return moves.sort((x, y) => Math.abs(y.by) - Math.abs(x.by));
+}
+
+/* A gear row, drawn rather than written. The icon carries the quality frame the game uses,
+   the name carries the quality colour, and the two things a swap actually changes - the
+   stats it moves and where the thing is - are objects you can scan down a column instead of
+   prose you have to read twice. */
+function gearRowEl(r) {
+  const lead = r.changes[0];                    // what the row is drawn from
+  const row = el("div", "lrow gearrow");
+
+  const tick = el("input");
+  tick.type = "checkbox";
+  tick.checked = LANES.basket.has(r.id);
+  tick.setAttribute("aria-label",
+    r.changes.map(c => (SLOT_LABEL_O[c.slot] || c.slot) + ": " + c.now.item.name).join(", "));
+  tick.onchange = () => {
+    if (tick.checked) LANES.basket.add(r.id); else LANES.basket.delete(r.id);
+    row.classList.toggle("picked", tick.checked);
+    resolveBasket();
+  };
+  row.classList.toggle("picked", tick.checked);
+  row.appendChild(tick);
+
+  row.appendChild(framedIcon(lead.now.item.id, !!lead.now.item.icon, lead.now.quality, 46));
+
+  const mid = el("div", "gmid");
+  for (const c of r.changes) {
+    const head = el("div", "ghead");
+    head.appendChild(el("span", "gslot", SLOT_LABEL_O[c.slot] || c.slot));
+    head.appendChild(el("span", "gname r" + c.now.quality, c.now.item.name));
+    if (c.now.tier) head.appendChild(el("span", "gtier", "i" + c.now.tier));
+    mid.appendChild(head);
+
+    /* Same piece, better rarity, is an upgrade rather than a swap - and saying "← Pyroclast
+       Sash" under "Pyroclast Sash" reads like the page has lost track of itself. */
+    const prev = el("div", "gwas");
+    const wasSame = c.was && c.was.item && c.was.item.id === c.now.item.id;
+    prev.appendChild(el("span", "garrow", wasSame ? "⇡" : "←"));
+    prev.appendChild(el("span", c.was && c.was.item ? "r" + c.was.quality : "gempty",
+      !c.was || !c.was.item ? "nothing equipped"
+        : wasSame ? "the one you have, at " + (QUALITY[c.was.quality] || {}).n
+        : c.was.item.name));
+    mid.appendChild(prev);
+  }
+
+  const moves = statMoves(lead.was, lead.now);
+  if (moves.length) {
+    const stats = el("div", "gstats");
+    for (const m of moves.slice(0, 5)) {
+      const chip = el("span", "gstat " + (m.by > 0 ? "up" : "down"));
+      chip.appendChild(el("b", null, (m.by > 0 ? "+" : "") + fmt(Math.round(m.by))));
+      chip.appendChild(el("span", null, cap(m.stat)));
+      stats.appendChild(chip);
+    }
+    mid.appendChild(stats);
+  }
+
+  const where = el("div", "gwhere");
+  for (const c of sourceChips(lead.now.item)) {
+    const chip = el("span", "gsrc s-" + c.kind);
+    chip.appendChild(el("span", null, c.label));
+    if (c.rate) chip.appendChild(el("b", null, c.rate));
+    where.appendChild(chip);
+  }
+  mid.appendChild(where);
+  row.appendChild(mid);
+
+  const val = el("div", "gval");
+  val.appendChild(el("b", null, "+" + fmt(Math.round(r.delta))));
+  val.appendChild(el("span", null, "dps"));
+  row.appendChild(val);
+
+  // The whole row is a target, not just the eight pixels of the box.
+  row.onclick = e => {
+    if (e.target === tick || e.target.closest("a")) return;
+    tick.checked = !tick.checked;
+    tick.dispatchEvent(new Event("change"));
+  };
+  return row;
+}
+
+function findChanges() {
+  const before = buildScore(SIM.solve(SIM.model(D, baseCfg()), {restarts: 6}).result);
+
+  /* Gear: the search the page already runs, read as a list of slots worth changing rather
+     than as a finished set to accept whole. */
+  runGearSearch();
+  const g = GEAR.result || {rows: []};
+  /* The gear search reports a slot's worth as damage across the whole fight; the two
+     solvers report theirs per second. Three lanes ranked against each other is the entire
+     idea, so they have to share a unit - and unnoticed, this one had a chest swap reading
+     +351,260 beside a respec reading +859 for the same build. Per second, everywhere. */
+  const perSec = Math.max(1, FIGHT.duration || 300);
+
+  /* Two hands, one decision, one row.
+   *
+   * The search picks the main hand and the off hand TOGETHER - a two-hander empties the off
+   * hand, so they cannot be judged apart - and it books the whole pair's gain to the Main
+   * Hand row, leaving the Off Hand row at zero. Read as separate rows that is actively
+   * false: with a Pyroclast Wand already equipped and only the off hand due an upgrade, the
+   * page showed "Main Hand - Pyroclast Wand, +59" and went on showing it after every apply,
+   * because the wand was never what was changing.
+   *
+   * So the pair becomes one row, labelled by whichever hand actually moves, and a pair with
+   * nothing to change is dropped rather than reported at the value of the other hand. */
+  const same = (a, b) =>
+    (!a || !a.item) && (!b || !b.item) ? true
+      : !!a && !!b && !!a.item && !!b.item && a.item.id === b.item.id
+        && a.quality === b.quality && (a.tier || 0) === (b.tier || 0);
+
+  const rows = [];
+  const paired = (g.rows || []).filter(r => r.paired);
+  for (const r of (g.rows || [])) {
+    if (r.paired) continue;
+    if (!(r.delta / perSec > 0.5) || !r.now || !r.now.item) continue;
+    rows.push({id: "gear:" + r.slot, kind: "gear", delta: r.delta / perSec,
+               changes: [{slot: r.slot, now: r.now, was: r.was}]});
+  }
+  if (paired.length) {
+    const gain = paired.reduce((m, r) => Math.max(m, r.delta), 0) / perSec;
+    const moved = paired.filter(r => !same(r.was, r.now) && r.now && r.now.item)
+                        .map(r => ({slot: r.slot, now: r.now, was: r.was}));
+    if (gain > 0.5 && moved.length) {
+      rows.push({id: "gear:hands", kind: "gear", delta: gain, changes: moved});
+    }
+  }
+  const gearRows = rows.sort((a, b) => b.delta - a.delta);
+
+  /* Talents and attributes are one row each. Both solvers produce a whole spend rather than
+     a sequence of moves, and splitting one into rows would invite ticking half of it. */
+  const t = solveTalents();
+  /* Measured against the tree as it stands, which is now the same baseline every other
+     lane uses. An untouched tree is a real answer here - forty points unspent - rather than
+     a tie against a build nobody can hold. */
+  const tGain = t.best ? t.best.score.show - before.show : 0;
+  const spend = t.best ? TALENT.forClass(S.cls)
+    .filter(n => t.best.ranks[n.id] > 0)
+    .map(n => ((TALENT.spellOf(n) || {}).name || n.id) + " " + t.best.ranks[n.id])
+    .join(", ") : "";
+
+  const keepAlloc = S.alloc;
+  const a = solveAlloc();
+  S.alloc = keepAlloc;
+  const aGain = a ? a.score.show - before.show : 0;
+  const aSpend = a ? Object.entries(a.alloc).filter(function (kv) { return kv[1] > 0; })
+    .map(function (kv) { return cap(kv[0]) + " " + kv[1]; }).join(", ") : "";
+
+  LANES.before = before;
+  LANES.data = {
+    before: before,
+    gear: {rows: gearRows, gain: gearRows.reduce((m, r) => Math.max(m, r.delta), 0)},
+    talents: {
+      ranks: t.best && t.best.ranks,
+      rows: tGain > 0.5 ? [{id: "talents:all", kind: "talents", delta: tGain,
+        what: "Respec the tree", where: spend}] : [],
+      gain: Math.max(0, tGain),
+    },
+    attrs: {
+      alloc: a && a.alloc,
+      rows: aGain > 0.5 ? [{id: "attributes:all", kind: "attributes", delta: aGain,
+        what: "Respec the attribute points", where: aSpend}] : [],
+      gain: Math.max(0, aGain),
+    },
+  };
+  LANES.basket.clear();
+  LANES.combined = null;
+  LANES.stale = false;
+
+  /* Score the last prediction against what the build actually turned out to be worth.
+     Silently showing a different number than the one just promised is the worst thing this
+     panel can do - so if they disagree by more than a percent, it says so, with both
+     figures, rather than letting the new baseline quietly replace the old promise. */
+  if (LANES.promised != null) {
+    const got = LANES.before ? LANES.before.show : before.show;
+    const off = got - LANES.promised;
+    LANES.mismatch = Math.abs(off) > Math.max(1, 0.01 * LANES.promised)
+      ? {promised: LANES.promised, got, off} : null;
+    LANES.promised = null;
+  }
+}
+
+function laneEl(label, lane, note) {
+  const has = lane.rows.length > 0;
+  const box = el("div", "lane" + (has ? "" : " empty"));
+  const head = el("div", "lanehead");
+  head.appendChild(el("span", "laneglyph", has ? "▸" : "·"));
+  const name = el("div");
+  name.appendChild(el("span", "lanename", label));
+  name.appendChild(el("span", "lanesub", has ? note : "nothing here beats what you have"));
+  head.appendChild(name);
+  head.appendChild(el("span", "lanecount",
+    has ? lane.rows.length + (lane.rows.length > 1 ? " changes" : " change") : ""));
+  head.appendChild(el("span", "lanegain",
+    has ? "+" + fmt(Math.round(lane.gain)) : "—"));
+  if (has) head.onclick = () => box.classList.toggle("open");
+  box.appendChild(head);
+
+  /* Take the lot in one go. Eleven slots is eleven ticks otherwise, and the debounce means
+     the whole set still costs a single re-solve - so the slow part of doing it one at a
+     time was never the solving, it was the clicking. */
+  if (has && lane.rows.length > 1) {
+    const all = lane.rows.every(r => LANES.basket.has(r.id));
+    const pick = el("button", "laneall", all ? "Clear all" : "Select all");
+    pick.type = "button";
+    pick.onclick = e => {
+      e.stopPropagation();                       // not a click on the lane header
+      for (const r of lane.rows) {
+        if (all) LANES.basket.delete(r.id); else LANES.basket.add(r.id);
+      }
+      drawLanes();
+      resolveBasket();
+    };
+    head.insertBefore(pick, head.lastChild);
+  }
+
+  const rows = el("div", "lanerows");
+  for (const r of lane.rows) {
+    if (r.kind === "gear") { rows.appendChild(gearRowEl(r)); continue; }
+    const row = el("div", "lrow");
+    const tick = el("input");
+    tick.type = "checkbox";
+    tick.checked = LANES.basket.has(r.id);
+    tick.setAttribute("aria-label", r.what);
+    tick.onchange = () => {
+      if (tick.checked) LANES.basket.add(r.id); else LANES.basket.delete(r.id);
+      row.classList.toggle("picked", tick.checked);
+      resolveBasket();
+    };
+    row.classList.toggle("picked", tick.checked);
+    row.appendChild(tick);
+    const mid = el("div");
+    mid.appendChild(el("span", "what", r.what));
+    mid.appendChild(el("span", "where", r.where));
+    row.appendChild(mid);
+    row.appendChild(el("div", "val", "+" + fmt(Math.round(r.delta))));
+    rows.appendChild(row);
+  }
+  box.appendChild(rows);
+  if (has && lane.rows.length <= 3) box.classList.add("open");
+  return box;
+}
+
+/* Debounced, because ticking three boxes in a row should cost one solve and not three.
+   And it redraws the SUMMARY only: rebuilding the rows under the pointer took the checkbox
+   out of the document mid-click, so a second tick landed on a node that was no longer
+   there and the basket silently held one item when you had ticked three. */
+let basketTimer = null;
+function resolveBasket() {
+  clearTimeout(basketTimer);
+  if (!LANES.basket.size) {
+    LANES.combined = null; LANES.busy = false; drawSummary(); return;
+  }
+  LANES.busy = true;
+  drawSummary();
+  basketTimer = setTimeout(() => {
+    try { LANES.combined = scoreState(basketState()); }
+    catch (e) { LANES.combined = null; }
+    LANES.busy = false;
+    drawSummary();
+  }, 140);
+}
+
+/** The header figure and the two buttons - everything a tick can change, and nothing else. */
+function drawSummary() {
+  const d = LANES.data;
+  const host = document.getElementById("lanes");
+  const apply = document.getElementById("feedApply");
+  const clear = document.getElementById("feedClear");
+  if (!d || !host) return;
+
+  const sum = el("div", "feedsum");
+  sum.appendChild(el("span", "from", fmt(Math.round(d.before.show)) + " now"));
+  if (LANES.basket.size) {
+    sum.appendChild(el("span", null, "→"));
+    if (LANES.busy) {
+      sum.appendChild(el("span", "wait", "re-solving…"));
+    } else if (LANES.combined) {
+      const up = LANES.combined.show - d.before.show;
+      sum.appendChild(el("span", "to", fmt(Math.round(LANES.combined.show))));
+      sum.appendChild(el("span", "up",
+        "+" + (100 * up / Math.max(1, d.before.show)).toFixed(1) + "%"));
+    }
+  }
+  const old = host.querySelector(".feedsum");
+  if (old) host.replaceChild(sum, old); else host.prepend(sum);
+
+  apply.hidden = !LANES.basket.size;
+  clear.hidden = !LANES.basket.size;
+  apply.textContent = "Apply " + LANES.basket.size
+    + (LANES.basket.size > 1 ? " changes" : " change");
+}
+
+function drawLanes() {
+  const host = document.getElementById("lanes");
+  const note = document.getElementById("feedNote");
+  const apply = document.getElementById("feedApply");
+  const clear = document.getElementById("feedClear");
+  if (!host) return;
+  host.replaceChildren();
+
+  const cta = document.getElementById("feedCta");
+  const again = document.getElementById("feedAgain");
+  if (!LANES.data) {
+    note.textContent = "gear, talents and attributes, ranked by what they are worth";
+    apply.hidden = true; clear.hidden = true; again.hidden = true;
+    if (cta) cta.hidden = false;
+    return;
+  }
+  if (cta) cta.hidden = true;
+  again.hidden = false;
+
+  const d = LANES.data;
+  host.appendChild(el("div", "feedsum"));      // filled by drawSummary, below
+
+  host.appendChild(laneEl("Gear", d.gear, "one slot at a time, against what you wear"));
+  host.appendChild(laneEl("Talents", d.talents, "the whole tree, re-spent"));
+  host.appendChild(laneEl("Attributes", d.attrs, "all points, re-spread"));
+
+  host.classList.toggle("stale", LANES.stale);
+  if (LANES.mismatch) {
+    const m = LANES.mismatch;
+    const warn = el("p", "note bad");
+    warn.style.margin = "0 2px 12px";
+    warn.textContent = `That basket promised ${fmt(Math.round(m.promised))} and the build `
+      + `came out at ${fmt(Math.round(m.got))} — ${m.off > 0 ? "better" : "short"} by `
+      + `${fmt(Math.abs(Math.round(m.off)))}. The figures below are measured from where you `
+      + `actually are.`;
+    host.appendChild(warn);
+  }
+  const total = d.gear.rows.length + d.talents.rows.length + d.attrs.rows.length;
+  note.textContent = LANES.stale
+    ? "the build changed — press Find changes again"
+    : total ? total + (total > 1 ? " changes worth making" : " change worth making")
+            : "nothing here beats what you already have";
+  drawSummary();
+}
+
+const runFeed = id => whileSolving(id, () => { findChanges(); drawLanes(); });
+document.getElementById("feedRun").onclick = () => runFeed("feedRun");
+document.getElementById("feedAgain").onclick = () => runFeed("feedAgain");
+
+document.getElementById("feedClear").onclick = () => {
+  LANES.basket.clear(); LANES.combined = null; drawLanes();
+};
+
+document.getElementById("feedApply").onclick = () => {
+  const st = basketState();
+  S.slots = st.slots;
+  /* The weapon skill travels with the weapon. Without this, equipping a wand left the build
+     carrying the sword proficiency it had before - so the search went on offering the very
+     wand you were holding, at +59 dps, for ever: in its trial the wand came with wand
+     proficiency, and in your build it did not. A no-op swap reporting a gain, on a loop. */
+  S.profLevels = profForSlots(st.slots);
+  if (st.ranks !== optTalents) { optTalents = st.ranks; S.ranks = optTalentRanks(); }
+  S.alloc = st.alloc;
+  S.autoGear = false;
+  trimAlloc(); regear(); drawSlots(); drawAlloc(); drawOptTree();
+  LANES.basket.clear();
+  LANES.combined = null;
+
+  /* The old numbers do not survive the change that invalidated them. Leaving them up was
+     how a respec you had just made went on advertising +1,027: the headline moved, the
+     lane did not, and the row was quoting a build that no longer existed. Clear first,
+     then look again - so there is never a moment where the page is showing advice for one
+     build beside the score of another. */
+  /* What the header promised, kept so the re-run below can be checked against it. A basket
+     is a prediction, and a prediction nobody scores is just a number on a screen. */
+  LANES.promised = LANES.combined ? LANES.combined.show : null;
+  LANES.data = null;
+  LANES.stale = true;
+  render();
+  drawLanes();
+  note("Applied. Looking again…", true);
+  runFeed("feedRun");
+};
+
+/* Any edit marks the list stale rather than leaving advice on screen for a build that has
+   moved underneath it. */
+const renderBeforeLanes = render;
+render = function () {
+  LANES.stale = true;
+  renderBeforeLanes.apply(this, arguments);
+  drawLanes();
+};
+drawLanes();
 </script>
 </body>
 </html>
