@@ -3752,8 +3752,42 @@ const SEARCH_KINDS = [
   {key: "spell", label: "Spells", icons: "spells"},
   {key: "quest", label: "Quests", icons: null},
   {key: "npc", label: "People", icons: "npcs"},
-  {key: "object", label: "World objects", icons: null},
+  {key: "object", label: "World objects", icons: "objects"},
 ];
+
+/* A quest has no art anywhere in the export - it is a task, not a thing - so the mark is
+ * drawn rather than fetched. That is the same call the maps legend makes for a person, and
+ * for the same reasons: nothing to ship, no licence to carry on a public site, no second
+ * request to fail over file://, and it takes the theme's colour for free by being stroked in
+ * currentColor. A written page with a folded corner, which is what a quest is.
+ *
+ * Not an exclamation mark, though that is the genre's usual sign: the maps legend already
+ * spends one on NPCs, and two different things wearing one mark is worse than a plainer mark.
+ */
+const SEARCH_GLYPHS = {
+  quest: ["M7 3.5h7l4.5 4.5v12a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 20V5A1.5 1.5 0 0 1 7 3.5z",
+          "M14 3.5V8h4.5",
+          "M9 12.5h6M9 16h4"],
+};
+
+/** The mark for a search hit: the thing's own art where it has any, else a drawn glyph. */
+function searchIcon(kind, id, has, size) {
+  const k = SEARCH_KINDS.find(x => x.key === kind);
+  if (k && k.icons) return icon(k.icons, id, has, size);
+  const paths = SEARCH_GLYPHS[kind];
+  if (!paths) return el("span", "hsdot");
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("class", "hsglyph");
+  svg.setAttribute("aria-hidden", "true");
+  for (const d of paths) {
+    const p = document.createElementNS(NS, "path");
+    p.setAttribute("d", d);
+    svg.appendChild(p);
+  }
+  return svg;
+}
 
 let _searchIndex = null;
 
@@ -3961,8 +3995,7 @@ function searchSheetFor(kind, id) {
       for (const {e} of list.slice(0, PER_KIND)) {
         const sheet = searchSheetFor(k.key, e.id);
         const row = el("div", "hsrow" + (sheet ? "" : " flat"));
-        row.appendChild(k.icons ? icon(k.icons, e.id, e.icon, 30)
-                                : el("span", "hsdot"));
+        row.appendChild(searchIcon(k.key, e.id, e.icon, 30));
         const mid = el("div", "hsmid");
         const nm = el("div", "hsn");
         nm.appendChild(searchMark(e.name, q));

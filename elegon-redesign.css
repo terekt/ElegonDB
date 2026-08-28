@@ -395,15 +395,29 @@ dialog{background:var(--panel-raised);border-color:var(--line)}
    generic creature glyph.
    --------------------------------------------------------------------------- */
 
-/* The export's skull is dark on transparent. The filter is a tint, not a
-   recolour: it inverts to light and then walks the hue to the panel's amber. */
+/* Two pieces of artwork that pull in opposite directions: the export's skull is solid black,
+   the Mining skill's pickaxe is very nearly white. Both were set for a dark panel, so on a
+   light one the skull inverted to a pale amber and the pickaxe stayed white on white, and
+   neither was there at all.
+   The tempting fix is a mask - the file's alpha for the shape, a plain CSS colour for the
+   ink, one declaration for both themes. It cannot be used HERE. These pages are opened from
+   file:// as often as from a server, Chrome applies CORS to a mask image, and a file:// page
+   is an opaque origin: the mask fails to load and the element is masked away to nothing.
+   Background images carry no such restriction, which is why every other piece of art on this
+   page survives the same trip. So the art stays a background and the theme decides the
+   filter. */
 .panelrow .mk-mob.glyph{
   background-image:url("icons/ui/skull.png");
+  /* Black art on a dark panel: inverted to light, then walked to the panel's amber. */
   filter:invert(1) sepia(1) saturate(2.2) hue-rotate(-14deg) brightness(1.05);
 }
-
-/* Literally the Mining skill's own icon. */
 .panelrow .mk-mine.glyph{background-image:url("icons/ui/pickaxe.png")}
+
+/* On a light panel each wants the opposite of what it is. The skull is already black, so it
+   needs no filter at all; the pickaxe is white and needs inverting. Both then sit at about
+   the weight of the label beside them. */
+:root[data-theme="light"] .panelrow .mk-mob.glyph{filter:none;opacity:.8}
+:root[data-theme="light"] .panelrow .mk-mine.glyph{filter:invert(1);opacity:.8}
 
 /* The portal already wears the game's portal art inside its own disc and blue
    ring, and the gravestone is already the gothic ring cross. Neither is
