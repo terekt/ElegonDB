@@ -1256,12 +1256,25 @@ function abilityPanel(src) {
   const wrap = el("div", "abil");
 
   if (!list.length) {
+    const m = (D.monsters || []).find(x => x.id === src.id) || {};
     const none = el("div", "abilnone");
-    none.appendChild(el("b", null, "No abilities recorded yet"));
-    none.appendChild(el("p", "note",
-      "Not the same as having none. The game publishes no list of which creature casts "
-      + "what, so every ability on this site was recovered by watching one land. Nobody "
-      + "has recorded this creature casting yet."));
+    if (m.absent) {
+      /* Nothing to record, rather than nothing recorded. Saying "nobody has watched this
+         cast" about a creature that is not in the world blames the recording for the
+         game's own leftovers. */
+      none.appendChild(el("b", null, "Not in the world"));
+      none.appendChild(el("p", "note",
+        "The client's enemy table still declares this creature, but it has never had a "
+        + "spawn point on any build recorded here, has never been killed, and is in "
+        + "nobody's compendium. It is an old asset the game has moved past — so there is "
+        + "nothing to watch it cast."));
+    } else {
+      none.appendChild(el("b", null, "No abilities recorded yet"));
+      none.appendChild(el("p", "note",
+        "Not the same as having none. The game publishes no list of which creature casts "
+        + "what, so every ability on this site was recovered by watching one land. Nobody "
+        + "has recorded this creature casting yet."));
+    }
     wrap.appendChild(none);
     return wrap;
   }
@@ -3932,3 +3945,235 @@ function searchSheetFor(kind, id) {
     input.select();
   });
 })();
+
+/* ---- walking, as a graph -----------------------------------------------------
+ * Everything below exists because the crow's line is a lie on this map. Only a fifth of the
+ * world is ground you can stand on and get back from, so "nearest" by straight line routinely
+ * means across a lake, through a cliff, or into a pocket with no way in. A route built that
+ * way looks tidy and cannot be walked.
+ *
+ * One graph per map, in data.js, a bit a cell: 14 KB for all six. The overworld is coarse on
+ * purpose at 16 world units - it decides the shape of a trip, not where to put your feet -
+ * and a full sweep of its 27,648 cells costs about three milliseconds, which is what makes
+ * the rest of this affordable. The breaches are 4 units, because they are corridors: at
+ * sixteen a passage would be a cell wide and the router would call it a wall.
+ *
+ * The two are built from different evidence and the difference is worth knowing. The
+ * overworld's comes from the reachability model over Terrain3D heights - an inference, and
+ * wrong often enough that the coverage layer refuses to trust it. A breach's is read straight
+ * off the alpha of its floor plan, which is drawn from the collision mesh's own ground
+ * triangles: not a model of where you can stand, but the polygons you stand on. All 217
+ * recorded breach spawn points land on it.
+ *
+ * The ORDERING that uses all this lives with its only caller, in unrecorded.html. A generic
+ * copy sat here for a while with no callers at all, quietly claiming in its own comment to
+ * land within a few per cent of optimal - which measured out at fifteen.
+ */
+const NAVS = new Map();
+
+(function loadNav() {
+  const all = (typeof D !== "undefined" && D.nav) || null;
+  if (!all) return;
+  for (const [mapId, n] of Object.entries(all)) {
+    if (!n || !n.bits) continue;
+    let raw;
+    try { raw = atob(n.bits); } catch (e) { continue; }
+    const walk = new Uint8Array(n.w * n.h);
+    for (let i = 0; i < walk.length; i++)
+      walk[i] = (raw.charCodeAt(i >> 3) & (0x80 >> (i & 7))) ? 1 : 0;
+    NAVS.set(mapId, Object.assign({}, n, {walk, ok: true, mapId}));
+  }
+})();
+
+/** The walking graph for a map, or null where there is none. */
+const navFor = mapId => NAVS.get(mapId || "") || null;
+
+/** World point -> cell index, or -1 outside the grid. No walkability test. */
+function navCellAt(g, x, z) {
+  if (!g) return -1;
+  const ix = Math.floor((x - g.x0) / g.cell), iz = Math.floor((z - g.z0) / g.cell);
+  if (ix < 0 || iz < 0 || ix >= g.w || iz >= g.h) return -1;
+  return iz * g.w + ix;
+}
+
+const navCentre = (g, i) =>
+  [g.x0 + (i % g.w + 0.5) * g.cell, g.z0 + ((i / g.w | 0) + 0.5) * g.cell];
+
+/* A spawn point does not have to sit on walkable ground, and 7% of them do not - a creature
+   on a ledge, or a point recorded through a wall. Snapping to the nearest walkable cell is
+   what keeps those in the route instead of silently dropping them; the ring search stops at
+   six cells, about a hundred units, past which "nearest walkable" stops meaning anything. */
+function navSnap(g, x, z, maxRings = 6) {
+  if (!g) return -1;
+  const at = navCellAt(g, x, z);
+  if (at < 0) return -1;
+  if (g.walk[at]) return at;
+  const cx = at % g.w, cz = at / g.w | 0;
+  for (let r = 1; r <= maxRings; r++) {
+    let best = -1, bd = Infinity;
+    for (let dz = -r; dz <= r; dz++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;   // the ring, not the disc
+        const ix = cx + dx, iz = cz + dz;
+        if (ix < 0 || iz < 0 || ix >= g.w || iz >= g.h) continue;
+        const i = iz * g.w + ix;
+        if (!g.walk[i]) continue;
+        const d = dx * dx + dz * dz;
+        if (d < bd) { bd = d; best = i; }
+      }
+    }
+    if (best >= 0) return best;
+  }
+  return -1;
+}
+
+/* One sweep answers every question at once, which is the whole reason this is affordable: a
+   route over thirty stops needs thirty of these for a complete distance matrix, not nine
+   hundred point-to-point searches.
+   Distances come back in WORLD UNITS. Diagonals cost sqrt(2), so this is really a Dijkstra
+   over two edge weights - a plain BFS would make a staircase 40% shorter than the straight
+   it approximates, and every diagonal shore would read as a shortcut. */
+const NAV_STEP = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1],
+                  [1, 1, Math.SQRT2], [1, -1, Math.SQRT2],
+                  [-1, 1, Math.SQRT2], [-1, -1, Math.SQRT2]];
+
+function navSweep(g, from) {
+  const n = g.w * g.h;
+  const dist = new Float32Array(n).fill(Infinity);
+  const prev = new Int32Array(n).fill(-1);
+  if (from < 0 || !g.walk[from]) return {dist, prev};
+  dist[from] = 0;
+
+  /* A bucket queue rather than a binary heap. With two edge weights the frontier only ever
+     spans a narrow band of distances, so bucketing by distance/cell is O(1) per push and pop
+     and there is no heap to maintain. */
+  const step = g.cell, buckets = [[from]];
+  for (let b = 0; b < buckets.length; b++) {
+    const list = buckets[b];
+    if (!list) continue;
+    for (let k = 0; k < list.length; k++) {
+      const cur = list[k];
+      /* Stale entry: this cell was queued here, then found again more cheaply and queued
+         lower. It cannot have got MORE expensive, so a bucket below this one means the
+         shorter find already ran. (Comparing dist to b+0.5 instead, as this first did, threw
+         away every genuine node whose diagonal steps put it past the half-cell mark - a
+         sweep reached 120 cells of 5,952.) */
+      if (Math.floor(dist[cur] / step) < b) continue;
+      const cx = cur % g.w, cz = cur / g.w | 0;
+      for (const [dx, dz, cost] of NAV_STEP) {
+        const ix = cx + dx, iz = cz + dz;
+        if (ix < 0 || iz < 0 || ix >= g.w || iz >= g.h) continue;
+        const nx = iz * g.w + ix;
+        if (!g.walk[nx]) continue;
+        /* No cutting a corner between two blocked cells: without this the path slips
+           diagonally through the gap where two cliffs meet, which is exactly the kind of
+           impossible shortcut this whole file exists to stop. */
+        if (dx && dz && !(g.walk[cz * g.w + ix] && g.walk[iz * g.w + cx])) continue;
+        const nd = dist[cur] + cost * step;
+        if (nd >= dist[nx]) continue;
+        dist[nx] = nd;
+        prev[nx] = cur;
+        const nb = Math.floor(nd / step);
+        (buckets[nb] || (buckets[nb] = [])).push(nx);
+      }
+    }
+    buckets[b] = null;                                  // let the row go
+  }
+  return {dist, prev};
+}
+
+/* The cells walked from a sweep's origin to `to`, origin first. The origin has no
+   predecessor and neither does an unreachable cell, so this cannot tell them apart on its
+   own - callers check the distance is finite first, which is the only place that knows. */
+function navTrace(prev, to) {
+  const out = [];
+  for (let cur = to; cur >= 0; cur = prev[cur]) out.push(cur);
+  return out.reverse();
+}
+
+/* Is the straight line between two world points walkable the whole way?
+ *
+ * Rasterised, not sampled. Point sampling along the segment - which is what this did first,
+ * at four-tenths of a cell - cannot answer the question at all: a line clips the CORNER of a
+ * blocked cell over a chord shorter than the sample spacing, and both bracketing samples land
+ * outside it. On the real grid that let 39% of smoothed legs graze blocked ground. Cutting
+ * the step only shrinks the chord it misses; it never closes the hole, because there is no
+ * spacing small enough that a line cannot enter and leave a convex cell between two samples.
+ *
+ * So this walks the grid instead, boundary by boundary, and sees every cell the segment
+ * actually enters. Where the segment passes exactly through a lattice corner it applies the
+ * same rule navSweep does - both shoulders walkable, or no passage - because otherwise the
+ * smoothing quietly hands back the diagonal squeeze the sweep refused to take, and draws a
+ * line through the tip of a lake inlet that costs 96 units to walk round.
+ */
+function navClear(g, ax, az, bx, bz) {
+  if (!g) return false;
+  const cs = g.cell;
+  const okCell = (x, z) =>
+    x >= 0 && z >= 0 && x < g.w && z < g.h && !!g.walk[z * g.w + x];
+
+  let ix = Math.floor((ax - g.x0) / cs), iz = Math.floor((az - g.z0) / cs);
+  const ex = Math.floor((bx - g.x0) / cs), ez = Math.floor((bz - g.z0) / cs);
+  if (!okCell(ix, iz) || !okCell(ex, ez)) return false;
+
+  const dx = bx - ax, dz = bz - az;
+  const sx = dx > 0 ? 1 : dx < 0 ? -1 : 0;
+  const sz = dz > 0 ? 1 : dz < 0 ? -1 : 0;
+  // How far along the segment (0..1) the next boundary lies on each axis, and how far apart
+  // successive boundaries are.
+  let tX = sx ? (g.x0 + (ix + (sx > 0 ? 1 : 0)) * cs - ax) / dx : Infinity;
+  let tZ = sz ? (g.z0 + (iz + (sz > 0 ? 1 : 0)) * cs - az) / dz : Infinity;
+  const stepX = sx ? cs / Math.abs(dx) : Infinity;
+  const stepZ = sz ? cs / Math.abs(dz) : Infinity;
+
+  const EPS = 1e-9;
+  let guard = g.w + g.h + 4;
+  while ((ix !== ex || iz !== ez) && guard-- > 0) {
+    if (Math.abs(tX - tZ) < EPS) {
+      // Exactly through the corner. Both shoulders, or nothing - the sweep's own rule.
+      if (!okCell(ix + sx, iz) || !okCell(ix, iz + sz)) return false;
+      ix += sx; iz += sz; tX += stepX; tZ += stepZ;
+    } else if (tX < tZ) {
+      ix += sx; tX += stepX;
+    } else {
+      iz += sz; tZ += stepZ;
+    }
+    if (!okCell(ix, iz)) return false;
+  }
+  return guard > 0;                       // ran out of steps: refuse rather than guess
+}
+
+/* Pull the grid path taut.
+ *
+ * A shortest path over an eight-way grid is not a shortest path over the ground. Movement is
+ * quantised to eight directions, so a diagonal run across open field comes out as a
+ * staircase, and where the strict no-corner-cutting rule bites - anywhere a shoreline runs
+ * diagonally - it comes out as a long L. Both are artefacts of the lattice, and drawing them
+ * would claim the terrain forces a detour it does not.
+ *
+ * So: keep a point only when the straight line to the next one would leave walkable ground.
+ * What survives is the taut line an actual walk takes, and its length is shorter and truer
+ * than the lattice's - which is why the distances quoted come from here rather than from the
+ * sweep that chose the order.
+ */
+function navSmooth(g, cells) {
+  const pts = cells.map(c => navCentre(g, c));
+  if (pts.length < 3) return pts;
+  const out = [pts[0]];
+  let i = 0;
+  while (i < pts.length - 1) {
+    let j = pts.length - 1;
+    while (j > i + 1 && !navClear(g, pts[i][0], pts[i][1], pts[j][0], pts[j][1])) j--;
+    out.push(pts[j]);
+    i = j;
+  }
+  return out;
+}
+
+/** How far the taut path actually is, in world units. */
+function navLength(pts) {
+  let t = 0;
+  for (let i = 1; i < pts.length; i++)
+    t += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+  return t;
+}
