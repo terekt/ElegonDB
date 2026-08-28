@@ -2406,7 +2406,7 @@ header nav{flex:0 0 auto}
   padding:9px 10px 5px;font-family:var(--panel-font);color:var(--panel-heading);
   font-size:10px;text-transform:uppercase;letter-spacing:1.3px}
 .hshead b{font-weight:600;color:var(--faint);font-variant-numeric:tabular-nums}
-.hsrow{display:grid;grid-template-columns:30px minmax(0,1fr);gap:10px;align-items:center;
+.hsrow{display:grid;grid-template-columns:38px minmax(0,1fr);gap:11px;align-items:center;
   padding:7px 10px;border-radius:8px;cursor:pointer}
 /* One highlight class for both hover and the keyboard cursor, so arrowing down and
    moving the mouse cannot ever show two selected rows. */
@@ -2419,7 +2419,7 @@ header nav{flex:0 0 auto}
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hsres mark{background:color-mix(in oklab,var(--gold) 34%,transparent);color:inherit;
   border-radius:3px;padding:0 1px}
-.hsdot{width:30px;height:30px;border-radius:7px;border:1px solid var(--line);
+.hsdot{width:38px;height:38px;border-radius:8px;border:1px solid var(--line);
   background:color-mix(in oklab,var(--ink) 5%,transparent)}
 /* A creature's portrait, cropped rather than fitted. The art is rendered with a lot of empty
    space around the model - fitting it into thirty pixels leaves the animal a smudge in the
@@ -2431,10 +2431,10 @@ header nav{flex:0 0 auto}
 
 /* Drawn rather than exported - see SEARCH_GLYPHS. Stroked in the amber the rest of the row's
    marks are, and sized to the art beside it so a list of mixed kinds keeps one rhythm. */
-.hsglyph{width:30px;height:30px;flex:0 0 auto;fill:none;stroke:var(--gold);
+.hsglyph{width:38px;height:38px;flex:0 0 auto;fill:none;stroke:var(--gold);
   stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;
   padding:3px;box-sizing:border-box}
-.shit .hsglyph{width:34px;height:34px}
+.shit .hsglyph{width:44px;height:44px}
 .hsmore,.hsnone{padding:5px 11px 9px;font-size:11.5px;color:var(--faint)}
 .hsnone{padding:18px 12px}
 .hsall{margin:4px 2px 2px;padding:9px 11px;border-top:1px solid var(--line);

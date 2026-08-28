@@ -4020,7 +4020,7 @@ function searchSheetFor(kind, id) {
       for (const {e} of list.slice(0, PER_KIND)) {
         const sheet = searchSheetFor(k.key, e.id);
         const row = el("div", "hsrow" + (sheet ? "" : " flat"));
-        row.appendChild(searchIcon(k.key, e.id, e.icon, 30));
+        row.appendChild(searchIcon(k.key, e.id, e.icon, 38));
         const mid = el("div", "hsmid");
         const nm = el("div", "hsn");
         nm.appendChild(searchMark(e.name, q));
