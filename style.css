@@ -2421,6 +2421,14 @@ header nav{flex:0 0 auto}
   border-radius:3px;padding:0 1px}
 .hsdot{width:30px;height:30px;border-radius:7px;border:1px solid var(--line);
   background:color-mix(in oklab,var(--ink) 5%,transparent)}
+/* A creature's portrait, cropped rather than fitted. The art is rendered with a lot of empty
+   space around the model - fitting it into thirty pixels leaves the animal a smudge in the
+   middle of nothing - so the box crops and the art is shown at the 152% the map markers have
+   always used. Same picture, same number, same reason. */
+.hsart{border-radius:7px;overflow:hidden;flex:0 0 auto;display:grid;place-items:center;
+  background:color-mix(in oklab,var(--ink) 5%,transparent)}
+.hsart .ico{width:152%;height:152%;max-width:none;padding:0;border-radius:0;background:none}
+
 /* Drawn rather than exported - see SEARCH_GLYPHS. Stroked in the amber the rest of the row's
    marks are, and sized to the art beside it so a list of mixed kinds keeps one rhythm. */
 .hsglyph{width:30px;height:30px;flex:0 0 auto;fill:none;stroke:var(--gold);

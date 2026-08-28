@@ -3770,9 +3770,34 @@ const SEARCH_GLYPHS = {
           "M9 12.5h6M9 16h4"],
 };
 
-/** The mark for a search hit: the thing's own art where it has any, else a drawn glyph. */
+/* The mark for a search hit.
+ *
+ * Three treatments, because the site already has three and a search result is not a special
+ * kind of thing - it is the same item, creature or quest the rest of the pages show, and it
+ * should arrive wearing what it wears everywhere else.
+ *
+ *   an item      the character panel's own slot frame, tinted for the rarity, which is what
+ *                the planner, the optimizer and every table put an item in
+ *   a creature   its portrait, cropped in. The export leaves a great deal of air around the
+ *                model, so at thirty pixels the animal is a smudge in the middle of an empty
+ *                square; the map markers have always shown these at 152% and let the frame
+ *                do the cropping, and this is the same number for the same reason
+ *   anything else its own art, or a drawn glyph where the export has none
+ */
 function searchIcon(kind, id, has, size) {
   const k = SEARCH_KINDS.find(x => x.key === kind);
+  if (kind === "item") {
+    const it = ITEM_BY_ID.get(id);
+    // Equipment carries the rarity tint the rest of the site gives it; a material or a quest
+    // item has no rarity, so it takes the plain frame rather than a borrowed colour.
+    return framedIcon(id, has, it && it.type === "Equipment" ? SCALE.quality : 1, size);
+  }
+  if (kind === "creature" && has) {
+    const box = el("span", "hsart");
+    if (size) { box.style.width = size + "px"; box.style.height = size + "px"; }
+    box.appendChild(icon("monsters", id, has));
+    return box;
+  }
   if (k && k.icons) return icon(k.icons, id, has, size);
   const paths = SEARCH_GLYPHS[kind];
   if (!paths) return el("span", "hsdot");
