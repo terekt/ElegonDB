@@ -6,8 +6,8 @@
 <meta http-equiv="Cache-Control" content="no-cache">
 <title>Elegon DB — Maps</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2032%2032%27%3E%3Cdefs%3E%3ClinearGradient%20id%3D%27t%27%20x1%3D%270%27%20y1%3D%270%27%20x2%3D%27.45%27%20y2%3D%271%27%3E%3Cstop%20offset%3D%270%27%20stop-color%3D%27%23ffe455%27%2F%3E%3Cstop%20offset%3D%271%27%20stop-color%3D%27%23e9a200%27%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D%2732%27%20height%3D%2732%27%20rx%3D%277%27%20fill%3D%27url%28%23t%29%27%2F%3E%3Cg%20fill%3D%27%23110c09%27%20font-family%3D%27Alice%2CGeorgia%2Cserif%27%3E%3Ctext%20x%3D%276.5%27%20y%3D%2723%27%20font-size%3D%2717%27%3EE%3C%2Ftext%3E%3Ctext%20x%3D%2717.5%27%20y%3D%2723%27%20font-size%3D%279%27%20opacity%3D%27.72%27%3Edb%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fsvg%3E">
-<link rel="stylesheet" href="style.css?v=d14f40b9">
-<link rel="stylesheet" href="elegon-redesign.css?v=d14f40b9">
+<link rel="stylesheet" href="style.css?v=21ad0cb6">
+<link rel="stylesheet" href="elegon-redesign.css?v=21ad0cb6">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -108,8 +108,8 @@
   <p class="note" id="note"></p>
 </div>
 
-<script src="data.js?v=d14f40b9"></script>
-<script src="app.js?v=d14f40b9"></script>
+<script src="data.js?v=21ad0cb6"></script>
+<script src="app.js?v=21ad0cb6"></script>
 <script>
 /* The interactive map.
    Markers live inside a stage sized to the capture in image pixels, so a marker's position
@@ -443,6 +443,7 @@ function syncPanel() {
 let paintMapSource = () => {};
 
 
+
 /* ---- terrain overlay ------------------------------------------------------
    The overworld capture is a photograph looking straight down: it says what the ground looks
    like and nothing about its shape, so a cliff and a meadow are the same green.
@@ -510,6 +511,21 @@ const TERRAIN_NOTES = {
   depth:    "Raw height. The least useful on its own — a plateau and a valley floor are both "
           + "walkable — but it is what the others are derived from.",
   contour:  "A line every 10 world units of height.",
+  unusable: "Land you cannot walk on and walk back from: cliff faces you cannot stand on "
+          + "at all, plus standable ground with no route in. 54% of the dry land. Jump "
+          + "height is 1.033 m \u2014 4.5 m/s up against Godot's 9.8, which is what "
+          + "CharacterController and an untouched project.binary come to \u2014 and the walk "
+          + "limit is 45\u00b0. Water is a road rather than a wall, because past 1.15 m you "
+          + "swim. Seeded from the NPCs and respawn points every player walks to: all 46 land "
+          + "in one component, and nothing the logger has recorded killing is stranded by it.",
+  cliffs:   "Ground past the 45\u00b0 walk limit, measured as the steepest single step to a "
+          + "neighbour \u2014 the pitch of the collision triangle Terrain3D actually builds. "
+          + "A third of all the land. An earlier version of this map left it unpainted, so "
+          + "every cliff read as a green field.",
+  cutoff:   "Ground you could stand on perfectly well if you could only get to it. Mostly "
+          + "highland: its median height is 40 m against 2.8 m for the ground you can reach.",
+  oneway:   "Ground you can drop into and not climb out of. There is almost none \u2014 what "
+          + "you cannot reach here is above you, not below.",
 };
 
 
@@ -551,7 +567,12 @@ function build() {
   // while the game is open, so the built data is frozen for the length of a session.
   const spawnSource = (liveSpawns && S.map === m) ? liveSpawns : (D.spawns[m.id] || []);
 
-  points = spawnSource.map(([code, id, x, z]) => {
+  points = spawnSource
+    // Ground a player cannot reach carries no marker. The live feed's rows are four long
+    // and so never flagged, which is right: a point the game is streaming you right now is
+    // one you are standing next to.
+    .filter(row => SHOW_UNREACHABLE || !row[4])
+    .map(([code, id, x, z]) => {
     const [px, py] = worldToPixel(m, x, z);
     // Everything of the same kind and id shares a key, which is what lets hovering one
     // marker light up the rest of that creature's spawns.

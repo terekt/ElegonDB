@@ -6,8 +6,8 @@
 <meta http-equiv="Cache-Control" content="no-cache">
 <title>Elegon DB — Optimizer</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2032%2032%27%3E%3Cdefs%3E%3ClinearGradient%20id%3D%27t%27%20x1%3D%270%27%20y1%3D%270%27%20x2%3D%27.45%27%20y2%3D%271%27%3E%3Cstop%20offset%3D%270%27%20stop-color%3D%27%23ffe455%27%2F%3E%3Cstop%20offset%3D%271%27%20stop-color%3D%27%23e9a200%27%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D%2732%27%20height%3D%2732%27%20rx%3D%277%27%20fill%3D%27url%28%23t%29%27%2F%3E%3Cg%20fill%3D%27%23110c09%27%20font-family%3D%27Alice%2CGeorgia%2Cserif%27%3E%3Ctext%20x%3D%276.5%27%20y%3D%2723%27%20font-size%3D%2717%27%3EE%3C%2Ftext%3E%3Ctext%20x%3D%2717.5%27%20y%3D%2723%27%20font-size%3D%279%27%20opacity%3D%27.72%27%3Edb%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fsvg%3E">
-<link rel="stylesheet" href="style.css?v=d14f40b9">
-<link rel="stylesheet" href="elegon-redesign.css?v=d14f40b9">
+<link rel="stylesheet" href="style.css?v=21ad0cb6">
+<link rel="stylesheet" href="elegon-redesign.css?v=21ad0cb6">
 <script>
 (function () {
   var saved = null;
@@ -31,7 +31,8 @@
    and the left column as a whole is what holds position, which is what it was
    for in the first place. Capped to the viewport with its own scroll, because a
    sticky element taller than the screen pins its top and hides its bottom. */
-.optgrid .attrs{position:static}
+/* (.attrs used to be sticky site-wide and this had to cancel it here; it is static by
+   default now, and the column below is what pins.) */
 .optgrid > .side{position:sticky;top:calc(var(--header-h) + 18px);
   max-height:calc(100vh / var(--zoom) - var(--header-h) - 36px);
   overflow-y:auto;scrollbar-width:thin;
@@ -560,7 +561,7 @@
              label-over-control grouping as the setup bar rather than a sentence with
              dropdowns wedged into it, which never aligns and cannot wrap. -->
         <div id="feedCta">
-          <button type="button" id="feedRun" class="gold ctabtn">Find changes</button>
+          <button type="button" id="feedRun" class="gold ctabtn">Optimize the character</button>
           <div class="ctaopts" id="gearCtl">
             <div class="grp">
               <label>Gear quality</label>
@@ -783,9 +784,9 @@
        id="fightBody"></div>
 </dialog>
 
-<script src="data.js?v=d14f40b9"></script>
-<script src="app.js?v=d14f40b9"></script>
-<script src="sim.js?v=d14f40b9"></script>
+<script src="data.js?v=21ad0cb6"></script>
+<script src="app.js?v=21ad0cb6"></script>
+<script src="sim.js?v=21ad0cb6"></script>
 <script>
 /* ---- the optimizer page --------------------------------------------------
    The arithmetic lives in sim.js so it can be tested outside a browser; this
@@ -1278,6 +1279,11 @@ function enemyCfg(over) {
   const tier = (over && over.tier != null) ? over.tier : enemyTier();
   return pack().map(e => Object.assign({
     id: e.m.id, damage: e.m.dmg || 0, tier, name: e.m.name, boss: !!e.m.boss,
+    /* What its abilities add on top of the swing, measured from the recorded fights - see
+       ability_uplift in build_site. `dmg` is only the swing, and since v3500054 that is no
+       longer the whole of what a creature does to you. Absent for anything nobody has
+       fought since the patch, and then the fight is modelled as it always was. */
+    uplift: e.m.uplift || 1,
     count: e.n, stunnable: FIGHT.stunnable !== false,
   }, over || {}, {count: e.n}));
 }
@@ -4961,7 +4967,7 @@ function drawLanes() {
   }
   const total = d.gear.rows.length + d.talents.rows.length + d.attrs.rows.length;
   note.textContent = LANES.stale
-    ? "the build changed — press Find changes again"
+    ? "the build changed — optimise again"
     : total ? total + (total > 1 ? " changes worth making" : " change worth making")
             : "nothing here beats what you already have";
   drawSummary();

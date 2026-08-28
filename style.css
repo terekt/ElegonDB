@@ -530,8 +530,21 @@ td .framed{margin:-7px 0}
 .allocrow .amax{font-size:11px;color:var(--faint)}
 
 
-.attrs{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px;
-  position:sticky;top:calc(var(--header-h) + 18px)}
+/* Not sticky by default.
+ *
+ * It was, because .attrs began life as the planner's one side panel, where pinning beside a
+ * long left column is exactly right. It has since become the generic panel class - the
+ * optimizer stacks seven of them in a column, the compendium three - and a COLUMN of sticky
+ * panels is a pile-up: each pins at the header and the next scrolls over the top of it,
+ * which is what "the sections behave weirdly" looks like from the outside.
+ *
+ * Pinning is now opt-in, on the two side panels that actually sit beside something longer
+ * than themselves. */
+.attrs{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px}
+/* The planner is a four-column grid, so each .attrs there IS its own column and pins
+   independently - which is what the rule was written for. The optimizer pins its whole
+   .side column instead, and says so itself. */
+.plan > .attrs{position:sticky;top:calc(var(--header-h) + 18px)}
 /* Panel2/AttributesHeading: Alice, 10px, #bab8ad, uppercase. */
 .attrs h3{margin:0 0 10px;font-family:var(--panel-font);color:var(--panel-heading);font-size:11px;
   text-transform:uppercase;letter-spacing:1.4px}
@@ -1083,7 +1096,11 @@ dialog.sheet{width:min(940px,94vw)}
 /* Tabs and counts sit under the subject with air around them, and no rule of their own: the
    header's own bottom edge is the only line the sheet needs. */
 .dfilters:not(:empty){margin-top:14px}
-.hero{display:flex;align-items:center;gap:16px;min-width:0;width:100%}
+/* width:auto, not 100%. With `margin:0 2px` from the rule above, a 100% width is four
+   pixels wider than the space it sits in, and a block-level flex container fills its line
+   anyway - so the only thing the 100% ever did was push every page four pixels sideways.
+   It reads as panels leaning into each other long before anyone notices a scrollbar. */
+.hero{display:flex;align-items:center;gap:16px;min-width:0;width:auto;max-width:100%}
 .hero > .ico.mon{flex:0 0 auto;border:0;background:none;padding:0}
 .hero > .framed{flex:0 0 auto}
 .herotext{min-width:0;flex:1 1 auto}

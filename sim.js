@@ -26,6 +26,18 @@
 
 /* Effect types, as SpellTooltipFormatter names them. */
 const FX_STUN = 1, FX_DOT = 2, FX_HOT = 3, FX_REDUCE = 4, FX_POWER = 5;
+
+/* How often a creature casts an ability, in seconds.
+ *
+ * Measured, not chosen. Creatures act on a three-second tick - 83% of 343 recorded basic-
+ * attack gaps land within a third of a second of a multiple of three - and every ability
+ * cooldown in the catalogue sits at 9 to 14, so each one rounds up to the same 12s boundary.
+ * Gore (10), Frost Breath (11) and Cinder Breath (11) all predict 12 and all observe 12.
+ *
+ * One number rather than per-ability, because the uplift it is spent against is itself a
+ * per-creature total; splitting the cycle without splitting the damage would be false
+ * precision. */
+const ENEMY_CAST_EVERY = 12;
 const KNOWN_FX = new Set([FX_STUN, FX_DOT, FX_HOT, FX_REDUCE, FX_POWER]);
 const GCD_BASE = 1.5;
 const EPS = 1e-9;
@@ -145,7 +157,11 @@ function candidates(D, opts) {
          one landing, or puts health back counts — and so does everything that
          deals damage, because damage is the tie-break once the damage taken is
          as low as it will go. Only movement with nothing attached is left out. */
-      const stops = s.fx === FX_REDUCE || s.fx === FX_STUN;
+      /* An interrupt stops one too - it is the only thing here whose worth is invisible to
+         the catalogue, since it deals nothing and applies nothing. Left out of `stops` it
+         was dropped as utility before the solver ever saw it, and the one spell added to
+         answer creature abilities could never be cast. */
+      const stops = s.fx === FX_REDUCE || s.fx === FX_STUN || s.interrupt;
       const mends = periodic && hots && s.dlv === 0;
       const hurts = (direct && !s.heals) || (periodic && !hots);
       if (!stops && !mends && !hurts && !amp)
@@ -224,6 +240,10 @@ function makeAction(s, C) {
     mit: s.fx === FX_REDUCE ? s.fxAmt : 0,
     mitDur: s.fx === FX_REDUCE ? s.fxDur * tm : 0,
     stun: s.fx === FX_STUN ? s.fxDur * tm : 0,
+    /* An interrupt stops the NEXT ability a creature would cast. It deals nothing and
+       applies nothing, so every other scoring path values it at zero; its whole worth is the
+       damage that then never arrives, which only the survival loop can see. */
+    interrupt: !!s.interrupt,
     /* A ground area or an arc puts its effect on the whole pack at once. A
        single-target effect has to be applied to each enemy separately, which is
        a global cooldown each — so it is tracked per target rather than once. */
@@ -446,11 +466,29 @@ function model(D, cfg) {
   const foes = [];
   for (const e of pack) {
     const tier = e.tier == null ? eTier : e.tier;
-    const each = (e.damage || 0) * enemyDamageMult(tier);
+    /* Creatures cast now. v3500054 gave them abilities on top of the swing, and `damage` is
+       still only the swing - so a fight modelled from it alone is a fight against a creature
+       that stopped fighting halfway through. `uplift` is the measured ratio of real incoming
+       damage to swing-only damage, per creature, from the recorded combat log; it is a ratio
+       precisely so that the mitigation of whoever recorded it cancels out. Absent for a
+       creature nobody has fought since the patch, and then this is what it always was. */
+    const swing = (e.damage || 0) * enemyDamageMult(tier);
+    /* The swing and the cast are kept apart on purpose. Folding the uplift into the swing
+       was the first version and it cannot survive v3500842, which gave every class an
+       interrupt: an interrupt denies a CAST, and you cannot deny a fraction of a swing. So
+       the ability half becomes its own clock - one cycle's worth of ability damage arriving
+       as a cast every ENEMY_CAST_EVERY seconds - and the interrupt has something to take.
+
+       One lump rather than a hit plus a trickling dot: what decides a fight is the total,
+       and spreading it shifts the moment of death by less than the measurement's own error. */
+    const upl = Math.max(1, e.uplift || 1);
+    const perCast = (swing / (e.interval || D.attackInterval || 3))
+                    * (upl - 1) * ENEMY_CAST_EVERY;
     const interval = e.interval || D.attackInterval || 3;
     const many = Math.max(1, Math.round(e.count || 1));
     for (let i = 0; i < many; i++)
-      foes.push({raw: each, interval, base: e.damage || 0, tier,
+      foes.push({raw: swing, interval, base: e.damage || 0, tier, uplift: upl,
+                 cast: perCast, castEvery: ENEMY_CAST_EVERY,
                  id: e.id, name: e.name || "", boss: !!e.boss,
                  stunnable: e.stunnable !== false, first: 0});
   }
@@ -546,7 +584,13 @@ function simulate(M, order, opts) {
   /* One record per attacker: when it next swings, and how long it is held. The
      first entry is the one you are facing, so a single-target stun lands there;
      an arc or a ground effect holds the lot. */
-  const foes = tank ? (M.foes || []).map(f => ({f, next: f.first, held: -1})) : [];
+  /* nextCast is staggered across the pack, and offset from the swing, so the two clocks do
+     not always land together - the same reason the swings themselves are dealt in evenly. */
+  const foes = tank ? (M.foes || []).map((f, i) => ({
+    f, next: f.first, held: -1, denied: false,
+    nextCast: f.cast > 0
+      ? f.castEvery * (i + 1) / Math.max(1, (M.foes || []).length) : Infinity,
+  })) : [];
   const perFoe = new Map();
   for (const fo of foes) {
     const k = fo.f.name || "Enemy";
@@ -556,6 +600,7 @@ function simulate(M, order, opts) {
   const stunUntilOf = () => Math.max(...foes.map(fo => fo.held), -1);
   let hp = M.health, minHp = M.health, deathAt = null;
   let taken = 0, healed = 0, overheal = 0, swings = 0, stunned = 0;
+  let casts = 0, interrupted = 0, deniedDmg = 0;
   const HEAL_TICK = 1;
   let healerHealed = 0, healerWasted = 0;
   let nextHeal = tank && M.healer > 0 ? HEAL_TICK : Infinity;
@@ -601,8 +646,10 @@ function simulate(M, order, opts) {
     if (nextAuto < tn) { tn = nextAuto; kind = "auto"; which = null; }
     for (const d of live.values())
       if (d.nextTick < tn) { tn = d.nextTick; kind = "tick"; which = d; }
-    for (const fo of foes)
+    for (const fo of foes) {
       if (fo.next < tn) { tn = fo.next; kind = "swing"; which = fo; }
+      if (fo.nextCast < tn) { tn = fo.nextCast; kind = "cast"; which = fo; }
+    }
     if (nextHeal < tn) { tn = nextHeal; kind = "healer"; which = null; }
     for (const m of mends.values())
       if (m.nextTick < tn) { tn = m.nextTick; kind = "mend"; which = m; }
@@ -633,6 +680,37 @@ function simulate(M, order, opts) {
         log.push({t, kind: "swing", amount: dealt, hp, id: -2,
                   name: f.name ? f.name + "'s swing" : "Enemy swing"});
       fo.next = t + f.interval;
+      continue;
+    }
+    if (kind === "cast") {
+      const fo = which, f = fo.f;
+      /* Held is held: a stunned creature is not casting either. */
+      if (f.stunnable && t < fo.held - EPS) { fo.nextCast = fo.held; continue; }
+
+      if (fo.denied) {
+        /* Interrupted. The cast is gone, not postponed - the creature starts its cooldown
+           again with nothing to show for it, which is the whole point of spending a global
+           on the interrupt. */
+        fo.denied = false;
+        interrupted += 1;
+        deniedDmg += f.cast * takenFraction(M.fortitude, guardAt(t), M.defense);
+        if (keepLog)
+          log.push({t, kind: "interrupt", amount: 0, hp, id: -4,
+                    name: (f.name ? f.name + "'s cast" : "Enemy cast") + " interrupted"});
+      } else {
+        const hit = f.cast * takenFraction(M.fortitude, guardAt(t), M.defense);
+        const dealt = M.round ? Math.round(hit) : hit;
+        taken += dealt;
+        hp -= dealt;
+        casts += 1;
+        const pf = perFoe.get(f.name || "Enemy");
+        if (pf) { pf.amount += dealt; }
+        if (hp < minHp) minHp = hp;
+        if (keepLog && dealt > 0)
+          log.push({t, kind: "cast", amount: dealt, hp, id: -3,
+                    name: f.name ? f.name + "'s ability" : "Enemy ability"});
+      }
+      fo.nextCast = t + f.castEvery;
       continue;
     }
     if (kind === "healer") {
@@ -780,6 +858,15 @@ function simulate(M, order, opts) {
     if (tank) {
       if (pick.tracksMit)
         guards.set(pick.id, {amt: pick.mit, until: castEnd + pick.mitDur});
+      if (pick.interrupt) {
+        /* Arm the next cast to be denied. Spent on whichever creature will cast soonest and
+           is not already covered, because holding it for a particular target is a decision
+           the model has no way to make and the player would not make either. */
+        let best = null;
+        for (const fo of foes)
+          if (fo.f.cast > 0 && !fo.denied && (!best || fo.nextCast < best.nextCast)) best = fo;
+        if (best) best.denied = true;
+      }
       if (pick.stun) {
         const until = landAt + pick.stun;
         const held = pick.hitsAll ? foes : foes.slice(0, 1);
@@ -870,6 +957,7 @@ function simulate(M, order, opts) {
     apm: actions / (dur / 60),
     // the incoming half
     taken, healed, overheal, net, held, swings, stunned, potential,
+    casts, interrupted, deniedDmg,
     healerHealed, healerWasted, healerHps: M.healer,
     /* Who landed what, so a pack can be read creature by creature. */
     attackers: [...perFoe.values()].sort((x, y) => y.amount - x.amount),

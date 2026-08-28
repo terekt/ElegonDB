@@ -630,13 +630,35 @@ const round1 = n => Math.round(n * 10) / 10;
    so a gathering node and an NPC are located exactly the way a monster is. */
 const SPAWN_ENEMY = 0, SPAWN_OBJECT = 1, SPAWN_NPC = 2;
 
+/* Points standing on ground a player cannot reach.
+ *
+ * build_site marks them with a fifth element, from the terrain reachability model in
+ * tools/pck/reachmap.py: a cliff face nobody can stand on, or standable ground with no
+ * route in. 264 of the overworld's 1,714 recorded points are on ground like that - the
+ * server places a spawner wherever a designer put it, without asking whether anyone can
+ * follow - and a marker you can see and never walk to is worse than no marker.
+ *
+ * Hidden everywhere by default. The staging map has a switch to bring them back, because
+ * "is that thing really unreachable" is a question worth being able to ask; a release has
+ * no switch at all, and the flag simply stays off.
+ */
+let SHOW_UNREACHABLE = false;
+
 const SPAWN_POINTS = new Map();
 for (const [mapId, points] of Object.entries(D.spawns || {}))
-  for (const [type, dataId, x, z] of points) {
+  for (const [type, dataId, x, z, unreachable] of points) {
     const key = mapId + "|" + type + "|" + dataId;
     const list = SPAWN_POINTS.get(key);
-    if (list) list.push([x, z]); else SPAWN_POINTS.set(key, [[x, z]]);
+    // The flag rides with the point rather than filtering here: the switch can flip after
+    // load, and rebuilding this index on every flip would be silly.
+    if (list) list.push([x, z, !!unreachable]); else SPAWN_POINTS.set(key, [[x, z, !!unreachable]]);
   }
+
+/** Points worth drawing: everything, or only what a player can actually get to. */
+const shown = pts => SHOW_UNREACHABLE ? pts : pts.filter(p => !p[2]);
+
+/** The same, for the {map,x,z,out} shape the by-id indexes use. */
+const here = pts => SHOW_UNREACHABLE ? pts : (pts || []).filter(p => !p.out);
 
 /* ---- the breach pools, spread over the creatures that stand in them --------
  * D.riftDrops is the game's own per-map reward table, and it names what a breach can give
@@ -708,6 +730,16 @@ for (const [mapId, points] of Object.entries(D.spawns || {}))
 
 /** Every exported map that has recorded spawns for this thing, with the points. */
 function spawnsFor(type, dataId) {
+  const out = [];
+  for (const map of D.maps || []) {
+    const points = shown(SPAWN_POINTS.get(map.id + "|" + type + "|" + dataId) || []);
+    if (points.length) out.push({map, points});
+  }
+  return out;
+}
+
+/** Every point, reachable or not - for the few places that need the honest total. */
+function allSpawnsFor(type, dataId) {
   const out = [];
   for (const map of D.maps || []) {
     const points = SPAWN_POINTS.get(map.id + "|" + type + "|" + dataId);
@@ -1923,13 +1955,14 @@ const mapName = id => (MAP_BY_ID.get(id) || {}).name || "the world";
 
 const countLabel = (n, word) => n + " " + word + (n === 1 ? "" : "s");
 
-/** Where a monster has been seen, across every map. Answers "where do I go for this". */
+/** Where a monster has been seen, across every map. Answers "where do I go for this".
+    Filter with `here()` so unreachable points are left out unless staging asks for them. */
 const SPAWNS_BY_ENEMY = new Map();
 for (const [mapId, list] of Object.entries(D.spawns || {}))
-  for (const [code, id, x, z] of list) {
+  for (const [code, id, x, z, unreachable] of list) {
     if (code !== 0) continue;
     const at = SPAWNS_BY_ENEMY.get(id) || [];
-    at.push({map: mapId, x, z});
+    at.push({map: mapId, x, z, out: !!unreachable});
     SPAWNS_BY_ENEMY.set(id, at);
   }
 
@@ -1963,10 +1996,10 @@ for (const [id, o] of OBJECT_BY_ID)
 /** Where a world object has been seen, across every map. */
 const SPAWNS_BY_OBJECT = new Map();
 for (const [mapId, list] of Object.entries(D.spawns || {}))
-  for (const [code, id, x, z] of list) {
+  for (const [code, id, x, z, unreachable] of list) {
     if (code !== 1) continue;
     const at = SPAWNS_BY_OBJECT.get(id) || [];
-    at.push({map: mapId, x, z});
+    at.push({map: mapId, x, z, out: !!unreachable});
     SPAWNS_BY_OBJECT.set(id, at);
   }
 
@@ -1992,7 +2025,7 @@ const PROP_NEAR_GIVER = 60;          // world units; the camp, not the county
 function questProp(q) {
   if (QUEST_PROPS.length !== 1) return null;
   const prop = QUEST_PROPS[0];
-  const at = SPAWNS_BY_OBJECT.get(prop.id) || [];
+  const at = here(SPAWNS_BY_OBJECT.get(prop.id));
   if (at.length !== 1) return null;
 
   const giver = NPC_BY_ID.get(q.from);
@@ -2502,7 +2535,7 @@ function objectiveBlock(o, index, quest) {
       const monster = MONSTER_BY_ID_Q.get(id);
       if (!monster) continue;
       const src = DROP.sources.find(s => !s.node && s.id === id);
-      const seen = whereSeen(SPAWNS_BY_ENEMY.get(id));
+      const seen = whereSeen(here(SPAWNS_BY_ENEMY.get(id)));
       const chip = el("span", "chip targetchip");
       chip.append(icon("monsters", id, !!monster.icon, 22),
                   el("span", null, monster.name),
@@ -2594,7 +2627,7 @@ function objectLine(id, subtitle) {
 
 /** A gathering node, described by every place it has been seen standing. */
 function gatherLine(g) {
-  const at = SPAWNS_BY_OBJECT.get(g.id) || [];
+  const at = here(SPAWNS_BY_OBJECT.get(g.id));
   return objectLine(g.id, at.length ? whereSeen(at) : "location unknown");
 }
 
