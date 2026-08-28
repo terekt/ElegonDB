@@ -505,8 +505,20 @@ dialog{background:var(--panel-raised);border-color:var(--line)}
 :root{overflow-x:clip}
 
 .wrap > .hero{
-  margin-inline:calc(50% - 50vw / var(--zoom));
-  padding-inline:calc(50vw / var(--zoom) - 50%);
+  /* --sbw is the scrollbar's width, measured in app.js. 50vw counts the scrollbar and the
+     document does not, so without it the band overshoots by exactly that much on each side -
+     ten pixels of horizontal scroll that overflow-x:clip on the root does not actually
+     prevent. Halved because the overshoot is split between the two sides. */
+  margin-inline:calc(50% - 50vw / var(--zoom) + var(--sbw, 0px) / 2);
+  padding-inline:calc(50vw / var(--zoom) - var(--sbw, 0px) / 2 - 50%);
+  /* style.css's OTHER .hero - the one for the sheet, at line 1103 - carries
+     max-width:100%, and 100% of .wrap's content box is narrower than the viewport this
+     band is being stretched to. It clamped the band back to .wrap's width while the
+     padding-inline above went on pushing the content in by half the difference, so the
+     title and its counts stopped 62px short of the panels below them and the band's
+     right edge stopped with them. Section 11 scoped the selector to keep the two .hero
+     rules apart; this is the one declaration that still had to be undone by name. */
+  max-width:none;
 }
 
 /* The header's inner edge follows .wrap's, so the lockup and the page title stand

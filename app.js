@@ -1234,6 +1234,36 @@ function monsterSheet(src) {
   };
 }
 
+/* What an effect does, in the game's own words.
+ *
+ * Not paraphrased and not inferred: this is SpellTooltipFormatter.FormatMonsterActiveEffectText
+ * from the client, which exists precisely because a monster's effect reads differently from a
+ * player's. Taking the wording from there rather than writing our own means the site cannot
+ * drift from what the tooltip in front of you says, and it settled the one type nothing else
+ * could - effect 10 never lands on a player, so it never appears in the recorded effects and
+ * has no name there. The client calls it increased damage dealt.
+ *
+ * The amounts are the catalogue's, which is why a damage-over-time reads without a number:
+ * the game computes those server-side and stores 0. What it does not state, the combat log
+ * measured - see the damage line above this one.
+ */
+function monsterEffectLine(sp) {
+  if (!sp || !sp.fx) return null;
+  const dur = fmtNum(sp.fxDur) + "s";
+  const tick = fmtNum(sp.fxTick);
+  const pct = v => fmtNum(Math.round(v * 1000) / 10) + "%";
+  switch (sp.fx) {
+    case 1:  return "Stuns for " + dur;
+    case 2:  return "Deals damage every " + tick + "s for " + dur;
+    case 3:  return "Restores health every " + tick + "s for " + dur;
+    case 4:  return "Reduces damage taken by " + pct(sp.fxAmt) + " for " + dur;
+    case 5:  return "Increases cast speed and spell damage by " + pct(sp.fxAmt)
+                    + " for " + dur;
+    case 10: return "Increases damage dealt by " + pct(sp.fxAmt) + " for " + dur;
+    default: return "Effect lasts " + dur;
+  }
+}
+
 /* ---- what a creature casts -------------------------------------------------
  * Three states, and telling them apart is the whole job.
  *
@@ -1301,31 +1331,66 @@ function abilityPanel(src) {
       head.appendChild(el("span", "abilnote", "listed " + cd + "s"));
     mid.appendChild(head);
 
+    /* What it hits for, given the top billing it deserves - it is the first thing anyone
+       reading this asks. Measured off the combat log, which is the only place the game ever
+       says: the spell row's own damage column reads 0 on all forty-two of them. */
+    if (a.hit || a.dot) {
+        const hit = el("div", "abildmg");
+        if (a.hit) {
+            hit.appendChild(el("b", null, fmtNum(Math.round(a.hit))));
+            hit.appendChild(el("span", null, "on impact"));
+        }
+        if (a.dot) {
+            if (a.hit) hit.appendChild(el("span", "abilthen", "then"));
+            hit.appendChild(el("b", null, fmtNum(Math.round(a.dot))));
+            /* Interval measured, duration stated. The game says how long its effect runs and
+               computes the damage server-side; we have it the other way round, so the line
+               takes each from whichever knows. */
+            hit.appendChild(el("span", null,
+                (a.tick ? "every " + (a.tick / 1000) + "s"
+                        : sp.fxTick ? "every " + fmtNum(sp.fxTick) + "s" : "a tick")
+                + (sp.fxDur ? " for " + fmtNum(sp.fxDur) + "s" : "")));
+        }
+        /* The sample, on hover rather than on the line: it decides how much to trust the
+           number and almost nobody wants it in the way while reading the number itself. */
+        const n = (a.casts || 0) + (a.dots || 0);
+        hit.title = "Median of " + fmtNum(n) + " recorded landing"
+          + (n === 1 ? "" : "s")
+          + ", as the damage ARRIVED — after the defences of whoever recorded it. "
+          + "Comparable with the other abilities here, which were all measured through the "
+          + "same armour; not a figure to expect on your own character.";
+        mid.appendChild(hit);
+    }
+
+    /* What it leaves behind, if anything. A damage-over-time is left to the measured line
+       above - the game's sentence for one carries no number and ours does - but everything
+       else lands here in the client's own words, with the one thing the wording leaves out:
+       whether it is happening to you or to the creature. */
+    const line = sp.fx === 2 && (a.dot || a.amount) ? null : monsterEffectLine(sp);
+    if (line) {
+      const fx = el("div", "abilfx" + (sp.fxTgt === 1 ? " self" : ""));
+      fx.appendChild(el("span", "abilwho", sp.fxTgt === 1 ? "on itself" : "on you"));
+      fx.appendChild(document.createTextNode(line));
+      mid.appendChild(fx);
+    }
+
     const bits = [];
-    if (sp.fxDur) bits.push(sp.fxDur + "s effect");
-    if (a.tick) bits.push("ticks every " + (a.tick / 1000) + "s");
-    if (a.amount) bits.push("measured " + fmtNum(Math.round(a.amount)) + " a tick");
+    // Only when neither line above already said how long it runs for.
+    if (line === null && !a.dot && sp.fxDur) bits.push(fmtNum(sp.fxDur) + "s effect");
+    if (a.tick && !a.dot) bits.push("ticks every " + (a.tick / 1000) + "s");
+    // The effect row's own amount, kept only when the combat log had too few landings to
+    // measure - otherwise the same fact would be stated twice with two different numbers.
+    if (a.amount && !a.dot) bits.push("measured " + fmtNum(Math.round(a.amount)) + " a tick");
     if (bits.length) mid.appendChild(el("span", "abilsub", bits.join(" · ")));
     if (sp.desc) mid.appendChild(el("span", "abildesc", sp.desc));
     row.appendChild(mid);
 
-    /* Where the line came from, because the two sources see different things: an effect row
-       is written by anything that APPLIES something, the combat log by any cast at all. */
-    /* Three states, because the export merges the two sources: an ability can be known
-       from the effect it applied, from the combat log, or from both. */
-    const both = /effect/.test(a.via) && /combat/.test(a.via);
-    row.appendChild(el("span", "abilvia" + (/effect/.test(a.via) ? " fx" : ""),
-      both ? "seen both ways"
-           : /effect/.test(a.via) ? "from its effect" : "from the combat log"));
+    /* Which of the two recorders saw it is carried in the data and deliberately not drawn:
+       it answers a question about our method, not about the creature. Nor is the "at least
+       N" caveat repeated under every list - it is a fact about the whole roster, and the one
+       page whose subject IS the roster states it once at the top. */
     wrap.appendChild(row);
   }
-
-  const foot = el("p", "note abilfoot");
-  foot.appendChild(document.createTextNode(
-    "At least " + list.length + " " + (list.length === 1 ? "ability" : "abilities")
-    + " — recovered by watching this creature cast, not read from a list the game "
-    + "publishes, so there may be more it has not been seen to use."));
-  wrap.appendChild(foot);
   return wrap;
 }
 
@@ -1515,12 +1580,14 @@ function xpChips(monster) {
       : `At level ${lvl}. ${fmtNum(monster.xp)} at its own level, ${step}% per level between`;
   const out = [xp];
 
-  const kills = killsPerLevel(monster);
+  /* Only once a level has actually been chosen. With none set it silently assumed you were
+     the creature's own level, which made it a fact about an imaginary character - and it sat
+     there on every sheet on every page looking like a fact about the creature. */
+  const kills = lvl === null ? null : killsPerLevel(monster);
   if (kills !== null) {
-    const at = lvl === null ? monster.lvl : lvl;
     const chip = statChip("Kills per level", fmtNum(kills));
-    chip.title = `${fmtNum(LEVEL_XP[at])} XP finishes level ${at}, at ${fmtNum(xpAt(monster, at))} `
-               + (lvl === null ? "a kill — assuming you are its level" : "a kill");
+    chip.title = `${fmtNum(LEVEL_XP[lvl])} XP finishes level ${lvl}, at `
+               + `${fmtNum(xpAt(monster, lvl))} a kill`;
     out.push(chip);
   }
   return out;
@@ -3807,8 +3874,14 @@ function searchSheetFor(kind, id) {
 (function trackHeaderHeight() {
   const header = document.querySelector("header");
   if (!header) return;
-  const apply = () => document.documentElement.style
-    .setProperty("--header-h", header.offsetHeight + "px");
+  const apply = () => {
+    const de = document.documentElement;
+    de.style.setProperty("--header-h", header.offsetHeight + "px");
+    /* And the scrollbar, while we are measuring: the full-bleed masthead is sized from 50vw,
+       which counts the scrollbar the document does not have, and CSS cannot subtract what it
+       cannot measure. Ten pixels of horizontal scroll on every page without it. */
+    de.style.setProperty("--sbw", Math.max(0, window.innerWidth - de.clientWidth) + "px");
+  };
   apply();
   if (typeof ResizeObserver === "function") new ResizeObserver(apply).observe(header);
   addEventListener("resize", apply);      // belt and braces; both are cheap
