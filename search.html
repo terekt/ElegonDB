@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache">
+<title>Elegon DB — Search</title>
+<link rel="icon" href="icons/ui/favicon.png">
+<link rel="stylesheet" href="style.css?v=bbcd0afd">
+<style>
+/* ---- search ------------------------------------------------------------------
+   One field and a list. The page is a lookup, not a dashboard: nothing here should
+   compete with the results for attention. */
+.searchbar{display:flex;gap:10px;align-items:center;margin:0 0 6px}
+.searchbar input{flex:1;min-width:0;font:inherit;font-size:19px;padding:13px 16px;
+  border-radius:11px;border:1px solid var(--line);background:var(--panel);color:var(--ink)}
+.searchbar input:focus{outline:none;border-color:var(--gold)}
+.searchnote{margin:0 2px 16px;font-size:12px;color:var(--faint)}
+
+.skinds{display:flex;gap:7px;flex-wrap:wrap;margin:0 0 16px}
+.skind{font:inherit;font-size:12px;padding:6px 12px;border-radius:999px;cursor:pointer;
+  border:1px solid var(--line);background:var(--panel);color:var(--faint);white-space:nowrap}
+.skind:hover{border-color:color-mix(in oklab,var(--gold) 45%,var(--line))}
+.skind.on{border-color:var(--gold);color:var(--gold);
+  background:color-mix(in oklab,var(--gold) 12%,var(--panel))}
+.skind b{color:inherit;font-weight:600;margin-left:5px;font-variant-numeric:tabular-nums}
+
+.sgroup{margin:0 0 20px}
+.sgroup > h3{margin:0 0 9px;font-family:var(--panel-font);color:var(--panel-heading);
+  font-size:11px;text-transform:uppercase;letter-spacing:1.4px}
+.shits{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px}
+.shit{display:grid;grid-template-columns:34px minmax(0,1fr);gap:11px;align-items:center;
+  padding:9px 11px;border:1px solid var(--line);border-radius:10px;cursor:pointer;
+  background:color-mix(in oklab,var(--panel) 92%,transparent)}
+.shit:hover{border-color:color-mix(in oklab,var(--gold) 45%,var(--line))}
+.shit .sn{font-family:var(--panel-font);font-size:14px;color:var(--ink);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.shit .sm{display:block;font-size:11.5px;color:var(--faint);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.shit mark{background:color-mix(in oklab,var(--gold) 34%,transparent);color:inherit;
+  border-radius:3px;padding:0 1px}
+.sempty{border:1px dashed var(--line);border-radius:10px;padding:20px;color:var(--faint)}
+.smore{font-size:12px;color:var(--faint);padding:8px 2px 0}
+</style>
+</head>
+<body>
+<header>
+  <a class="brand" href="index.html">
+    <span class="mark" aria-hidden="true"><b>E</b><i>db</i></span>
+    <span class="word">ELEGON<em>DB</em></span>
+  </a>
+  <nav>
+    <a href="index.html">Items</a>
+    <a href="monsters.html">Monsters</a>
+    <a href="quests.html">Quests</a>
+    <a href="maps.html">Maps</a>
+    <a href="scaling.html">Scaling</a>
+    <a href="planner.html"><span class="navlong">Character </span>Planner</a>
+    <a href="optimizer.html">Optimizer<span class="navtag">beta</span></a>
+  </nav>
+  <button type="button" id="themebtn" class="themebtn" aria-label="Switch theme">
+    <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.4"/><g><path d="M12 1.8v3M12 19.2v3M1.8 12h3M19.2 12h3M4.8 4.8l2.1 2.1M17.1 17.1l2.1 2.1M19.2 4.8l-2.1 2.1M6.9 17.1l-2.1 2.1"/></g></svg>
+    <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.6 13.6A8.6 8.6 0 0 1 10.4 3.4a8.6 8.6 0 1 0 10.2 10.2z"/></svg>
+  </button>
+</header>
+
+<div class="tip" id="tip" hidden></div>
+
+<div class="wrap">
+  <div class="hero herorow">
+    <h1>Search</h1>
+    <span class="herocounts" id="counts"></span>
+  </div>
+
+  <div class="searchbar">
+    <input id="q" type="search" autocomplete="off" spellcheck="false"
+           placeholder="An item, a creature, a spell, a quest, a person…" aria-label="Search">
+  </div>
+  <p class="searchnote" id="note"></p>
+  <div class="skinds" id="kinds"></div>
+  <div id="results"></div>
+</div>
+
+<script src="data.js?v=bbcd0afd"></script>
+<script src="app.js?v=bbcd0afd"></script>
+<script>
+/* ---- one index over everything the site knows -------------------------------
+ * Built once, on load, from the payload the other pages already carry - so this costs a
+ * page, not a download. Each entry keeps the searchable text lowercased alongside the
+ * record, because doing that per keystroke over several thousand rows is the difference
+ * between a field that feels instant and one that stutters.
+ */
+const KINDS = SEARCH_KINDS;      // the header bar and this page rank identically
+const S = {kind: "", q: ""};
+const INDEX = searchIndex();
+const score = searchRank;
+const mark = searchMark;
+const SHEETS = SEARCH_SHEETS;
+
+function draw() {
+  const q = S.q.trim().toLowerCase();
+  const results = document.getElementById("results");
+  const kinds = document.getElementById("kinds");
+  const note = document.getElementById("note");
+  results.replaceChildren();
+  kinds.replaceChildren();
+
+  if (q.length < 2) {
+    note.textContent = "Type at least two letters. Names rank above descriptions, "
+      + "so the thing you meant comes first.";
+    return;
+  }
+
+  const hits = searchHits(q);
+
+  const byKind = {};
+  for (const h of hits) (byKind[h.e.kind] = byKind[h.e.kind] || []).push(h);
+
+  note.textContent = hits.length
+    ? `${fmtNum(hits.length)} match${hits.length === 1 ? "" : "es"} for “${S.q.trim()}”`
+    : "";
+
+  // The chips carry their counts, so a kind with nothing in it is visibly empty rather
+  // than a filter you click and regret.
+  const all = el("button", "skind" + (S.kind ? "" : " on"));
+  all.type = "button";
+  all.appendChild(document.createTextNode("Everything"));
+  all.appendChild(el("b", null, String(hits.length)));
+  all.onclick = () => { S.kind = ""; draw(); };
+  kinds.appendChild(all);
+  for (const k of KINDS) {
+    const n = (byKind[k.key] || []).length;
+    if (!n) continue;
+    const b = el("button", "skind" + (S.kind === k.key ? " on" : ""));
+    b.type = "button";
+    b.appendChild(document.createTextNode(k.label));
+    b.appendChild(el("b", null, String(n)));
+    b.onclick = () => { S.kind = S.kind === k.key ? "" : k.key; draw(); };
+    kinds.appendChild(b);
+  }
+
+  if (!hits.length) {
+    const none = el("div", "sempty");
+    none.appendChild(el("b", null, "Nothing matches that."));
+    none.appendChild(el("p", "note",
+      "Names, descriptions and a creature's recorded abilities are all searched."));
+    results.appendChild(none);
+    return;
+  }
+
+  const CAP = 60;                    // per kind; a thousand cards helps nobody
+  for (const k of KINDS) {
+    const list = byKind[k.key];
+    if (!list || (S.kind && S.kind !== k.key)) continue;
+    const group = el("div", "sgroup");
+    group.appendChild(el("h3", null, `${k.label} · ${list.length}`));
+    const grid = el("div", "shits");
+    for (const {e} of list.slice(0, CAP)) {
+      const card = el("div", "shit");
+      card.appendChild(k.icons ? icon(k.icons, e.id, e.icon, 34)
+                               : el("span", "sicon", ""));
+      const mid = el("div");
+      const nm = el("div", "sn");
+      nm.appendChild(mark(e.name, q));
+      mid.appendChild(nm);
+      if (e.meta) mid.appendChild(el("span", "sm", e.meta));
+      card.appendChild(mid);
+      const open = searchSheetFor(k.key, e.id);
+      if (open) card.onclick = () => openSheet(open);
+      else card.style.cursor = "default";
+      grid.appendChild(card);
+    }
+    group.appendChild(grid);
+    if (list.length > CAP)
+      group.appendChild(el("p", "smore", `and ${list.length - CAP} more — narrow the search`));
+    results.appendChild(group);
+  }
+}
+
+/* ---- wiring ---------------------------------------------------------------- */
+const box = document.getElementById("q");
+
+document.getElementById("counts").textContent =
+  `${fmtNum(INDEX.length)} things indexed`;
+
+/* The query lives in the URL so a search can be linked, bookmarked and gone back to -
+   the same reason a build can. replaceState rather than push: typing should not fill the
+   history with one entry per keystroke. */
+let timer = null;
+box.oninput = () => {
+  S.q = box.value;
+  clearTimeout(timer);
+  timer = setTimeout(() => {
+    history.replaceState(null, "", S.q.trim() ? "?q=" + encodeURIComponent(S.q.trim()) : "search.html");
+    draw();
+  }, 90);
+};
+
+const start = new URLSearchParams(location.search).get("q");
+if (start) { box.value = start; S.q = start; }
+draw();
+box.focus();
+</script>
+</body>
+</html>

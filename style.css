@@ -69,7 +69,7 @@
      screen and the page grows a scrollbar it should not have. */
   --zoom:1;
   --radius:6px;
-  --header-h:57px;                        /* sticky table heads park under the nav */
+  --header-h:61px;   /* a fallback: app.js measures the real header and overwrites this */
 }
 
 /* ---- light theme ---------------------------------------------------------
@@ -2321,3 +2321,125 @@ select.riftsel:hover{
    with a sheet that was closed by the Escape key, the backdrop, or a nested push. */
 body:has(dialog[open]) .mapmarkers,
 body:has(dialog[open]) .maplive{content-visibility:hidden}
+
+
+/* ---- a creature's abilities ------------------------------------------------
+   Recovered by observation, so the panel has to show its own uncertainty as
+   plainly as it shows the abilities. */
+.abil{display:flex;flex-direction:column;gap:8px}
+.abilrow{display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:12px;
+  align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:10px;
+  background:color-mix(in oklab,var(--panel) 92%,transparent)}
+.abilmid b{font-family:var(--panel-font);font-size:14.5px;color:var(--ink)}
+.abilcd{margin-left:9px;font-size:11.5px;color:var(--gold);font-variant-numeric:tabular-nums}
+.abilnote{margin-left:7px;font-size:11px;color:var(--faint)}
+.abilsub{display:block;font-size:11.5px;color:var(--faint);margin-top:2px;
+  font-variant-numeric:tabular-nums}
+.abildesc{display:block;font-size:12px;color:var(--ink);opacity:.72;margin-top:3px}
+.abilvia{font-size:10.5px;letter-spacing:.5px;text-transform:uppercase;color:var(--faint);
+  border:1px solid var(--line);border-radius:4px;padding:2px 7px;white-space:nowrap}
+.abilvia.fx{color:var(--gold);border-color:color-mix(in oklab,var(--gold) 50%,var(--line))}
+.abilfoot{margin-top:2px}
+
+/* The empty state is a statement, not a blank - see abilityPanel. */
+.abilnone{border:1px dashed var(--line);border-radius:10px;padding:16px 18px;
+  background:color-mix(in oklab,var(--panel) 70%,transparent)}
+.abilnone b{font-family:var(--panel-font);font-size:14.5px;color:var(--ink)}
+.abilnone .note{margin:6px 0 0;max-width:62ch}
+
+/* ---- search, in the header ---------------------------------------------------
+   Before the nav rather than after it, because it is the fastest way to reach any of the
+   things the nav points at - the links are for browsing, the field is for when you already
+   know the name. It shrinks before the nav does (flex-shrink on the box, none on the links)
+   so a narrow window loses field width, not page links. */
+.hsearch{position:relative;flex:0 1 280px;min-width:120px}
+/* The field is the only thing in the header allowed to give ground. Left to itself flex
+   squeezed the nav instead, and because the nav wraps, losing three pixels there cost a
+   whole second row - which then made --header-h a lie and pushed every sticky table head
+   on the site down under the chrome. */
+header nav{flex:0 0 auto}
+/* 34px tall on the nose - the same as the theme switch beside it. Anything taller makes
+   the header taller, and --header-h is a constant that every sticky heading on the site is
+   positioned from, so the field must not change the height it names. */
+.hsearch input{width:100%;font:inherit;font-size:14px;line-height:20px;
+  /* The site-wide input[type=search] rule sets min-width:230px for the page-level filter
+     fields, which are the only other search inputs here. Left standing it makes this field
+     wider than the box holding it: 45px of horizontal scroll on a 375px screen, and on a
+     desktop a field that quietly reaches under the nav links. */
+  min-width:0;max-width:none;flex:initial;
+  height:34px;padding:6px 12px 6px 32px;
+  border-radius:9px;border:1px solid var(--line);color:var(--ink);
+  background:color-mix(in oklab,var(--panel) 70%,transparent);
+  /* The magnifier is drawn in, not typed: an inline SVG keeps it aligned to the field
+     instead of riding the text baseline the way a glyph would. */
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M20 20l-4.2-4.2'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:9px 50%;background-size:15px;
+  transition:border-color .12s,background-color .12s}
+.hsearch input::placeholder{color:var(--faint)}
+.hsearch input:focus{outline:none;border-color:var(--gold);
+  background-color:color-mix(in oklab,var(--panel) 96%,transparent)}
+.hsearch input::-webkit-search-cancel-button{cursor:pointer}
+
+.hsres{position:absolute;top:calc(100% + 9px);left:0;width:min(430px,88vw);z-index:60;
+  max-height:min(70vh,560px);overflow:auto;overscroll-behavior:contain;
+  background:var(--panel);border:1px solid var(--line);border-radius:12px;
+  box-shadow:0 18px 44px rgba(0,0,0,.34);padding:5px}
+.hsres[hidden]{display:none}
+.hshead{display:flex;justify-content:space-between;align-items:baseline;
+  padding:9px 10px 5px;font-family:var(--panel-font);color:var(--panel-heading);
+  font-size:10px;text-transform:uppercase;letter-spacing:1.3px}
+.hshead b{font-weight:600;color:var(--faint);font-variant-numeric:tabular-nums}
+.hsrow{display:grid;grid-template-columns:30px minmax(0,1fr);gap:10px;align-items:center;
+  padding:7px 10px;border-radius:8px;cursor:pointer}
+/* One highlight class for both hover and the keyboard cursor, so arrowing down and
+   moving the mouse cannot ever show two selected rows. */
+.hsrow.on{background:color-mix(in oklab,var(--gold) 13%,transparent)}
+.hsrow.flat{cursor:default}
+.hsmid{min-width:0}
+.hsn{font-family:var(--panel-font);font-size:13.5px;color:var(--ink);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hsm{display:block;font-size:11px;color:var(--faint);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hsres mark{background:color-mix(in oklab,var(--gold) 34%,transparent);color:inherit;
+  border-radius:3px;padding:0 1px}
+.hsdot{width:30px;height:30px;border-radius:7px;border:1px solid var(--line);
+  background:color-mix(in oklab,var(--ink) 5%,transparent)}
+.hsmore,.hsnone{padding:5px 11px 9px;font-size:11.5px;color:var(--faint)}
+.hsnone{padding:18px 12px}
+.hsall{margin:4px 2px 2px;padding:9px 11px;border-top:1px solid var(--line);
+  font-size:12px;color:var(--gold);cursor:pointer;border-radius:0 0 9px 9px}
+.hsall:hover{background:color-mix(in oklab,var(--gold) 10%,transparent)}
+
+/* Two bands on the way down, because a header that silently grows a row breaks every
+   sticky offset measured from --header-h. Each band states the height it actually is. */
+@media (max-width:1240px){
+  /* Tighter, and "Character Planner" becomes "Planner" - which buys back most of the width
+     the field costs, so the links stay on one line down to about a thousand pixels. */
+  header{gap:18px}
+  header nav{gap:16px}
+  .navlong{display:none}
+}
+@media (max-width:1000px){
+  /* Out of room on one line: the links take the second row whole, rather than wrapping
+     raggedly under the field. */
+  header{flex-wrap:wrap;row-gap:10px}
+  .hsearch{flex:0 1 320px}
+  .themebtn{order:1}
+  header nav{order:2;flex-basis:100%}
+  :root{--header-h:101px}
+}
+@media (max-width:760px){
+  /* The field shares the brand's row rather than taking one of its own. Its own row read
+     better, but the header is sticky and the links already wrap to three lines on a 375px
+     screen - a fourth row put the chrome at 191px, near a quarter of the screen, permanently.
+     Sharing costs nothing: the field lands at ~145px, and the results panel it opens is
+     full-width regardless of how wide the field that opened it was. */
+  /* A small basis, not auto: a wrapping flex line is decided on the item's hypothetical
+     size, and an <input>'s natural width is wide enough to push itself onto its own row
+     before shrinking ever gets a chance to save it. */
+  .hsearch{order:1;flex:1 1 90px;min-width:0}
+  .themebtn{order:2}
+  header nav{order:3}
+  :root{--header-h:150px}
+  .hsres{width:min(430px,94vw);left:auto;right:0}
+}

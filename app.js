@@ -1168,15 +1168,21 @@ function monsterSheet(src) {
 
     // No recorded spawns means no map worth a tab, so the loot table stands alone.
     const areas = src.node ? [] : spawnsFor(SPAWN_ENEMY, src.id);
+    /* Offered for every creature, recorded or not: "nothing known yet" is information, and
+       hiding the tab would make an unrecorded creature look like one with no abilities. */
+    const casts = !src.node;
     if (!areas.length) st.tab = "loot";
     // ...and no loot table means the reverse: the map is the whole sheet, with no tab row
     // offering a second view that would open on an empty table.
     if (!DROP.ready && areas.length) st.tab = "map";
+    if (!areas.length && !DROP.ready && casts) st.tab = "abil";
 
     const filters = el("span", "sfilterrow");
-    if (areas.length && DROP.ready) {
+    if ((areas.length && DROP.ready) || casts) {
       const tabs = el("span", "tabstrip");
-      for (const [key, label] of [["map", "Map"], ["loot", "Loot"]]) {
+      const tabList = [["map", "Map"], ["loot", "Loot"]];
+      if (casts) tabList.push(["abil", "Abilities"]);
+      for (const [key, label] of tabList) {
         const tab = el("button", "tab" + (st.tab === key ? " on" : ""), label);
         tab.type = "button";
         tab.onclick = () => { st.tab = key; paintSheet(); };
@@ -1197,7 +1203,7 @@ function monsterSheet(src) {
     }
     // Only the loot table needs a count here: each area's map carries its own, so putting
     // one in the tab row as well said the same thing twice.
-    if (st.tab !== "map" && DROP.ready)
+    if (st.tab !== "map" && st.tab !== "abil" && DROP.ready)
       filters.appendChild(el("span", "count", `${rows.length} of ${all.length} entries`));
 
     // Each tab carries only its own explanation. The loot note used to sit above both,
@@ -1208,7 +1214,9 @@ function monsterSheet(src) {
     // and opened as a panel containing a Back button. Silent, because the throw happened
     // inside the sheet builder and the shell had already drawn its chrome.
     const wrap = el("div");
-    if (st.tab === "map") {
+    if (st.tab === "abil") {
+      wrap.appendChild(abilityPanel(src));
+    } else if (st.tab === "map") {
       const monster = asOf("monsters", D.monsters.find(m => m.id === src.id));
       for (const area of areas)
         wrap.appendChild(spawnMap(area, monster ? monster.aggro : 0));
@@ -1224,6 +1232,88 @@ function monsterSheet(src) {
     return {key: "m" + src.i, title: src.name, sub, hero: sourceHero(src),
             filters, body: wrap};
   };
+}
+
+/* ---- what a creature casts -------------------------------------------------
+ * Three states, and telling them apart is the whole job.
+ *
+ * NOTHING RECORDED is not "this creature has no abilities". Since the patch that gave them
+ * abilities there is no roster anywhere in the game's data - eighty-nine tables and not one
+ * says which spell belongs to which enemy - so every line here was recovered by watching a
+ * creature actually cast. A blank means nobody has fought it while recording, and saying
+ * "none" would be inventing a fact out of our own idleness.
+ *
+ * KNOWN INCOMPLETE is the normal state even when there IS a list. Nothing states how many
+ * abilities a creature has, so "we have seen two" never becomes "it has two". The panel says
+ * "at least", every time, because that is the only claim the evidence supports.
+ *
+ * MEASURED numbers are marked apart from catalogue ones. A duration comes from the spell
+ * row; an amount and a tick interval come from a cast that actually landed, and only the
+ * second kind can be wrong in an interesting way.
+ */
+function abilityPanel(src) {
+  const list = ((D.abilities || {})[src.id] || []).slice();
+  const wrap = el("div", "abil");
+
+  if (!list.length) {
+    const none = el("div", "abilnone");
+    none.appendChild(el("b", null, "No abilities recorded yet"));
+    none.appendChild(el("p", "note",
+      "Not the same as having none. The game publishes no list of which creature casts "
+      + "what, so every ability on this site was recovered by watching one land. Nobody "
+      + "has recorded this creature casting yet."));
+    wrap.appendChild(none);
+    return wrap;
+  }
+
+  const byId = new Map((D.spells || []).map(sp => [sp.id, sp]));
+  /* Basics first, then the rest by cooldown: that is the order a fight happens in. */
+  list.sort((a, b) => ((byId.get(a.id) || {}).cd || 0) - ((byId.get(b.id) || {}).cd || 0));
+
+  for (const a of list) {
+    const sp = byId.get(a.id) || {};
+    const row = el("div", "abilrow");
+    row.appendChild(icon("spells", a.id, !!sp.icon, 34));
+
+    const mid = el("div", "abilmid");
+    const head = el("div");
+    head.appendChild(el("b", null, a.name || sp.name || ("Spell " + a.id)));
+    /* The tick the whole fight runs on: creatures act every 3s, so a stated cooldown
+       resolves to the first boundary at or after it. 11 fires at 12. */
+    const cd = sp.cd || 0;
+    head.appendChild(el("span", "abilcd", cd > 0
+      ? "every " + (Math.ceil(cd / 3) * 3) + "s"
+      : "every 3s"));
+    if (cd > 0 && Math.ceil(cd / 3) * 3 !== cd)
+      head.appendChild(el("span", "abilnote", "listed " + cd + "s"));
+    mid.appendChild(head);
+
+    const bits = [];
+    if (sp.fxDur) bits.push(sp.fxDur + "s effect");
+    if (a.tick) bits.push("ticks every " + (a.tick / 1000) + "s");
+    if (a.amount) bits.push("measured " + fmtNum(Math.round(a.amount)) + " a tick");
+    if (bits.length) mid.appendChild(el("span", "abilsub", bits.join(" · ")));
+    if (sp.desc) mid.appendChild(el("span", "abildesc", sp.desc));
+    row.appendChild(mid);
+
+    /* Where the line came from, because the two sources see different things: an effect row
+       is written by anything that APPLIES something, the combat log by any cast at all. */
+    /* Three states, because the export merges the two sources: an ability can be known
+       from the effect it applied, from the combat log, or from both. */
+    const both = /effect/.test(a.via) && /combat/.test(a.via);
+    row.appendChild(el("span", "abilvia" + (/effect/.test(a.via) ? " fx" : ""),
+      both ? "seen both ways"
+           : /effect/.test(a.via) ? "from its effect" : "from the combat log"));
+    wrap.appendChild(row);
+  }
+
+  const foot = el("p", "note abilfoot");
+  foot.appendChild(document.createTextNode(
+    "At least " + list.length + " " + (list.length === 1 ? "ability" : "abilities")
+    + " — recovered by watching this creature cast, not read from a list the game "
+    + "publishes, so there may be more it has not been seen to use."));
+  wrap.appendChild(foot);
+  return wrap;
 }
 
 /** How this source's chances behave, said once, on the tab that shows them. */
@@ -3564,4 +3654,281 @@ const TALENT = (() => {
   foot.appendChild(el("span", null, "Created by "));
   foot.appendChild(el("b", null, "Terek"));
   document.body.appendChild(foot);
+})();
+
+/* ---- search, from the header ------------------------------------------------
+ * One index over everything the payload knows, built the first time somebody types and
+ * then kept - it costs nothing on a page nobody searches from, and building it per
+ * keystroke over a thousand rows would be felt.
+ *
+ * It lives here rather than on a search page because a lookup is not a destination. Wanting
+ * to know what Emberite Ore is should not cost a navigation, lose the page you were on, and
+ * make you come back. Enter still opens the full page for the times when it is a destination
+ * after all - a long list worth scrolling, or a link worth sending.
+ */
+const SEARCH_KINDS = [
+  {key: "item", label: "Items", icons: "items"},
+  {key: "creature", label: "Creatures", icons: "monsters"},
+  {key: "spell", label: "Spells", icons: "spells"},
+  {key: "quest", label: "Quests", icons: null},
+  {key: "npc", label: "People", icons: "npcs"},
+  {key: "object", label: "World objects", icons: null},
+];
+
+let _searchIndex = null;
+
+function searchIndex() {
+  if (_searchIndex) return _searchIndex;
+  const out = [];
+  const push = (kind, id, name, meta, extra, ico) => {
+    /* Guarded because a payload shape can change under us: D.objects went from id -> name
+       to id -> record, and an unguarded toLowerCase threw during construction, which killed
+       the page rather than one group of results. */
+    if (typeof name !== "string" || !name) return;
+    out.push({kind, id, name, meta: meta || "", icon: !!ico,
+              lower: name.toLowerCase(),
+              hay: (name + " " + (extra || "")).toLowerCase()});
+  };
+
+  for (const i of D.items || [])
+    push("item", i.id, i.name,
+         [i.type, i.kind, i.slot, i.lvl ? "level " + i.lvl : ""].filter(Boolean).join(" · "),
+         i.desc, i.icon);
+  for (const m of D.monsters || [])
+    push("creature", m.id, m.name,
+         `Level ${m.lvl} · ${fmtNum(m.hp)} hp` + (m.boss ? " · boss" : ""),
+         ((D.abilities || {})[m.id] || []).map(a => a.name).join(" "), m.icon);
+  for (const s of D.spells || []) {
+    if (s.cls === -1) continue;          // a creature ability: found through its creature
+    push("spell", s.id, s.name,
+         [s.clsName, s.lvl ? "level " + s.lvl : ""].filter(Boolean).join(" · "),
+         s.desc, s.icon);
+  }
+  for (const q of D.quests || [])
+    push("quest", q.id, q.name,
+         [q.fromName, q.lvl ? "level " + q.lvl : ""].filter(Boolean).join(" · "),
+         (q.short || "") + " " + (q.desc || ""), false);
+  for (const [id, n] of Object.entries(D.npcs || {}))
+    push("npc", Number(id), n.name, n.role || "", n.says, n.icon);
+  for (const [id, o] of Object.entries(D.objects || {}))
+    push("object", Number(id), o.name, o.node ? "Gathering node" : "World object", "", o.icon);
+
+  _searchIndex = out;
+  return out;
+}
+
+/* Ranked, not merely filtered. An exact name beats a prefix beats a word start beats a
+   substring beats a hit that only appears in the description - which is what puts Ember Bite
+   above the eighteen quests whose flavour text mentions embers. */
+function searchRank(e, q) {
+  if (e.lower === q) return 0;
+  if (e.lower.startsWith(q)) return 1;
+  if (e.lower.includes(" " + q)) return 2;
+  if (e.lower.includes(q)) return 3;
+  if (e.hay.includes(q)) return 4;
+  return -1;
+}
+
+function searchHits(q) {
+  q = (q || "").trim().toLowerCase();
+  if (q.length < 2) return [];
+  const hits = [];
+  for (const e of searchIndex()) {
+    const r = searchRank(e, q);
+    if (r >= 0) hits.push({e, r});
+  }
+  hits.sort((a, b) => a.r - b.r || a.e.name.length - b.e.name.length
+                   || a.e.name.localeCompare(b.e.name));
+  return hits;
+}
+
+/** The matched run, marked, so the eye can see why a row is in the list. */
+function searchMark(text, q) {
+  const i = text.toLowerCase().indexOf(q);
+  if (i < 0) return document.createTextNode(text);
+  const frag = document.createDocumentFragment();
+  frag.appendChild(document.createTextNode(text.slice(0, i)));
+  frag.appendChild(el("mark", null, text.slice(i, i + q.length)));
+  frag.appendChild(document.createTextNode(text.slice(i + q.length)));
+  return frag;
+}
+
+/* monsterSheet wants the loot-table SOURCE, not an id - and a creature with no recorded loot
+   has no source row, so one is synthesised. Without it every unlooted creature opened an
+   empty panel. */
+function monsterSheetFor(id) {
+  const src = (DROP.sources || []).find(x => !x.node && x.id === id);
+  const m = (D.monsters || []).find(x => x.id === id) || {};
+  return monsterSheet(src || {i: -1, id, name: m.name || "Creature " + id,
+                              lvl: m.lvl, boss: !!m.boss, icon: !!m.icon, node: false});
+}
+
+const SEARCH_SHEETS = {
+  item: id => itemSheet(id),
+  creature: id => monsterSheetFor(id),
+  npc: id => npcSheet(id),
+  quest: id => questSheet(id),
+  object: id => (OBJECT_BY_ID.get(id) || {}).node ? gatherSheet(id) : null,
+  // Spells have no sheet of their own anywhere on the site, so a spell row states what it
+  // knows and stays put rather than pretending to lead somewhere.
+};
+
+/** The factory for a hit, or null when this kind has nowhere to go. */
+function searchSheetFor(kind, id) {
+  const make = SEARCH_SHEETS[kind];
+  if (!make) return null;
+  try { return make(id); } catch { return null; }
+}
+
+/* ---- how tall the chrome actually is -----------------------------------------
+ * --header-h is what every sticky table heading, character doll and map max-height on the
+ * site is positioned from, and it was a declared constant: 57px, with a second value for
+ * phones. Both were guesses, and both were wrong - the real header is 61px on a desktop and
+ * 191px on a 375px screen, where eight nav links wrap to three lines. A media query cannot
+ * know how many lines the links wrapped to, so it can never get this right; measuring can.
+ *
+ * offsetHeight, not a bounding rect: the root carries a `zoom` past 2200px, which scales
+ * rects but not offsets, and this number is consumed next to `100vh / var(--zoom)` - so it
+ * has to be stated in the same unzoomed units the stylesheet is doing that division to get.
+ */
+(function trackHeaderHeight() {
+  const header = document.querySelector("header");
+  if (!header) return;
+  const apply = () => document.documentElement.style
+    .setProperty("--header-h", header.offsetHeight + "px");
+  apply();
+  if (typeof ResizeObserver === "function") new ResizeObserver(apply).observe(header);
+  addEventListener("resize", apply);      // belt and braces; both are cheap
+  /* And again once the webfonts land. Measured against the fallback face the nav is
+     narrower, wraps to fewer lines, and the first reading comes out short - 147px for a
+     header that settles at 191. */
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(apply);
+})();
+
+(function headerSearch() {
+  const header = document.querySelector("header");
+  const nav = header && header.querySelector("nav");
+  if (!header || !nav) return;
+
+  const box = el("div", "hsearch");
+  const input = el("input");
+  input.type = "search";
+  input.placeholder = "Search";
+  input.autocomplete = "off";
+  input.spellcheck = false;
+  input.setAttribute("aria-label", "Search everything");
+  box.appendChild(input);
+
+  const panel = el("div", "hsres");
+  panel.hidden = true;
+  box.appendChild(panel);
+  header.insertBefore(box, nav);
+
+  let rows = [], cursor = -1;
+
+  const close = () => { panel.hidden = true; cursor = -1; };
+
+  const move = d => {
+    if (panel.hidden || !rows.length) return;
+    cursor = (cursor + d + rows.length) % rows.length;
+    rows.forEach((r, i) => r.el.classList.toggle("on", i === cursor));
+    rows[cursor].el.scrollIntoView({block: "nearest"});
+  };
+
+  const open = hit => {
+    const make = searchSheetFor(hit.kind, hit.id);
+    if (!make) return;                       // a kind with no page: the row is the answer
+    close();
+    input.blur();
+    openSheet(make);
+  };
+
+  function draw() {
+    const q = input.value.trim().toLowerCase();
+    panel.replaceChildren();
+    rows = [];
+    cursor = -1;
+    if (q.length < 2) { close(); return; }
+
+    const hits = searchHits(q);
+    if (!hits.length) {
+      panel.appendChild(el("div", "hsnone", "Nothing matches that."));
+      panel.hidden = false;
+      return;
+    }
+
+    /* Grouped, but shallow: the header is for finding one thing, so each kind shows only
+       its best few and the count says what is being held back. The full page is one Enter
+       away for when the whole list is the point. */
+    const byKind = {};
+    for (const h of hits) (byKind[h.e.kind] = byKind[h.e.kind] || []).push(h);
+    const PER_KIND = 5;
+
+    for (const k of SEARCH_KINDS) {
+      const list = byKind[k.key];
+      if (!list) continue;
+      const head = el("div", "hshead");
+      head.appendChild(el("span", null, k.label));
+      head.appendChild(el("b", null, String(list.length)));
+      panel.appendChild(head);
+
+      for (const {e} of list.slice(0, PER_KIND)) {
+        const sheet = searchSheetFor(k.key, e.id);
+        const row = el("div", "hsrow" + (sheet ? "" : " flat"));
+        row.appendChild(k.icons ? icon(k.icons, e.id, e.icon, 30)
+                                : el("span", "hsdot"));
+        const mid = el("div", "hsmid");
+        const nm = el("div", "hsn");
+        nm.appendChild(searchMark(e.name, q));
+        mid.appendChild(nm);
+        if (e.meta) mid.appendChild(el("span", "hsm", e.meta));
+        row.appendChild(mid);
+        row.onmousedown = ev => { ev.preventDefault(); open(e); };
+        row.onmouseenter = () => {
+          cursor = rows.findIndex(r => r.el === row);
+          rows.forEach((r, i) => r.el.classList.toggle("on", i === cursor));
+        };
+        panel.appendChild(row);
+        rows.push({el: row, hit: e});
+      }
+      if (list.length > PER_KIND)
+        panel.appendChild(el("div", "hsmore",
+          `and ${list.length - PER_KIND} more ${k.label.toLowerCase()}`));
+    }
+
+    const all = el("div", "hsall", `See all ${fmtNum(hits.length)} results  ⏎`);
+    all.onmousedown = ev => {
+      ev.preventDefault();
+      location.href = "search.html?q=" + encodeURIComponent(input.value.trim());
+    };
+    panel.appendChild(all);
+    panel.hidden = false;
+  }
+
+  let timer = null;
+  input.oninput = () => { clearTimeout(timer); timer = setTimeout(draw, 90); };
+  input.onfocus = () => { if (input.value.trim().length >= 2) draw(); };
+  input.onblur = () => setTimeout(close, 120);   // let a mousedown on a row land first
+
+  input.onkeydown = e => {
+    if (e.key === "ArrowDown") { e.preventDefault(); move(1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); move(-1); }
+    else if (e.key === "Escape") { close(); input.blur(); }
+    else if (e.key === "Enter") {
+      if (cursor >= 0 && rows[cursor]) { e.preventDefault(); open(rows[cursor].hit); }
+      else if (input.value.trim().length >= 2)
+        location.href = "search.html?q=" + encodeURIComponent(input.value.trim());
+    }
+  };
+
+  /* "/" focuses the field, the way every search field on the web does - but not while you
+     are typing into something else. */
+  document.addEventListener("keydown", e => {
+    if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
+    const t = e.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+    e.preventDefault();
+    input.focus();
+    input.select();
+  });
 })();
