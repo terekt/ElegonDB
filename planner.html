@@ -6,8 +6,8 @@
 <meta http-equiv="Cache-Control" content="no-cache">
 <title>Elegon DB — Character planner</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2032%2032%27%3E%3Cdefs%3E%3ClinearGradient%20id%3D%27t%27%20x1%3D%270%27%20y1%3D%270%27%20x2%3D%27.45%27%20y2%3D%271%27%3E%3Cstop%20offset%3D%270%27%20stop-color%3D%27%23ffe455%27%2F%3E%3Cstop%20offset%3D%271%27%20stop-color%3D%27%23e9a200%27%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D%2732%27%20height%3D%2732%27%20rx%3D%277%27%20fill%3D%27url%28%23t%29%27%2F%3E%3Cg%20fill%3D%27%23110c09%27%20font-family%3D%27Alice%2CGeorgia%2Cserif%27%3E%3Ctext%20x%3D%276.5%27%20y%3D%2723%27%20font-size%3D%2717%27%3EE%3C%2Ftext%3E%3Ctext%20x%3D%2717.5%27%20y%3D%2723%27%20font-size%3D%279%27%20opacity%3D%27.72%27%3Edb%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fsvg%3E">
-<link rel="stylesheet" href="style.css?v=b5f74787">
-<link rel="stylesheet" href="elegon-redesign.css?v=b5f74787">
+<link rel="stylesheet" href="style.css?v=e3f342b3">
+<link rel="stylesheet" href="elegon-redesign.css?v=e3f342b3">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -247,9 +247,9 @@
   </div>
 </dialog>
 
-<script src="data.js?v=b5f74787"></script>
+<script src="data.js?v=e3f342b3"></script>
 <!-- Written by the mod when you log in; absent until then. -->
-<script src="app.js?v=b5f74787"></script>
+<script src="app.js?v=e3f342b3"></script>
 <script>
 /* The game's slot set and order, from InGameUi.EnumerateCharacterPanelSlots:
    main weapon, off hand, head, neck, shoulder, back, chest, waist, leg, foot, hands. */
@@ -277,19 +277,6 @@ const SLOT_LABEL = {
   "Legs": "Leg Armor", "Feet": "Boots",
   "Main Hand": "Main Hand", "Off Hand": "Off Hand",
 };
-const WEAPON_SLOTS = new Set(["Main Hand", "Off Hand"]);
-
-/* The item's own sub type - Greatsword, Staff, Shield. Only for the two hand slots: on the
-   armour slots it repeats the slot label back ("Chest Armor · Chest Armor"), and the slot
-   label is already the game's word for it.
-
-   It earns its place on a weapon because the sub type is what picks the proficiency, and
-   nothing else on the panel says which weapon a build is actually holding. */
-function weaponTypeLabel(slotKey, item) {
-  if (!item || !WEAPON_SLOTS.has(slotKey) || !item.sub) return "";
-  const hand = item.hand === "Two-Handed" ? "two-handed " : "";
-  return hand + item.sub;
-}
 
 /* SLOT_FRAMES (app.js) says whether the in-engine slot captures exist. Without them the
    slot composes the frame textures itself instead of showing an empty box. */
@@ -640,10 +627,10 @@ function statTip(k, totals) {
   }
 }
 
-/* One shared tooltip element, positioned near the cursor. */
-const tip = el("div", "tip");
-tip.hidden = true;
-document.body.appendChild(tip);
+/* One shared tooltip element, positioned near the cursor - app.js's, not a second one of
+   this page's own. The item card and the plain tooltip take turns writing into it, so they
+   have to be writing into the same element. */
+const tip = pageTip();
 
 /* Both live in app.js now: the planner and the optimizer were carrying their own copies
    and the copies drifted. These bind them to this page's single tooltip element. */
@@ -692,20 +679,20 @@ function slotButton(s) {
   }
   btn.appendChild(box);
 
-  // No caption under the slot: the game shows the icon alone and puts the detail in a
-  // hover tooltip, so the same information lives there.
-  attachTip(btn, blocked
+  /* No caption under the slot: the game shows the icon alone and puts the detail in a
+     hover tooltip, so the same information lives there.
+
+     A filled slot gets the game's own item card, which is what the game itself shows here
+     and is strictly more than the hand-rolled panel was: it said name, slot, quality,
+     instability, the scaled stats and the item level, and the card says all of that plus the
+     type line, the level requirement, the flavour and the sell price. The slot's OWN quality
+     and instability are passed, not the page's - this piece is worn at what it is worn at.
+
+     An empty or blocked slot has no item to show, so those keep the plain tooltip. */
+  if (st.item && !blocked) attachItemTip(btn, st.item.id, st.quality, st.tier);
+  else attachTip(btn, blocked
     ? `<b>${SLOT_LABEL[s.k]}</b><i>occupied</i>A two-handed weapon uses both hands.`
-    : st.item
-      ? `<b>${st.item.name}</b><i>${SLOT_LABEL[s.k]}`
-        + `${weaponTypeLabel(s.k, st.item) ? " · " + weaponTypeLabel(s.k, st.item) : ""}`
-        + ` · ${QUALITY[st.quality].n}`
-        + `${st.tier ? " · instability " + st.tier : ""}</i>`
-        + D.stats.filter(x => scaled(st.item, x, st.quality, st.tier))
-                 .map(x => `${cap(x)} <b>+${scaled(st.item, x, st.quality, st.tier)}</b>`)
-                 .join("<br>")
-        + `<br><span style="opacity:.7">Item level ${itemLevelOf(st.item, st.quality, st.tier)}</span>`
-      : `<b>${SLOT_LABEL[s.k]}</b><i>empty</i>Click to choose an item.`);
+    : `<b>${SLOT_LABEL[s.k]}</b><i>empty</i>Click to choose an item.`);
 
   if (!blocked) btn.onclick = () => openPicker(s.k);
   return btn;
@@ -926,7 +913,10 @@ function drawPicker() {
     : "";
   for (const r of rows) {
     const tr = el("tr");
-    const td = nameCell("items", r.id, r.icon, r.name, "iname r" + P.quality, 0, P.quality);
+    // P.tier, not the page's: this table prints its stats at the PICKER's instability, and
+    // the card has to quote the same numbers as the row it is describing.
+    const td = nameCell("items", r.id, r.icon, r.name, "iname r" + P.quality, 0, P.quality,
+                        P.tier);
     if (r.hand) td.firstChild.appendChild(el("span", "tag", r.hand));
     for (const src of RIFT_BY_ITEM.get(r.id) || []) {
       const tag = el("span", "tag rifttag" + (src.boss ? " boss" : ""), src.name);
@@ -991,7 +981,9 @@ const WEAPON_ART_PX = 38;
    weapon changes the picture and nothing else. */
 function weaponArt() {
   const st = build["Main Hand"];
-  if (st && st.item) return framedIcon(st.item.id, !!st.item.icon, st.quality, WEAPON_ART_PX);
+  // The slot's own instability, so the card matches the numbers the paperdoll shows.
+  if (st && st.item)
+    return framedIcon(st.item.id, !!st.item.icon, st.quality, WEAPON_ART_PX, st.tier);
 
   const ph = el("img", "slotart");
   ph.src = "icons/ui/" + SLOT_PLACEHOLDER["Main Hand"];
@@ -1623,7 +1615,7 @@ function showTalentTip(e, info) {
     [TALENT.ST.MAXED]: () => "Fully ranked.",
   }[state];
   if (why) tip.appendChild(el("p", "note", why()));
-  tip.hidden = false;
+  tipReveal(tip);
   placeTip(e);
 }
 

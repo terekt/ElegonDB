@@ -215,15 +215,36 @@ const pageZoom = () => {
 };
 addEventListener("resize", () => { zoomCache = null; });
 
-/** Name cell: icon and label kept on one baseline regardless of icon size. */
-function nameCell(kind, id, hasIcon, label, labelCls, size, frameQuality) {
+/**
+ * Name cell: icon and label kept on one baseline regardless of icon size.
+ *
+ * `tier` is the instability the row quotes its numbers at. It has to be a parameter rather
+ * than the page's own: the planner's item picker prints a rift piece's stats at the PICKER's
+ * instability, and a card reading the page's would have quietly disagreed with the numbers
+ * printed in the same row.
+ */
+function nameCell(kind, id, hasIcon, label, labelCls, size, frameQuality, tier) {
   const td = el("td", "l");
   const box = el("span", "nmcell");
-  box.appendChild(frameQuality
-    ? framedIcon(id, hasIcon, frameQuality, size)
-    : icon(kind, id, hasIcon, size));
-  box.appendChild(el("span", labelCls || null, label));
+  const art = frameQuality
+    ? framedIcon(id, hasIcon, frameQuality, size, tier)
+    : icon(kind, id, hasIcon, size);
+  const name = el("span", labelCls || null, label);
+  box.append(art, name);
   td.appendChild(box);
+  /* Every item the site names gets the game's own tooltip, here rather than at each call
+     site - the items table, a sheet's drop table and a merchant's stock all come through
+     this one function, and a tooltip attached three times drifts three ways.
+
+     The icon and the name, NOT the cell around them: callers append tags into that cell
+     afterwards - a rift's name, which hand a weapon takes - and those carry tooltips of
+     their own. Tipping the whole cell would put the card underneath them and show both at
+     once. framedIcon has already tipped the icon when there is a frame. */
+  if (kind === "items") {
+    const q = frameQuality || SCALE.quality;
+    attachItemTip(name, id, q, tier);
+    if (!frameQuality) attachItemTip(art, id, q, tier);
+  }
   return td;
 }
 
@@ -249,16 +270,25 @@ let SLOT_FRAMES = false;
 /**
  * An item icon inside the character panel's own slot frame, tinted for the rarity — the
  * same in-engine capture the planner's paperdoll uses, so lists match the panel.
+ *
+ * This is where the item tooltip is hung, because this is the one thing every part of the
+ * site agrees on: a quest reward, a search result, a picker row, a paperdoll slot, a
+ * changelog entry and the drop tables all end up here, and most of them never go through
+ * nameCell. `tier` is the instability the tooltip's numbers should be scaled to; pages that
+ * hold their own (the planner, the optimizer) pass it, the rest inherit the page's.
  */
-function framedIcon(id, hasIcon, quality, px) {
-  if (!SLOT_FRAMES) return icon("items", id, hasIcon, px);
+function framedIcon(id, hasIcon, quality, px, tier) {
+  // Until the in-engine slot captures have been exported there is no frame, only the icon -
+  // and it wants the tooltip just the same.
+  if (!SLOT_FRAMES)
+    return attachItemTip(icon("items", id, hasIcon, px), id, quality, tier);
   const box = el("span", "framed");
   box.style.backgroundImage = `url("${slotFrameUrl(quality)}")`;
   if (px) { box.style.width = px + "px"; box.style.height = px + "px"; }
   const img = icon("items", id, hasIcon);
   img.classList.add("slotimg");
   box.appendChild(img);
-  return box;
+  return attachItemTip(box, id, quality, tier);
 }
 
 /* The game's own frame box, the one the character panel draws an empty slot with. Items have
@@ -1117,7 +1147,11 @@ function sheetTable(cols, rows, state, drawRow, emptyMsg) {
 function clickableRow(tr, label, onOpen) {
   tr.tabIndex = 0;
   tr.setAttribute("role", "button");
-  tr.title = label;
+  /* aria-label, not title. `title` renders the browser's own tooltip, which on the items
+     page meant hovering a row produced "Where Molten Broodguard comes from" in a small grey
+     box - competing with the item's own tooltip and saying less than it. The label is worth
+     keeping for anything reading the page aloud; it is only the rendering that was wrong. */
+  tr.setAttribute("aria-label", label);
   tr.onclick = onOpen;
   tr.onkeydown = e => {
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); }
@@ -2722,10 +2756,16 @@ function objectiveBlock(o, index, quest) {
       const from = sourcesOf(id);
       const chip = el("span", "chip targetchip");
       chip.append(icon("items", id, !!item.icon, 22), el("span", null, item.name));
-      chip.title = from.length
-        ? "From " + from.slice(0, 4).map(e => e.src.name).join(", ")
+      /* aria-label, not title: the browser's own tooltip would pop up over the item card
+         after its delay and say something the card already implies. The sentence is still
+         worth having for a screen reader, which gets no card at all. */
+      chip.setAttribute("aria-label", item.name + " — " + (from.length
+        ? "from " + from.slice(0, 4).map(e => e.src.name).join(", ")
           + (from.length > 4 ? ` and ${from.length - 4} more` : "")
-        : "No source recorded";
+        : "no source recorded"));
+      // Almost every collect target is a Material, which the game never scales - drawing one
+      // at the page's Flawless would invent both a border colour and a price.
+      attachItemTip(chip, id, item.equip ? SCALE.quality : 1, SCALE.tier);
       chip.onclick = () => pushSheet(itemSheet(id));
       targets.appendChild(chip);
     }
@@ -2871,6 +2911,9 @@ function gatherSheet(objectId) {
       const chip = statChip("Yields", it.name, "good");
       chip.style.cursor = "pointer";
       chip.onclick = () => pushSheet(itemSheet(itemId));
+      // Ore and hide are never equipment, so they are shown at Normal whatever the page is
+      // scaled to - the same rule the drop tables use.
+      attachItemTip(chip, itemId, it.equip ? SCALE.quality : 1, SCALE.tier);
       facts.appendChild(chip);
     }
     hero.appendChild(facts);
@@ -3048,7 +3091,9 @@ function itemHeadline(it) {
       facts.appendChild(statChip(cap(s), fmtNum(v), "good"));
     }
     if (!any) facts.appendChild(el("span", "muted", "No attributes."));
-    if (it.sell) facts.appendChild(statChip("Sells for", fmtNum(it.sell)));
+    // Scaled, like every other number on this hero and like the card beside it. The chips
+    // above are already at SCALE.quality, so a raw price was the odd one out.
+    if (it.sell) facts.appendChild(statChip("Sells for", fmtNum(sellAt(it.sell, SCALE.quality))));
   } else {
     if (it.stack > 1) facts.appendChild(statChip("Stacks to", String(it.stack)));
     if (it.sell) facts.appendChild(statChip("Sells for", fmtNum(it.sell)));
@@ -3403,11 +3448,24 @@ function attachTipTo(tip, node, html) {
     // than concatenating markup.
     if (html instanceof Node) tip.replaceChildren(html.cloneNode(true));
     else tip.innerHTML = html;
-    tip.hidden = false;
+    tipReveal(tip);
     placeTipAt(tip, e);
   };
   node.addEventListener("mouseenter", show);
-  node.addEventListener("mousemove", e => placeTipAt(tip, e));
+  /* An item node can sit INSIDE a node with a plain tooltip - a gear row whose two name
+     cells each show an item card, say. Crossing onto one of those hands the shared element
+     to the item card, and mouseenter has already fired, so it will not fire again to take it
+     back when the pointer leaves the card and is still inside this node. Re-showing from
+     mousemove is what heals that.
+
+     The guard matters: this handler also runs (bubbling) while the pointer is over the inner
+     item node, and without it the plain tooltip would immediately overwrite the card that
+     the delegated handler put there a moment earlier, on every single move. */
+  node.addEventListener("mousemove", e => {
+    if (e.target && e.target.closest && e.target.closest(".hasitip")) return;
+    if (tip.hidden || tip.classList.contains("tipitem")) show(e);
+    else placeTipAt(tip, e);
+  });
   node.addEventListener("mouseleave", () => { tip.hidden = true; });
   return node;
 }
@@ -4021,6 +4079,14 @@ function searchSheetFor(kind, id) {
         const sheet = searchSheetFor(k.key, e.id);
         const row = el("div", "hsrow" + (sheet ? "" : " flat"));
         row.appendChild(searchIcon(k.key, e.id, e.icon, 38));
+        /* The whole row, not just its icon: the name is the wider target and the one the
+           pointer is actually travelling along. searchIcon tips the icon itself, and the two
+           agree on the rarity, so which one the pointer is over does not matter. */
+        if (k.key === "item") {
+          const it = ITEM_BY_ID.get(e.id);
+          attachItemTip(row, e.id, it && it.type === "Equipment" ? SCALE.quality : 1,
+                        SCALE.tier);
+        }
         const mid = el("div", "hsmid");
         const nm = el("div", "hsn");
         nm.appendChild(searchMark(e.name, q));
@@ -4307,4 +4373,326 @@ function navLength(pts) {
   for (let i = 1; i < pts.length; i++)
     t += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
   return t;
+}
+
+/* ---- the item tooltip, as the game builds it --------------------------------
+ * Not "inspired by": this is ItemTooltipFormatter.BuildTooltipContent, block for block and
+ * line for line, so that a number here and a number in the client cannot say different
+ * things. Its shape, from the decompiled client:
+ *
+ *   name                         quality colour, bold, outlined
+ *   item type                    grey - Consumable / Equipment / Material / Quest Item / Key Item
+ *   quality + sub-type           quality colour, weapons also carrying their hand
+ *                                (blank line)
+ *   Item Level: n                equipment only
+ *   Requires Level: n
+ *   Instability n                #ff5c4d, only when a tier is set
+ *                                (blank line)
+ *   Stats                        grey heading
+ *   Vitality / Fortitude / Strength / Grace / Alacrity / Tempo, in that order, omitting zeroes
+ *                                (blank line)
+ *   description                  grey
+ *   sell price                   bottom right, split into coins
+ *
+ * Two of the client's lines are deliberately absent rather than approximated. "Cannot be
+ * traded" is a property of an item INSTANCE - a particular one in a particular bag - and this
+ * site describes definitions, so it has nothing to read. The red "Requires Level" and the red
+ * sub-type both mean "you personally cannot use this", and there is no you here.
+ */
+const TIP_TYPE_NAME = {Consumable: "Consumable", Equipment: "Equipment", Material: "Material",
+                       Quest: "Quest Item", "Key Item": "Key Item"};
+
+/* ItemTooltipFormatter's own literals. Near enough to QUALITY_HEX to look identical and not
+   the same numbers, because that comes from ItemQuality.GetColor - a different source in the
+   client that happens to agree to within a hex digit. Copied from the tooltip because it is
+   the tooltip being reproduced. */
+const TIP_QUALITY_HEX = {1: "white", 3: "#55a7e8", 2: "#b56cff", 4: "#f0b429"};
+/* ItemTooltipFormatter.GetQualityItemBorderColor, which returns NULL for Normal - the panel
+   then keeps CustomTooltip's _defaultBorderColor, which is black. Not the same numbers as the
+   name colours above: the client carries two sets and these are the border's. */
+const TIP_BORDER_HEX = {3: "#54a6e8", 2: "#b56bff", 4: "#f0b529"};
+const TIP_INSTABILITY = "#ff5c4d";
+
+/* CurrencyFormatter.Build: 100 copper to the silver, 100 silver to the gold, and each
+   denomination appears only when its own count is above zero - so a price of exactly one
+   gold is "1g", not "1g 0s 0c". The coins are the game's own, one texture tinted three ways;
+   see tools/pck/coinicons.py for why it cannot be a plain modulate. */
+const COIN_PARTS = [["gold", 10000, 0], ["silver", 100, 100], ["copper", 1, 100]];
+
+function coinNode(copper) {
+  const row = el("span", "itipcoins");
+  for (const [metal, unit, mod] of COIN_PARTS) {
+    const n = mod ? Math.floor(copper / unit) % mod : Math.floor(copper / unit);
+    if (n <= 0) continue;
+    const span = el("span", "itipcoin");
+    const img = el("img", "itipcoinart");
+    img.src = `icons/ui/coin-${metal}.png?v=${ASSET_V}`;
+    img.alt = "";
+    img.loading = "lazy";
+    span.append(img, el("b", null, String(n)));
+    row.appendChild(span);
+  }
+  return row;
+}
+
+/** One tooltip, built for this item at this quality and instability tier. */
+function itemTipNode(item, quality, tier) {
+  const q = QUALITY[quality] ? quality : 1;
+  const equip = item.type === "Equipment";
+  const wrap = el("div", "itip");
+  wrap.style.setProperty("--q", TIP_QUALITY_HEX[q]);
+  /* CustomTooltip.SetQualityAccent: the border takes the quality colour, or the panel's own
+     default when there is none - and _defaultBorderColor is Colors.Black. Normal quality also
+     hides the wash outright (`_qualityWash.Visible = false`), which is why the colour that
+     drives it is transparent rather than white here. */
+  wrap.style.setProperty("--border", TIP_BORDER_HEX[q] || "#000");
+  /* The wash is NOT the name colour, and Normal is where they part: the name is white
+     (GetQualityNameColor) while the wash is switched off entirely (_qualityWash.Visible =
+     false). Sharing one variable painted a white-named item's name in the wash's colour,
+     which for Normal is nothing at all. */
+  wrap.style.setProperty("--wash", TIP_BORDER_HEX[q] || "transparent");
+
+  const head = el("div", "itipblock");
+  const name = el("div", "itipname", item.name);
+  head.appendChild(name);
+  head.appendChild(el("div", "itipgrey", TIP_TYPE_NAME[item.type] || "Item"));
+  if (equip) {
+    /* "Superior Leg Armor", and for a weapon the hand goes between the two: the client
+       builds [quality, slot descriptor] and then appends the sub-type. */
+    const bits = [QUALITY[q].n];
+    if (item.hand) bits.push(item.hand);
+    const line = el("div", "itipq", bits.join(" ") + (item.sub ? " " + item.sub : ""));
+    head.appendChild(line);
+  }
+  wrap.appendChild(head);
+
+  if (equip) {
+    const det = el("div", "itipblock");
+    // Plain integers, no thousands separator: the client interpolates the int and so does this.
+    det.appendChild(el("div", null, "Item Level: " + itemLevelOf(item, q, tier)));
+    if (item.lvl) det.appendChild(el("div", null, "Requires Level: " + item.lvl));
+    if (tier > 0) {
+      const ins = el("div", "itipins", "Instability " + tier);
+      det.appendChild(ins);
+    }
+    wrap.appendChild(det);
+  }
+
+  const rows = (D.stats || []).map(k => [k, scaled(item, k, q, tier)]).filter(p => p[1] > 0);
+  if (rows.length) {
+    const st = el("div", "itipblock");
+    st.appendChild(el("div", "itipgrey", "Stats"));
+    for (const [k, v] of rows)
+      st.appendChild(el("div", null, cap(k) + ": " + v));
+    wrap.appendChild(st);
+  }
+
+  if (item.desc) {
+    const d = el("div", "itipblock");
+    d.appendChild(el("div", "itipgrey itipflavour", item.desc));
+    wrap.appendChild(d);
+  }
+
+  if (item.sell) {
+    const sell = sellAt(item.sell, q);
+    if (sell) wrap.appendChild(coinNode(sell));
+  }
+  return wrap;
+}
+
+/* One tooltip element for the page, made the first time something asks for one. Pages that
+   already build their own (the optimizer, the compendium) keep theirs; this is for the rest,
+   which had no tooltip at all and now want the item one. */
+let _pageTip = null;
+
+/* A modal <dialog> paints in the top layer, which is above every z-index on the page - so a
+   tooltip parented to <body> is behind an open sheet no matter what it is stacked at, and an
+   item hovered in a drop table showed nothing at all. Re-parenting into the dialog puts it in
+   the same layer; position:fixed still resolves against the viewport, so nothing else moves.
+   Shared, because the compendium's and the optimizer's tooltips sit in dialogs too. */
+function tipHost() {
+  return document.querySelector("dialog[open]") || document.body;
+}
+
+/* Move the shared tooltip into the layer that can be seen RIGHT NOW.
+   Every path that reveals the tooltip has to do this, not just the one that first needed it.
+   The failure is nasty and silent: hovering an item inside an open sheet moves the element
+   into that dialog, and a page whose own tooltip just sets hidden = false leaves it there
+   after the sheet closes - parented to a dialog with no [open], which the UA renders
+   display:none. The element is then filled in and unhidden on every hover and drawn on none
+   of them, for the rest of the session. */
+function tipRehost(tip) {
+  const host = tipHost();
+  if (tip.parentElement !== host) host.appendChild(tip);
+}
+
+/**
+ * Reveal the shared tooltip once a page has filled it in - the plain kind, not the item
+ * card. Takes the element back from the card if it had it, so the card's own rules (which
+ * strip the panel's padding, background and border) stop applying to a page's own tooltip.
+ */
+function tipReveal(tip) {
+  itipRelease();
+  tip.classList.remove("tipitem");
+  tipRehost(tip);
+  tip.hidden = false;
+}
+
+/* THE tooltip element for the page - there must be exactly one.
+   Two of them is not a cosmetic duplication: the plain tooltip and the item card hand the
+   element back and forth (see itipRelease), and they cannot hand over an element they do not
+   share. The symptom is silent - the card is built and shown, in the node nobody is looking
+   at - so this adopts whatever the page already has, by id or by class, before making one. */
+function pageTip() {
+  if (_pageTip && _pageTip.isConnected) return _pageTip;
+  _pageTip = document.getElementById("tip") || document.querySelector(".tip");
+  if (!_pageTip) {
+    _pageTip = el("div", "tip");
+    _pageTip.hidden = true;
+    document.body.appendChild(_pageTip);
+  }
+  return _pageTip;
+}
+
+/* What each tipped node stands for. A WeakMap rather than the node's own dataset, because
+   the value is an object and the entry should die with the node - these tables are rebuilt
+   on every sort, filter and tier change. */
+const ITEM_TIPS = new WeakMap();
+
+/* The node the pointer is currently inside, or null. Module-level because attachTipTo has to
+   be able to take the tooltip away from us; see itipRelease. */
+let _itipCur = null;
+let _itipWired = false;
+let _itipObs = null;
+
+/* Watch for the hovered node being destroyed under a pointer that has not moved.
+
+   Nothing else notices. The pointer generates no event when the DOM changes beneath it, so
+   sorting a table while resting on a row leaves the card describing an item that is no longer
+   there - the row under the cursor now says one thing and the card says another, until the
+   mouse is nudged. These tables are rebuilt wholesale on every sort, filter, rarity and
+   instability change, so it is not a rare state.
+
+   Connected only while a card is actually up, which is the only time it can happen. Idle
+   pages pay nothing, and the callback is O(1) - it never reads the mutation records, it only
+   asks whether the node it is showing is still in the document. */
+function itipWatch(on) {
+  if (!on) {
+    if (_itipObs) _itipObs.disconnect();
+    return;
+  }
+  if (!_itipObs)
+    _itipObs = new MutationObserver(() => {
+      if (_itipCur && !_itipCur.isConnected) itipHide();
+    });
+  _itipObs.observe(document.body, {childList: true, subtree: true});
+}
+
+/* One listener for the whole page, instead of three per node.
+
+   Not merely an optimisation, though it is that - the items table alone has 793 rows, and
+   what used to be 2,379 listeners is now one. It is what makes the tooltip safe to attach at
+   more than one depth. Item nodes NEST: nameCell puts a framed icon inside the .nmcell span
+   and both stand for the same item, and the planner's slot button contains its own icon. With
+   a listener per node, crossing from the icon onto the label beside it fired the inner
+   mouseleave - which hid the shared tooltip even though the pointer was still inside the
+   outer node that had just shown it. The result was a flicker on exactly the nodes that
+   matter most.
+
+   Delegation has no such state to get wrong: every move asks which tipped node the pointer is
+   in NOW, and closest() answers with the innermost. Nesting stops being a special case. */
+function itipWire() {
+  if (_itipWired) return;
+  _itipWired = true;
+  const tip = pageTip();
+
+  document.addEventListener("mousemove", e => {
+    const node = e.target && e.target.closest ? e.target.closest(".hasitip") : null;
+    if (node !== _itipCur) {
+      if (!node) return itipHide();
+      const spec = ITEM_TIPS.get(node);
+      if (!spec) return itipHide();
+      _itipCur = node;
+      /* Built on first hover and kept: a table of 793 rows would otherwise build 793 of
+         these before showing anything, and most are never looked at. */
+      if (!spec.built) spec.built = itemTipNode(spec.item, spec.quality, spec.tier);
+      tip.replaceChildren(spec.built.cloneNode(true));
+      if (spec.note) {
+        const note = el("div", "itipnote");
+        note.innerHTML = spec.note;
+        tip.appendChild(note);
+      }
+      tip.classList.add("tipitem");
+      tipRehost(tip);
+      tip.hidden = false;
+      itipWatch(true);
+    }
+    if (_itipCur) placeTipAt(tip, e);
+  }, true);
+
+  /* A scroll moves the node out from under a pointer that never moved, so no mousemove
+     arrives to notice. Capturing, because the scroller is usually an inner pane. */
+  addEventListener("scroll", itipHide, true);
+  document.addEventListener("mouseleave", itipHide);
+}
+
+function itipHide() {
+  if (!_itipCur) return;
+  _itipCur = null;
+  itipWatch(false);
+  const tip = pageTip();
+  tip.hidden = true;
+  tip.classList.remove("tipitem");
+}
+
+/* Hand the shared tooltip over to somebody else, without hiding what they have just put in
+   it. The page has one #tip and two things that write to it, and the plain one still uses
+   mouseenter - which fires BEFORE the mousemove that would otherwise notice the pointer had
+   left the item node. Without this, moving from an item straight onto a node with an ordinary
+   tooltip showed that tooltip and then blanked it a frame later. */
+function itipRelease() {
+  if (!_itipCur) return;
+  _itipCur = null;
+  itipWatch(false);
+  pageTip().classList.remove("tipitem");
+}
+
+/* What a piece is worth at a given rarity. ItemTooltipFormatter.BuildTooltip does this
+   before it ever formats the coins - `ApplyQuality(item.SellPrice, qualityMultiplier)` - so
+   the price moves with the rarity exactly as the stats do. Shared, because the item's own
+   sheet prints the same number beside the card, and the two disagreeing is worse than either
+   being wrong on its own. */
+function sellAt(sell, q) {
+  return Math.max(0, round(f32(f32(sell) * f32(QUALITY[q || 1].m))));
+}
+
+/**
+ * Hang the game's own tooltip off any node that stands for an item.
+ *
+ * Returns the node, so it can wrap an expression in place:
+ *     box.appendChild(attachItemTip(framedIcon(...), id, quality, tier));
+ *
+ * `quality` is the rarity the item is being SHOWN at here, which is not always the page's
+ * current one - a planner slot holds its own, and a picker row holds the one being offered.
+ * `tier` is the instability the numbers are scaled to, defaulting to the page's.
+ *
+ * `note` is optional HTML for a small panel BELOW the card. Some surfaces know things about
+ * an item that the game's own tooltip has no place for - which rift a piece drops in, how
+ * many runs it is expected to take - and those used to live in the hand-rolled tooltips the
+ * card replaced. Keeping it outside the card rather than inside is the point: the card stays
+ * a faithful copy of the game's, and the page's own commentary is visibly the page's own.
+ */
+function attachItemTip(node, id, quality, tier, note) {
+  const item = ITEM_BY_ID.get(id);
+  if (!item || !node) return node;
+  itipWire();
+  node.classList.add("hastip", "hasitip");
+  ITEM_TIPS.set(node, {
+    item,
+    quality: quality || 1,
+    tier: tier === undefined || tier === null ? SCALE.tier : tier,
+    note: note || null,
+    built: null,
+  });
+  return node;
 }

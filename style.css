@@ -613,6 +613,142 @@ td .framed{margin:-7px 0}
   border-radius:7px;padding:11px 13px;font-size:12.5px;line-height:1.55;color:var(--dim);
   box-shadow:0 14px 34px var(--shadow)}
 .tip[hidden]{display:none}
+
+/* ---- the item tooltip ----------------------------------------------------
+   The game's own panel: a dark ground washed with the item's quality colour, a hairline of
+   the same, and the blocks separated by space rather than by rules. --q is set per tooltip
+   from the quality, so one set of rules serves all four rarities and a Flawless item is gold
+   throughout without a second class.
+
+   The default tooltip's own padding and colour are overridden rather than extended, because
+   this is not a note ABOUT an item, it is the item's own card. */
+/* The card draws its own everything, so the host has to stop drawing ANY of it - including
+   the three properties this rule used to miss. elegon-redesign.css gives .tip a 9px radius
+   and overflow:hidden, which between them chamfered the card's own 5px corners flat and
+   clipped its drop shadow away entirely; and its `.tip b` paints bold text var(--ink), which
+   in the light theme is near-black and left the sell price invisible against the card's own
+   near-black panel. The b rule is beaten on specificity rather than by !important - .tip
+   plus .tipitem plus the element outranks .tip plus the element, whichever file loads last -
+   and inherit is right because the card colours each of its blocks itself. */
+.tip.tipitem{max-width:none;padding:0;background:none;border:0;box-shadow:none;
+  overflow:visible;border-radius:0}
+.tip.tipitem > .itip b{color:inherit;font-weight:inherit}
+
+/* What a page knows that the game's tooltip does not - which rift a piece drops in, how many
+   runs it is likely to take. Below the card and dressed as the site's own tooltip, so it
+   reads as the page talking rather than as part of the game's panel. */
+.itipnote{margin-top:7px;padding:9px 12px;border-radius:6px;
+  font-size:12px;line-height:1.5;color:var(--dim);
+  background:color-mix(in oklab, var(--panel) 96%, black);
+  border:1px solid var(--line);box-shadow:0 10px 26px var(--shadow)}
+.itipnote b{color:var(--ink);font-weight:600}
+.itipnote i{display:block;font-style:normal;color:var(--faint);font-size:11.5px;
+  margin-bottom:3px}
+
+/* The panel, with the game's own numbers rather than an eyeball. They are not in the C#
+   - CustomTooltip only ever recolours a stylebox it inherits - they are in the scene,
+   ui/hud/custom_tooltip/custom_tooltip.tscn, whose exported .scn carries an inline
+   StyleBoxFlat and two ShaderMaterials. Decoded off it:
+
+     BODY, art/shaders/character_panel_background.gdshader
+       base_color      #030302 at alpha 0.95   (black, and NOT the purple-black used here
+                                                before, which was invented)
+       tint_strength   0.80                    mix(blurred_backdrop, base_color, 0.80)
+       blur_radius     10                      a 13-tap blur of what is behind the panel
+
+     The two combine: the shader emits mix(backdrop, base, .8) at alpha .95, so over the
+     page the panel lands at 0.8 * 0.95 = 0.76 of base_color and roughly a quarter backdrop.
+     One rgba() at that alpha over a backdrop-filter reproduces it, which is why this is
+     translucent rather than the flat fill it was.
+
+     BORDER, the inline StyleBoxFlat
+       border_width    4 on every side         (it read as a hairline here because it was 1)
+       corner_radius   4                       scaled to 6 and 5 below - see the ramp
+       border_color    black, replaced per quality by SetBorderColor
+       draw_center     false
+       blend_border    true
+
+     Those last two are the "gradient going inward". Godot's StyleBoxFlat takes the inner
+     edge of the border ring from `draw_center ? bg_color : border_color-at-alpha-0`, and
+     draw_center is off - so the ring is drawn from the full colour at the outside to the
+     same colour fully transparent, across the border's width. Stacked inset rings sample
+     that ramp at each pixel centre: 1 - (d + 0.5) / w.
+
+     The alphas below are NOT that ramp, though, and the difference is the whole trick. An
+     inset ring of spread k covers everything from the edge to k, so all the rings overlap and
+     what a pixel at depth d shows is the composite of every ring from d outward, not the one
+     ring nearest it. Writing the ramp straight in made the border far heavier than the game's
+     - at 3px it painted 60% where the ramp asks for 42%. So each ring carries only what is
+     left to add once the ones beneath it have had their say:
+
+         a(k) = 1 - (1 - T(k)) / (1 - T(k+1)),   T(k) = 1 - (k - 0.5) / w
+
+     which, pleasantly, collapses to a(k) = 1 / (k + 0.5) - the same numbers whatever the
+     border's width, since the w in T cancels. Only the innermost ring depends on w, at
+     0.5 / w, because past it the ramp is not another ring but zero. So widening the border
+     is adding rings to the end of a fixed sequence, not recomputing it:
+
+         67 / 40 / 29 / 22 / 18 / 15 / 13 / 6
+
+     which composites back to 94 / 81 / 69 / 56 / 44 / 31 / 19 / 6 - the ramp itself, at 8.
+
+     The width here is 8 rather than the game's 4, on purpose. The game draws its panel at
+     the UI scale, where 4px of border sits against a tooltip half again as wide as this one;
+     dropped onto a 274px panel at CSS 1x the same 4 reads as a hairline. The border is what
+     tells you an item's rarity before you have read a word of the card, so it is worth the
+     weight, and the wash below is scaled with it for the same reason.
+
+     WASH, art/shaders/tooltip_quality_wash.gdshader, drawn over the panel
+       wash_height 60 or half the panel, cubic falloff, slant 0.45 tipping it left,
+       lateral_falloff 0.38 fading it right, strength 0.45.
+
+     A cubic falloff over a corner is a radial gradient at the top-left, which is what this
+     is: strong at the corner, gone within 60px. The wash is a child node, so it paints over
+     the border - but SetBorderColor gives the border that same quality colour, and Normal,
+     the one quality where they differ, has no wash at all. The order cannot show.
+
+   Not reproduced: the shader's 4-octave value noise and its vignette. Both modulate
+   brightness, and multiplying a colour that is already 0.012 grey changes nothing a screen
+   can show. */
+.itip{position:relative;width:274px;padding:19px 21px 17px;border-radius:6px;
+  color:#d7d2dd;font-size:12.5px;line-height:1.5;border:0;
+  background:
+    radial-gradient(168px 110px at 6% -6%,
+      color-mix(in oklab, var(--wash, transparent) 46%, transparent) 0%,
+      color-mix(in oklab, var(--wash, transparent) 20%, transparent) 42%,
+      transparent 78%),
+    rgba(3, 3, 2, .76);
+  backdrop-filter:blur(6px);
+  -webkit-backdrop-filter:blur(6px);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--border, #000) 67%, transparent),
+    inset 0 0 0 2px color-mix(in srgb, var(--border, #000) 40%, transparent),
+    inset 0 0 0 3px color-mix(in srgb, var(--border, #000) 29%, transparent),
+    inset 0 0 0 4px color-mix(in srgb, var(--border, #000) 22%, transparent),
+    inset 0 0 0 5px color-mix(in srgb, var(--border, #000) 18%, transparent),
+    inset 0 0 0 6px color-mix(in srgb, var(--border, #000) 15%, transparent),
+    inset 0 0 0 7px color-mix(in srgb, var(--border, #000) 13%, transparent),
+    inset 0 0 0 8px color-mix(in srgb, var(--border, #000)  6%, transparent),
+    0 16px 40px rgba(0, 0, 0, .5)}
+
+/* A block is a run of lines; the gap between blocks is the game's blank line. */
+.itipblock + .itipblock{margin-top:11px}
+
+.itipname{font-family:var(--game-font);font-size:15px;line-height:1.25;color:var(--q);
+  /* [outline_size=1] on the name, which is what keeps a white Normal name legible against
+     the pale corner of the wash. */
+  text-shadow:0 1px 0 #000, 1px 0 0 #000, -1px 0 0 #000, 0 -1px 0 #000}
+.itipgrey{color:#9a94a4}
+.itipq{color:var(--q)}
+.itipins{color:#ff5c4d}
+.itipflavour{display:block;max-width:34ch}
+
+/* Sell price, bottom right, the way the game closes its panel. */
+.itipcoins{display:flex;justify-content:flex-end;gap:10px;margin-top:11px}
+.itipcoin{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#c9c3d2}
+.itipcoinart{width:13px;height:13px;flex:0 0 auto;background:none;border:0;
+  border-radius:0;padding:0}
+.itipcoin b{font-weight:400;font-variant-numeric:tabular-nums}
 .tip b{color:var(--ink)}
 .tip > b:first-child{display:block;font-family:var(--game-font);font-size:14px;color:var(--gold);
   margin-bottom:2px}
