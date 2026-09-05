@@ -708,10 +708,28 @@ const here = pts => SHOW_UNREACHABLE ? pts : (pts || []).filter(p => !p.out);
  * to, measuring one is a few thousand kills per item, and a number we made up would sit in
  * the same column, in the same type, as the ones we measured. It reads as "?" everywhere a
  * rate would be.
+ *
+ * MOSTLY OBSOLETE SINCE v3512046. That patch gave every creature type its own loot table
+ * with stated chances, breach creatures included, so all 203 items in these pools now have a
+ * real rate from a real creature. Left running, this pasted a second, rateless copy of each
+ * of them on top - which is why a boss read as having items with no drop rate long after the
+ * game had published one.
+ *
+ * So it now spreads only what is STILL unrouted. Today that is nothing and the pass is a
+ * no-op; if a later patch adds a pool item no creature drops, it comes back on its own. That
+ * is the same shape as ever_present() in the builder: derive the gap, do not hardcode that
+ * there is or is not one.
  */
 (function spreadBreachPools() {
   const pools = D.riftDrops || {};
   if (!Object.keys(pools).length) return;
+
+  // Every item that already has a stated chance from some creature. Those need no help, and
+  // helping them is what produced the duplicate rateless rows.
+  const routed = new Set();
+  for (const list of DROP.byItem.values()) {
+    for (const e of list) if (e.chance != null) { routed.add(e.item); break; }
+  }
 
   const monsters = new Map((D.monsters || []).map(m => [m.id, m]));
   const byId = new Map();
@@ -729,7 +747,9 @@ const here = pts => SHOW_UNREACHABLE ? pts : (pts || []).filter(p => !p.out);
     if (!here.length) continue;                 // a breach nobody has walked yet
     const bosses = here.filter(m => m.boss);
 
-    for (const [bucket, ids] of Object.entries(sets)) {
+    for (const [bucket, all] of Object.entries(sets)) {
+      const ids = all.filter(id => !routed.has(id));
+      if (!ids.length) continue;
       // If a breach has no boss recorded, the materials go on the whole roster rather
       // than nowhere - the item still has to be reachable from something.
       const targets = bucket === "boss" && bosses.length ? bosses : here;
