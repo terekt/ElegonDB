@@ -4385,6 +4385,7 @@ function navLength(pts) {
  *   quality + sub-type           quality colour, weapons also carrying their hand
  *                                (blank line)
  *   Item Level: n                equipment only
+ *   Classes: a, b                 who may hold it; absent when nobody can
  *   Requires Level: n
  *   Instability n                #ff5c4d, only when a tier is set
  *                                (blank line)
@@ -4470,6 +4471,19 @@ function itemTipNode(item, quality, tier) {
     const det = el("div", "itipblock");
     // Plain integers, no thousands separator: the client interpolates the int and so does this.
     det.appendChild(el("div", null, "Item Level: " + itemLevelOf(item, q, tier)));
+    /* v3512046 added this line to the game's own tooltip, between the item level and the
+       level requirement, and it is built the same way here:
+
+           UsableClasses(subType, requiredClass) = every class for which the item's own class
+           flag allows it AND ClassWeaponRestrictions.CanUse says it may hold that weapon
+
+       which is exactly what usableBy() already answers, so there is no second copy of the
+       rule. The client colours each name - white for yours, red for the others - and falls
+       back to plain names when no class is selected; a definition on a website has no
+       character behind it, so it takes that same plain branch. The line is omitted only when
+       NOBODY can use the item, which is what the client does with an empty list. */
+    const who = CLASS_IDS.filter(c => usableBy(item, c)).map(CLASS_NAME).filter(Boolean);
+    if (who.length) det.appendChild(el("div", null, "Classes: " + who.join(", ")));
     if (item.lvl) det.appendChild(el("div", null, "Requires Level: " + item.lvl));
     if (tier > 0) {
       const ins = el("div", "itipins", "Instability " + tier);
