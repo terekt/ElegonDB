@@ -741,6 +741,9 @@ td .framed{margin:-7px 0}
 .itipgrey{color:#9a94a4}
 .itipq{color:var(--q)}
 .itipins{color:#ff5c4d}
+/* The consumable's "Use:" line. Wraps at the same measure as the flavour text so a
+   mount's two sentences do not stretch the panel wider than the description under it. */
+.itipuse{color:#4fd36a;display:block;max-width:34ch}
 .itipflavour{display:block;max-width:34ch}
 
 /* Sell price, bottom right, the way the game closes its panel. */

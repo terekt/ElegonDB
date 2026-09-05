@@ -3115,9 +3115,16 @@ function itemHeadline(it) {
     // above are already at SCALE.quality, so a raw price was the odd one out.
     if (it.sell) facts.appendChild(statChip("Sells for", fmtNum(sellAt(it.sell, SCALE.quality))));
   } else {
+    /* What it does comes first. A consumable's effect IS the item - the four mounts and the
+       three damage-reduction draughts are told apart by nothing else - and a hero that
+       opened with "Stacks to 10" was answering the second question before the first. */
+    const use = useShort(it);
+    if (use) facts.appendChild(statChip("Use", use, "good"));
+    if (it.fxLvl) facts.appendChild(statChip("Requires level", String(it.fxLvl)));
     if (it.stack > 1) facts.appendChild(statChip("Stacks to", String(it.stack)));
     if (it.sell) facts.appendChild(statChip("Sells for", fmtNum(it.sell)));
-    if (!it.stack && !it.sell) facts.appendChild(el("span", "muted", "Carries no attributes."));
+    if (!use && !it.stack && !it.sell)
+      facts.appendChild(el("span", "muted", "Carries no attributes."));
   }
   text.appendChild(facts);
 
@@ -3907,10 +3914,19 @@ function searchIndex() {
               hay: (name + " " + (extra || "")).toLowerCase()});
   };
 
-  for (const i of D.items || [])
+  for (const i of D.items || []) {
+    /* A consumable's `kind` repeats its `type`, so the line under its name read
+       "Consumable · Consumable" - the same nothing, twice - and its level requirement lives
+       in a different field from equipment's, so it showed none. What the thing DOES takes
+       the place of both. It goes into the searchable text as well, which is what makes
+       "mount" find the four of them: not one of their four descriptions says the word. */
+    const use = useShort(i);
+    const lvl = use ? i.fxLvl : i.lvl;
     push("item", i.id, i.name,
-         [i.type, i.kind, i.slot, i.lvl ? "level " + i.lvl : ""].filter(Boolean).join(" · "),
-         i.desc, i.icon);
+         [i.type, i.kind === i.type ? "" : i.kind, i.slot, use,
+          lvl ? "level " + lvl : ""].filter(Boolean).join(" · "),
+         (i.desc || "") + " " + use, i.icon);
+  }
   for (const m of D.monsters || [])
     push("creature", m.id, m.name,
          `Level ${m.lvl} · ${fmtNum(m.hp)} hp` + (m.boss ? " · boss" : ""),
@@ -4409,6 +4425,9 @@ function navLength(pts) {
  *   Requires Level: n
  *   Instability n                #ff5c4d, only when a tier is set
  *                                (blank line)
+ *   Requires Level: n            consumables only, from their OWN column
+ *   Use: ...                     #4fd36a, what the thing actually does
+ *                                (blank line)
  *   Stats                        grey heading
  *   Vitality / Fortitude / Strength / Grace / Alacrity / Tempo, in that order, omitting zeroes
  *                                (blank line)
@@ -4433,6 +4452,61 @@ const TIP_QUALITY_HEX = {1: "white", 3: "#55a7e8", 2: "#b56cff", 4: "#f0b429"};
    name colours above: the client carries two sets and these are the border's. */
 const TIP_BORDER_HEX = {3: "#54a6e8", 2: "#b56bff", 4: "#f0b529"};
 const TIP_INSTABILITY = "#ff5c4d";
+/* ItemTooltipFormatter's green, used for the one line saying what a consumable does. */
+const TIP_USE = "#4fd36a";
+
+/* ConsumableEffectTypes, from the client. Named rather than numbered because a bare `4` in a
+   switch is the kind of thing that survives a patch renumbering it.
+
+   USE_ and not FX_, because the game has TWO effect enums and they do not agree: a spell's
+   ActiveEffectTypes (sim.js, planner.html) numbers 1 stun, 2 dot, 3 heal-over-time, 4 damage
+   reduction, 5 cast speed, 6 mount, while a consumable's numbers 1 instant heal, 2
+   heal-over-time, 3 damage reduction, 4 mount. Two constants both called FX_HOT, holding 3
+   and 2, in files a page loads together - which is how this was found, as a redeclaration
+   that stopped the planner dead. */
+const USE_HEAL = 1, USE_HOT = 2, USE_MITIGATE = 3, USE_MOUNT = 4;
+
+/**
+ * ItemTooltipFormatter.BuildConsumableDetailsSection, verbatim.
+ *
+ * Every consumable in the game has one of these lines and the site printed none of them: a
+ * mount, a 165-health salve and a quest trinket all rendered as a name over a description,
+ * which for the mounts meant nothing on the page said they were mounts. The percentages are
+ * the client's own arithmetic - a mount's stored amount is a MULTIPLIER (1.5), so the number
+ * shown is (amount - 1) * 100.
+ */
+function useLine(item) {
+  const amt = item.fxAmt, dur = fmtNum(item.fxDur), tick = fmtNum(item.fxTick);
+  switch (item.fx) {
+    case USE_HEAL:     return "Restores " + fmtNum(amt) + " health.";
+    case USE_HOT:      return "Restores " + fmtNum(amt) + " health every " + tick
+                             + "s for " + dur + "s.";
+    case USE_MITIGATE: return "Reduces damage taken by " + fmtNum(round(amt * 100))
+                             + "% for " + dur + "s.";
+    case USE_MOUNT:    return "Summons a rideable mount that increases movement speed by "
+                             + fmtNum(round((amt - 1) * 100))
+                             + "%. Casting a spell or attacking dismounts you.";
+    default:          return "";
+  }
+}
+
+/**
+ * The same effect, short enough for a table cell. The game's own sentence, minus the mount's
+ * second one - how you get off is worth a tooltip and not a column - and minus the full
+ * stop, because a cell is not a sentence.
+ */
+function useShort(item) {
+  switch (item.fx) {
+    case USE_HEAL:     return "Restores " + fmtNum(item.fxAmt) + " health";
+    case USE_HOT:      return "Restores " + fmtNum(item.fxAmt) + " health every "
+                             + fmtNum(item.fxTick) + "s for " + fmtNum(item.fxDur) + "s";
+    case USE_MITIGATE: return "Reduces damage taken by " + fmtNum(round(item.fxAmt * 100))
+                             + "% for " + fmtNum(item.fxDur) + "s";
+    case USE_MOUNT:    return "Mount — +" + fmtNum(round((item.fxAmt - 1) * 100))
+                             + "% movement speed";
+    default:          return "";
+  }
+}
 
 /* CurrencyFormatter.Build: 100 copper to the silver, 100 silver to the gold, and each
    denomination appears only when its own count is above zero - so a price of exactly one
@@ -4510,6 +4584,17 @@ function itemTipNode(item, quality, tier) {
       det.appendChild(ins);
     }
     wrap.appendChild(det);
+  }
+
+  /* The consumable's own block, in the client's position - after the equipment details (a
+     thing is never both) and before Stats. The level requirement leads it, exactly as the
+     equipment block leads with its own. */
+  const use = useLine(item);
+  if (use) {
+    const c = el("div", "itipblock");
+    if (item.fxLvl) c.appendChild(el("div", null, "Requires Level: " + item.fxLvl));
+    c.appendChild(el("div", "itipuse", "Use: " + use));
+    wrap.appendChild(c);
   }
 
   const rows = (D.stats || []).map(k => [k, scaled(item, k, q, tier)]).filter(p => p[1] > 0);

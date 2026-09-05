@@ -6,8 +6,8 @@
 <meta http-equiv="Cache-Control" content="no-cache">
 <title>Elegon DB — Items</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2032%2032%27%3E%3Cdefs%3E%3ClinearGradient%20id%3D%27t%27%20x1%3D%270%27%20y1%3D%270%27%20x2%3D%27.45%27%20y2%3D%271%27%3E%3Cstop%20offset%3D%270%27%20stop-color%3D%27%23ffe455%27%2F%3E%3Cstop%20offset%3D%271%27%20stop-color%3D%27%23e9a200%27%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D%2732%27%20height%3D%2732%27%20rx%3D%277%27%20fill%3D%27url%28%23t%29%27%2F%3E%3Cg%20fill%3D%27%23110c09%27%20font-family%3D%27Alice%2CGeorgia%2Cserif%27%3E%3Ctext%20x%3D%276.5%27%20y%3D%2723%27%20font-size%3D%2717%27%3EE%3C%2Ftext%3E%3Ctext%20x%3D%2717.5%27%20y%3D%2723%27%20font-size%3D%279%27%20opacity%3D%27.72%27%3Edb%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fsvg%3E">
-<link rel="stylesheet" href="style.css?v=6d4d2fc9">
-<link rel="stylesheet" href="elegon-redesign.css?v=6d4d2fc9">
+<link rel="stylesheet" href="style.css?v=b33c8379">
+<link rel="stylesheet" href="elegon-redesign.css?v=b33c8379">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -87,8 +87,8 @@
   <p class="note" id="note"></p>
 </div>
 
-<script src="data.js?v=6d4d2fc9"></script>
-<script src="app.js?v=6d4d2fc9"></script>
+<script src="data.js?v=b33c8379"></script>
+<script src="app.js?v=b33c8379"></script>
 <script>
 const S = {q:"", slot:"", type:"", sub:"", hasStat:"", source:"", cls:"", quality:1, tier:0,
            sort:{key:"vitality", desc:true}};
@@ -237,6 +237,20 @@ const OTHER_COLS = [
   {key:"drop", label:"Drop"},
   {key:"source", label:"From", left:true},
 ];
+/* Consumables get a third set. The Type column here would read "Consumable" on all sixteen
+   rows - you filtered to them - while the two things that actually separate a mount from a
+   healing salve, what it does and what level you must be, had nowhere to go at all. Sorting
+   by Effect is what groups the four mounts together, which is why the column sorts on the
+   effect TYPE rather than on the sentence. */
+const CONSUMABLE_COLS = [
+  {key:"name", label:"Item", left:true},
+  {key:"fx", label:"Effect", left:true},
+  {key:"fxLvl", label:"Lvl"},
+  {key:"stack", label:"Stack"},
+  {key:"sell", label:"Sells for"},
+  {key:"drop", label:"Drop"},
+  {key:"source", label:"From", left:true},
+];
 /* Without drop data the Drop column has nothing to put in it, and an empty column is worse
    than no column: it reads as "this item drops from nothing" rather than "this build does
    not carry drops". DROP.ready is false exactly when data.js has no drop table.
@@ -244,7 +258,8 @@ const OTHER_COLS = [
    "From" stays either way. It carries quests and merchants as well as monsters, and those
    are not drops - with the drop table gone it simply stops showing the monster badge. */
 const colsFor = () => {
-  const cols = S.type ? OTHER_COLS : EQUIP_COLS;
+  const cols = S.type === "Consumable" ? CONSUMABLE_COLS
+             : S.type ? OTHER_COLS : EQUIP_COLS;
   return DROP.ready ? cols : cols.filter(c => c.key !== "drop");
 };
 
@@ -393,7 +408,12 @@ function draw() {
                             equip ? S.quality : 1);
     if (r.hand) nameTd.firstChild.appendChild(el("span", "tag", r.hand));
     tr.appendChild(nameTd);
-    tr.appendChild(el("td", "l", r.kind || "·"));
+    if (S.type === "Consumable") {
+      tr.appendChild(el("td", "l muted", useShort(r) || "·"));
+      tr.appendChild(el("td", r.fxLvl ? "" : "z", r.fxLvl || "·"));
+    } else {
+      tr.appendChild(el("td", "l", r.kind || "·"));
+    }
     if (S.type) {
       tr.appendChild(el("td", r.stack > 1 ? "" : "z", r.stack > 1 ? r.stack : "·"));
       tr.appendChild(el("td", r.sell ? "" : "z", r.sell ? fmtNum(r.sell) : "·"));
