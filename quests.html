@@ -15,8 +15,8 @@
 
 <title>Elegon DB — Quests</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2032%2032%27%3E%3Cdefs%3E%3ClinearGradient%20id%3D%27t%27%20x1%3D%270%27%20y1%3D%270%27%20x2%3D%27.45%27%20y2%3D%271%27%3E%3Cstop%20offset%3D%270%27%20stop-color%3D%27%23ffe455%27%2F%3E%3Cstop%20offset%3D%271%27%20stop-color%3D%27%23e9a200%27%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D%2732%27%20height%3D%2732%27%20rx%3D%277%27%20fill%3D%27url%28%23t%29%27%2F%3E%3Cg%20fill%3D%27%23110c09%27%20font-family%3D%27Alice%2CGeorgia%2Cserif%27%3E%3Ctext%20x%3D%276.5%27%20y%3D%2723%27%20font-size%3D%2717%27%3EE%3C%2Ftext%3E%3Ctext%20x%3D%2717.5%27%20y%3D%2723%27%20font-size%3D%279%27%20opacity%3D%27.72%27%3Edb%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fsvg%3E">
-<link rel="stylesheet" href="style.css?v=b33c8379">
-<link rel="stylesheet" href="elegon-redesign.css?v=b33c8379">
+<link rel="stylesheet" href="style.css?v=fc181961">
+<link rel="stylesheet" href="elegon-redesign.css?v=fc181961">
 <script>
 (function () {
   var saved = null;
@@ -79,6 +79,34 @@
 .selchip .selx:hover{color:var(--ink)}
 
 .stage[hidden]{display:none!important}
+
+/* ---- the items view ------------------------------------------------------
+   A shopping list for the whole campaign. Rows are built once and only their two
+   NUMBERS are rewritten when the filter moves, because unlike every other view here
+   the totals are not a property of a row - they are a sum over whichever quests are
+   currently showing, and a level window is exactly the question people ask of this
+   table ("what do I need to be farming around 40"). */
+#itable td{vertical-align:top}
+.itop{display:flex;align-items:center;gap:10px}
+.iname{font-weight:500;color:var(--strong);line-height:1.3}
+.isub{display:block;font-size:12px;color:var(--faint);margin-top:2px;line-height:1.5}
+.iqty{font-variant-numeric:tabular-nums;text-align:right;color:var(--strong);font-weight:500}
+.iqn{font-variant-numeric:tabular-nums;text-align:right;color:var(--dim)}
+.isrc{font-size:12.5px;color:var(--dim);line-height:1.5}
+.isrc b{color:var(--strong);font-weight:500}
+.ifree{color:var(--faint);font-style:italic}
+.iwho{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+.iq{font:inherit;font-size:11.5px;padding:2px 8px;border-radius:999px;cursor:pointer;
+  border:1px solid var(--line);background:var(--panel);color:var(--dim);line-height:1.35}
+.iq:hover{border-color:var(--gold);color:var(--ink)}
+.iq.out{opacity:.34}
+.iq.on{background:var(--gold);border-color:var(--gold);color:var(--gold-ink)}
+.imore{font:inherit;font-size:11.5px;padding:2px 6px;border:0;background:none;cursor:pointer;
+  color:var(--faint);text-decoration:underline}
+#itable tr.gone{display:none}
+.itag{display:inline-block;font-size:10px;letter-spacing:.06em;text-transform:uppercase;
+  padding:1px 6px;border-radius:999px;border:1px solid var(--line);color:var(--faint);
+  margin-left:7px;vertical-align:1px}
 .stagenote{color:var(--faint);font-size:13px;margin:0 2px 12px;max-width:76ch}
 .stagenote b{color:var(--ink);font-weight:500}
 
@@ -433,6 +461,7 @@ kbd{font:inherit;font-size:10.5px;padding:1px 6px;border:1px solid var(--line);
       <button class="vtab" type="button" role="tab" data-view="atlas">Atlas</button>
       <button class="vtab" type="button" role="tab" data-view="table">Table</button>
       <button class="vtab" type="button" role="tab" data-view="threads">Threads</button>
+      <button class="vtab" type="button" role="tab" data-view="items">Items</button>
     </div>
   </div>
 
@@ -513,6 +542,23 @@ kbd{font:inherit;font-size:10.5px;padding:1px 6px;border:1px solid var(--line);
   </section>
 
   <!-- ============================= TABLE ============================= -->
+  <section class="stage" id="stage-items" hidden>
+    <p class="kbdhint">
+      <span>everything the campaign asks you to bring back</span>
+      <span>click a column to sort it</span>
+      <span>click a quest to open it</span>
+    </p>
+    <div class="tablewrap">
+      <table id="itable">
+        <colgroup>
+          <col><col style="width:78px"><col style="width:86px"><col style="width:30%">
+        </colgroup>
+        <thead><tr id="ihead"></tr></thead>
+        <tbody id="irows"></tbody>
+      </table>
+    </div>
+  </section>
+
   <section class="stage" id="stage-table" hidden>
     <p class="kbdhint">
       <span><kbd>&uarr;</kbd><kbd>&darr;</kbd> move</span>
@@ -535,8 +581,8 @@ kbd{font:inherit;font-size:10.5px;padding:1px 6px;border:1px solid var(--line);
     </div>
   </section>
 </main>
-<script src="data.js?v=b33c8379"></script>
-<script src="app.js?v=b33c8379"></script>
+<script src="data.js?v=fc181961"></script>
+<script src="app.js?v=fc181961"></script>
 <script>
 /* ===========================================================================
    MERGED QUEST LAB — three views, one state.
@@ -780,6 +826,7 @@ function recompute() {
   threadsFilter();
   if (atlasReady) relitPins();
   if (tableBuilt) tableFilter();
+  if (itemsBuilt) itemsFilter();
   saveState();
 }
 
@@ -920,6 +967,7 @@ function paintSelection() {
   markThreadsSelection();
   if (atlasReady) markAtlasSelection();
   if (tableBuilt) markTableSelection();
+  if (itemsBuilt) markItemsSelection();
 }
 selLabel.onclick = () => { if (S.sel !== null) openSheet(questSheet(S.sel)); };
 document.getElementById("selClear").onclick = () => { S.sel = null; paintSelection(); };
@@ -929,6 +977,7 @@ function revealSelection() {
   if (S.sel === null) return;
   if (S.view === "threads") revealInThreads(S.sel);
   else if (S.view === "atlas") revealInAtlas(S.sel);
+  else if (S.view === "items") revealInItems(S.sel);
   else revealInTable(S.sel);
 }
 
@@ -1928,6 +1977,225 @@ document.getElementById("jump").onclick = () => {
 };
 
 /* ===========================================================================
+   8b. THE ITEMS VIEW — everything the campaign asks you to fetch
+   ---------------------------------------------------------------------------
+   Two kinds of objective put something in your bags, and both belong here:
+   collect objectives, whose target is an ITEM id, and mine objectives, whose
+   target is a world OBJECT - the vein, not the ore. Slay objectives do not; a
+   wolf you killed is not a thing you carry.
+
+   The totals are summed over the quests currently passing the filter rather than
+   over all 329, which is what makes the level window useful: set 35-45 and the
+   table becomes the list of what to farm for that stretch.
+
+   One number here is a claim rather than a reading. Whether two quests wanting
+   five Frog Legs each means ten legs or five depends on whether the server counts
+   your bag or its own per-objective counter, and the client cannot see which. The
+   evidence points at counters - ObjectiveProgress carries CurrentAmount per quest,
+   per objective - so these are SUMMED (you hand five over and start again), and
+   the column says so in its title rather than leaving you to guess.
+   =========================================================================== */
+const ICOLS = [
+  {key: "name", label: "Item", left: true},
+  {key: "need", label: "Need"},
+  {key: "quests", label: "Quests"},
+  {key: "srcSort", label: "Where from", left: true},
+];
+const ISORT = {key: "need", desc: true};
+const CHIP_CAP = 6;                       // before "+n more"
+
+let itemsBuilt = false;
+const iRowByKey = new Map();              // key -> {tr, need, quests, chips, needCell, qCell}
+let iEmptyTr = null;
+let iPrepped = [];
+
+/** Every fetch objective in the game, grouped by the thing being fetched. */
+function gatherItems() {
+  const rows = new Map();
+  const add = (key, make, q, amount) => {
+    if (!rows.has(key)) rows.set(key, Object.assign({key, wants: []}, make()));
+    rows.get(key).wants.push({q, amount});
+  };
+  for (const q of QUESTS) {
+    for (const o of (q.obj || [])) {
+      const target = (o.targets || [])[0];
+      if (o.type === OBJ_COLLECT) {
+        if (!target) continue;
+        add("i" + target, () => {
+          const item = ITEM_BY_ID.get(target) || {id: target, name: "Item " + target};
+          const entries = (sourcesOf(target) || []).filter(e => e.chance != null);
+          entries.sort((a, b) => effChance(b) - effChance(a));
+          return {kind: "item", item, entries};
+        }, q, o.need || 1);
+      } else if (o.type === OBJ_MINE) {
+        if (!target) continue;
+        add("o" + target, () => {
+          const obj = (D.objects || {})[target] || {name: "Node " + target};
+          return {kind: "node", item: null, node: obj, entries: []};
+        }, q, o.need || 1);
+      }
+    }
+  }
+  return [...rows.values()];
+}
+
+/** Where it comes from, in one line: the two best sources, then a count. */
+function sourceLine(row) {
+  if (row.kind === "node") {
+    const box = el("span", "isrc");
+    box.appendChild(el("b", null, row.node.name || "a vein"));
+    box.appendChild(document.createTextNode(" · mined"));
+    return box;
+  }
+  if (!row.entries.length) {
+    /* 55 of the collect objectives name a courier item that nothing in the game drops -
+       the giver hands it over as you accept. Calling that "no source" would read as a
+       hole in the data when it is the opposite: there is nothing to farm. */
+    return el("span", "isrc ifree", "handed to you with the quest");
+  }
+  const box = el("span", "isrc");
+  row.entries.slice(0, 2).forEach((e, i) => {
+    if (i) box.appendChild(document.createTextNode(" · "));
+    box.appendChild(el("b", null, e.src.name));
+    box.appendChild(document.createTextNode(" " + fmtPct(effChance(e))));
+  });
+  if (row.entries.length > 2)
+    box.appendChild(document.createTextNode(" · +" + (row.entries.length - 2) + " more"));
+  return box;
+}
+
+function buildItemRow(row) {
+  const tr = el("tr");
+
+  const nameTd = el("td", "l");
+  const top = el("div", "itop");
+  if (row.kind === "item") top.appendChild(framedIcon(row.item.id, row.item.icon, 1, 34));
+  const nm = el("div", "iname", row.kind === "item" ? row.item.name : row.node.name);
+  if (row.kind === "item") attachItemTip(nm, row.item.id, 1, 0);
+  else nm.appendChild(el("span", "itag", "gathered"));
+  top.appendChild(nm);
+  nameTd.appendChild(top);
+
+  /* The quests that want it, as chips. Capped because Spider Silk is wanted by fourteen
+     quests and a row that tall pushes the next item off the screen. */
+  const who = el("div", "iwho");
+  row.chips = [];
+  row.wants.forEach(({q, amount}, i) => {
+    const b = el("button", "iq", q.name + " ×" + amount);
+    b.type = "button";
+    b.title = "Level " + q.lvl + " · " + (q.fromName || "unknown giver");
+    b.onclick = e => { e.stopPropagation(); select(q.id); };
+    if (i >= CHIP_CAP) b.hidden = true;
+    who.appendChild(b);
+    row.chips.push({b, q});
+  });
+  if (row.wants.length > CHIP_CAP) {
+    const more = el("button", "imore", "+" + (row.wants.length - CHIP_CAP) + " more");
+    more.type = "button";
+    more.onclick = () => {
+      const open = more.dataset.open === "1";
+      for (const c of row.chips) c.b.hidden = false;
+      if (open) row.chips.forEach((c, i) => { if (i >= CHIP_CAP) c.b.hidden = true; });
+      more.dataset.open = open ? "" : "1";
+      more.textContent = open ? "+" + (row.wants.length - CHIP_CAP) + " more" : "show fewer";
+    };
+    who.appendChild(more);
+  }
+  nameTd.appendChild(who);
+  tr.appendChild(nameTd);
+
+  row.needCell = el("td", "iqty", "0");
+  row.qCell = el("td", "iqn", "0");
+  tr.append(row.needCell, row.qCell);
+
+  const srcTd = el("td", "l");
+  srcTd.appendChild(sourceLine(row));
+  tr.appendChild(srcTd);
+
+  row.tr = tr;
+  return tr;
+}
+
+/** Re-total against the current filter, and drop rows nothing showing asks for. */
+function itemsFilter() {
+  if (!itemsBuilt) return;
+  let shown = 0;
+  for (const row of iPrepped) {
+    let need = 0, n = 0;
+    for (const w of row.wants) if (MATCH.has(w.q.id)) { need += w.amount; n++; }
+    row.need = need; row.quests = n;
+    row.needCell.textContent = need ? fmtNum(need) : "·";
+    row.qCell.textContent = n || "·";
+    row.tr.classList.toggle("gone", n === 0);
+    for (const c of row.chips) c.b.classList.toggle("out", !MATCH.has(c.q.id));
+    if (n) shown++;
+  }
+  iEmptyTr.hidden = shown > 0;
+  sortItems();
+}
+
+function sortItems() {
+  const body = document.getElementById("irows");
+  const live = iPrepped.filter(r => r.quests > 0);
+  applySort(live, ISORT);
+  const frag = document.createDocumentFragment();
+  for (const r of live) frag.appendChild(r.tr);              // moves, not clones
+  for (const r of iPrepped) if (!r.quests) frag.appendChild(r.tr);
+  frag.appendChild(iEmptyTr);
+  body.appendChild(frag);
+}
+
+function markItemsSelection() {
+  if (!itemsBuilt) return;
+  for (const row of iPrepped)
+    for (const c of row.chips) c.b.classList.toggle("on", c.q.id === S.sel);
+}
+
+function revealInItems(id) {
+  if (!itemsBuilt) return;
+  for (const row of iPrepped) {
+    if (row.tr.classList.contains("gone")) continue;
+    const hit = row.chips.find(c => c.q.id === id);
+    if (!hit) continue;
+    if (hit.b.hidden) {                       // it is behind the "+n more" fold
+      const more = hit.b.parentElement.querySelector(".imore");
+      if (more && more.dataset.open !== "1") more.click();
+    }
+    row.tr.scrollIntoView({block: "center"});
+    return;
+  }
+}
+
+function ensureItems() {
+  if (itemsBuilt) return;
+  iPrepped = gatherItems();
+  /* Sorted by the source line's text so the "Where from" column sorts into something a
+     person recognises - by creature, with the handed-over ones together at the end. */
+  for (const r of iPrepped)
+    r.srcSort = r.kind === "node" ? "\u0001" + (r.node.name || "")
+              : r.entries.length ? r.entries[0].src.name : "\uffff";
+  for (const r of iPrepped) r.name = r.kind === "item" ? r.item.name : r.node.name;
+
+  const frag = document.createDocumentFragment();
+  for (const r of iPrepped) frag.appendChild(buildItemRow(r));
+  iEmptyTr = el("tr");
+  const td = el("td", "empty", "No quest showing asks you to fetch anything.");
+  td.colSpan = ICOLS.length;
+  iEmptyTr.appendChild(td);
+  frag.appendChild(iEmptyTr);
+  document.getElementById("irows").appendChild(frag);
+
+  sortableTable(document.getElementById("ihead"), ICOLS, ISORT, () => { sortItems(); });
+  document.getElementById("ihead").children[1].title =
+    "Summed across the quests currently showing. Two quests wanting five each count as ten: "
+    + "the game keeps a progress counter per objective, so you hand five over and start again.";
+
+  itemsBuilt = true;
+  itemsFilter();
+  markItemsSelection();
+}
+
+/* ===========================================================================
    9.  THE VIEW SWITCH
    ---------------------------------------------------------------------------
    Changes S.view and nothing else. No filter is touched, no selection dropped —
@@ -1938,6 +2206,7 @@ const stages = {
   threads: document.getElementById("stage-threads"),
   atlas: document.getElementById("stage-atlas"),
   table: document.getElementById("stage-table"),
+  items: document.getElementById("stage-items"),
 };
 const tabBtns = [...document.querySelectorAll(".vtab")];
 
@@ -1954,6 +2223,7 @@ function setView(v, {remember = true} = {}) {
   // Anything that had to measure itself gets its chance now that it has layout.
   if (v === "atlas") ensureAtlas();
   else if (v === "table") ensureTable();
+  else if (v === "items") ensureItems();
 
   if (S.sel !== null) requestAnimationFrame(revealSelection);
   if (remember) saveState();

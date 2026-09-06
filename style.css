@@ -1250,6 +1250,17 @@ dialog.sheet{width:min(940px,94vw)}
 .sstat.bad b{color:var(--bad)}
 .sstat b{color:var(--ink)}
 
+/* The one chip that DOES something, so it has to look like it does: a chip shape for
+   the row it sits in, a button's affordances for the hand. Internal build only. */
+.copychip{cursor:pointer;font:inherit;transition:border-color .12s,color .12s}
+.copychip:hover{border-color:var(--gold)}
+.copychip:hover b{color:var(--gold)}
+.copychip:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.copychip b{font-size:12.5px}
+/* Shown only when both clipboard routes fail, so you can still take the thing. */
+.copyraw{flex:1 1 260px;min-width:0;font:inherit;font-size:12px;padding:4px 9px;
+  border:1px solid var(--gold);border-radius:999px;background:var(--bg);color:var(--ink)}
+
 /* Map tooltip as a card: portrait, name, the numbers that decide whether to walk there. */
 .tip{max-width:340px}
 .tipcard{display:flex;gap:12px;align-items:flex-start}

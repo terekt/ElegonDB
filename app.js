@@ -3126,6 +3126,12 @@ function itemHeadline(it) {
     if (!use && !it.stack && !it.sell)
       facts.appendChild(el("span", "muted", "Carries no attributes."));
   }
+  /* Last, and on both branches: it is an action rather than a fact about the item, so it
+     reads better after the numbers than among them. Takes the hero's own rarity and
+     instability, which is what makes it worth having here rather than on a row - you pick
+     Flawless and instability 3 above, and the link you copy says so. */
+  const copy = chatLinkChip(it, eq ? SCALE.quality : 1, eq ? SCALE.tier : 0);
+  if (copy) facts.appendChild(copy);
   text.appendChild(facts);
 
   if (eq) text.appendChild(el("p", "note",
@@ -4617,6 +4623,97 @@ function itemTipNode(item, quality, tier) {
     if (sell) wrap.appendChild(coinNode(sell));
   }
   return wrap;
+}
+
+/* ---- the game's own chat link ----------------------------------------------
+ * ChatUI.BuildItemLinkBbCode, character for character:
+ *
+ *     [url=item:ID:QUALITY:TIER][color=COLOUR][NAME][/color][/url]
+ *
+ * Paste that into the game's chat box and it comes out as a hoverable link, because the
+ * client re-reads its own output: ChatUI.ItemLinkBbCodePattern matches exactly this shape
+ * before it escapes anything else you typed, so a link survives while a stray bracket in
+ * the same message does not.
+ *
+ * Three details that are easy to get subtly wrong, all of them load-bearing:
+ *
+ *   - the display text is WRAPPED IN BRACKETS inside the colour tag - "[Dull Sword]", not
+ *     "Dull Sword". The pattern requires them; without them the client treats the whole
+ *     thing as ordinary text and you paste raw bbcode into the channel.
+ *   - the colour comes from GetEffectiveQuality, which returns 1 for anything that is not
+ *     equipment however the instance is stamped. So a Flawless Material still links WHITE,
+ *     even though the url carries its quality. Colouring it gold would be a link the game
+ *     itself would never produce.
+ *   - only "[" is escaped, to "[lb]", and "]" is left alone. That is what the client does,
+ *     so it is what this does.
+ */
+function chatLinkFor(item, quality, tier) {
+  const q = QUALITY[quality] ? quality : 1;
+  const equip = item.type === "Equipment";
+  /* GetEffectiveQuality: the url keeps what you picked, the colour does not. */
+  const colour = TIP_QUALITY_HEX[equip ? q : 1] || "white";
+  const name = String(item.name || "").replace(/\[/g, "[lb]");
+  return `[url=item:${item.id}:${equip ? q : 1}:${equip ? (tier || 0) : 0}]`
+       + `[color=${colour}][${name}][/color][/url]`;
+}
+
+/**
+ * A hook, and the reason it is a hook.
+ *
+ * The feature belongs to the internal build only, and release.py's cut-this-block markers
+ * cannot express that here: its scrubber walks the top-level HTML files, so a marked block
+ * in app.js would never be cut - and its audit, which DOES read .js, would then fail the
+ * build for finding the marker still in place. (It reads for the marker as a plain
+ * substring, so naming the thing in a comment fails the build too - which is how this
+ * paragraph came to be worded around it.) So the block is not deleted, it is asked:
+ * D.staging is the same switch that decides the debug bundle and the nav grids.
+ */
+function chatLinkChip(item, quality, tier) {
+  if (!D.staging) return null;
+  const chip = el("button", "sstat copychip");
+  chip.type = "button";
+  chip.title = "Copy the game's own chat link for this item, at the rarity shown above";
+  const label = el("b", null, "Copy chat link");
+  chip.append(el("span", "sk", "Link"), label);
+  chip.onclick = async e => {
+    e.stopPropagation();                       // the row underneath opens a sheet
+    const code = chatLinkFor(item, quality, tier);
+    let ok = true;
+    try {
+      await navigator.clipboard.writeText(code);
+    } catch (err) {
+      /* Clipboard access is refused outside a secure context and in some embedded views, so
+         the old selection trick is the fallback - and it has to be hosted in the SAME layer
+         as the sheet. A textarea parented to <body> while a modal dialog is open sits under
+         the top layer, where it cannot take a selection, so the copy silently fails; tipHost
+         is already the site's answer to that problem for the tooltip. */
+      const ta = el("textarea");
+      ta.value = code;
+      ta.style.cssText = "position:fixed;top:50%;left:-9999px;opacity:0";
+      tipHost().appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, code.length);
+      try { ok = document.execCommand("copy"); } catch (e2) { ok = false; }
+      ta.remove();
+    }
+    label.textContent = ok ? "Copied" : "Copy it by hand";
+    /* Neither route worked - so show the thing rather than claim it was copied. A prompt()
+       would be blocked in exactly the embedded contexts that got us here. */
+    if (!ok) {
+      let box = chip.parentElement.querySelector(".copyraw");
+      if (!box) {
+        box = el("input", "copyraw");
+        box.readOnly = true;
+        chip.insertAdjacentElement("afterend", box);
+      }
+      box.value = code;
+      box.focus();
+      box.select();
+    }
+    clearTimeout(chip._t);
+    chip._t = setTimeout(() => { label.textContent = "Copy chat link"; }, 1600);
+  };
+  return chip;
 }
 
 /* One tooltip element for the page, made the first time something asks for one. Pages that
