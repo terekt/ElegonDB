@@ -519,6 +519,11 @@ function model(D, cfg) {
     alacrityBonus: ratingBonus(C.alacrity, C.level),
     tempoBonus: ratingBonus(C.tempo, C.level),
     autoDmg, autoInterval: D.attackInterval || 3, autoRange, inMelee,
+    /* Energy the swing itself brings in. Zero for every class that still has a generator
+       spell; 30 for the Knight since v3515177, which has none. Without this the solver sees
+       a class that can never pay for anything and prices it at auto attacks alone - measured
+       at the time: 37,014 dps to 6,696, an 82% collapse that was entirely ours. */
+    autoGen: (D.autoEnergy || {})[String(C.cls)] || 0,
     /* Applied where damage is credited rather than folded into a.direct, so the breakdown
        and the priority solver both see the same number a player would. Healing mode gets 1:
        heals cannot crit, and in this mode a.direct IS the heal. */
@@ -752,6 +757,13 @@ function simulate(M, order, opts) {
       credit(-1, val(M.autoDmg, ampAt(t)) * M.critFactor * M.landFactor,
              t, "auto", "Auto Attack");
       const pa = per.get(-1); if (pa) pa.casts += 1;
+      /* Counted as waste the same way a generator cast is, so a rotation that sits at full
+         energy still reports the overflow rather than hiding it. */
+      if (M.autoGen) {
+        const before = resource;
+        resource = Math.min(maxR, resource + M.autoGen);
+        wasted += before + M.autoGen - resource;
+      }
       nextAuto = t + M.autoInterval;
       continue;
     }
@@ -1011,6 +1023,11 @@ function seedOrder(M) {
     /* A buff has no damage of its own; value it by what it multiplies. */
     const buffed = a.isBuff ? a.buffAmt * a.buffDur * 40 : 0;
     /* Resource is the second currency: charge it at the filler's exchange rate. */
+    /* What a point of energy COSTS in damage, which is the damage of the generator cast
+       you had to make to get it. A class whose energy arrives on the auto attack has no such
+       cast - it was swinging anyway - so the rate is genuinely zero and a spender is charged
+       nothing here. That is not the old bug reappearing: the Knight's collapse was in
+       simulate(), which gave it no income at all, and this line has always been right. */
     const genRate = M.generator ? (M.generator.direct / Math.max(1, M.generator.gen)) : 0;
     const spent = a.cost * genRate;
     const cdSpread = a.cd ? Math.max(time, Math.min(a.cd, 8)) : time;
