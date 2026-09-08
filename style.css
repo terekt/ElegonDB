@@ -2287,6 +2287,24 @@ select.riftpick{font-family:var(--game-font);font-size:15px;letter-spacing:.2px}
    stage keeps a blend mode from reaching past the map into the page behind it. */
 .mapstage{isolation:isolate}
 .terrainlay{position:absolute;top:0;left:0}
+
+/* The zone overlay sits in the stage beside the terrain layers, so it pans and zooms with
+   the picture and stays registered with it. Its own text is drawn at stage scale rather
+   than screen scale - these are labels ON the land, like the names printed across a paper
+   map, not markers pinned above it. */
+.zonelay{position:absolute;top:0;left:0;pointer-events:none}
+
+/* The names are set in the game's own face and its own parchment gold, with the border's
+   dark brown behind them rather than a black outline - white on black read as a HUD caption
+   pasted over the map, which is the one thing on the page that was not wearing the charter.
+
+   Each label carries its own transform that cancels the stage's zoom (sizeZoneLabels), so
+   everything here is in SCREEN pixels and stays that size at any zoom. That is the whole
+   reason a stroke width can be written as a plain number again. */
+.zonelay text{font-family:var(--panel-font);text-anchor:middle;paint-order:stroke fill;
+  stroke:#231a10;stroke-opacity:.72;stroke-width:4px;stroke-linejoin:round;
+  fill:#f5e0b8;letter-spacing:.04em}
+.zonelay text.sub{fill:#d8c39a;stroke-width:3px;letter-spacing:.12em}
 .terrainctl{display:grid;gap:8px;margin:2px 0 4px}
 .terrainctl select{width:100%;padding:6px 8px;border-radius:8px;font-size:12.5px;
   background:var(--panel2);color:var(--ink);border:1px solid var(--line)}

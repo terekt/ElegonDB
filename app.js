@@ -801,6 +801,85 @@ function allSpawnsFor(type, dataId) {
 const worldToPixel = (m, x, z) =>
   [m.o[0] + x * m.px[0] + z * m.pz[0], m.o[1] + x * m.px[1] + z * m.pz[1]];
 
+/* ---- which named area a point is in ----------------------------------------
+   The overworld has five of them - Amberwood, Whispervale, Duskmire, Cinder Ridge and Town -
+   and they are in no table the game publishes: WorldZoneLightingController quarters the world
+   at world X=-256 and Z=-756 and punches Town out of the middle as a circle. The numbers come
+   down in D.zoneSplit rather than being written here, because tools/pck/zonelines.py cuts the
+   map outlines with the same three, and a boundary with two copies has one copy too many.
+
+   This is what turns "level 34 wolf, somewhere" into "Whispervale", which is the form the
+   question is actually asked in.                                                           */
+const ZONE_SPLIT = D.zoneSplit || {};
+const ZONE_LIST = D.zones || [];
+const ZONE_BY_KEY = new Map(ZONE_LIST.map(z => [z.key, z]));
+
+/** The zone record for a point on the overworld, or null off it or without the data. */
+function zoneAt(x, z) {
+  if (ZONE_SPLIT.x == null || !ZONE_LIST.length) return null;
+  const t = ZONE_SPLIT.town;
+  if (t) {
+    const cx = (t.min[0] + t.max[0]) / 2, cz = (t.min[1] + t.max[1]) / 2;
+    const rx = (t.max[0] - t.min[0]) / 2, rz = (t.max[1] - t.min[1]) / 2;
+    if (rx > 0 && rz > 0
+        && ((x - cx) / rx) ** 2 + ((z - cz) / rz) ** 2 <= 1) return ZONE_BY_KEY.get("town");
+  }
+  const east = x >= ZONE_SPLIT.x, north = z >= ZONE_SPLIT.z;
+  return ZONE_BY_KEY.get(east ? (north ? "amberwood" : "cinderridge")
+                              : (north ? "whispervale" : "duskmire")) || null;
+}
+
+/* A zone holding fewer than this share of a thing's spawn points is where it strays, not
+   where it lives. Both are true and only one is worth putting on a sheet, so the strays go
+   in the tooltip and the homes go in the text. */
+const ZONE_MINOR_SHARE = 0.1;
+
+/**
+ * Every named place a thing stands, commonest first: overworld zones by name, breaches by
+ * the map's own name. Counts ride along so a sheet can say how thinly it strays.
+ */
+function placesOf(type, dataId) {
+  const counts = new Map();
+  // Keyed by the zone key where there is one and by the map id otherwise, so a filter can
+  // match on something stable while the label stays the thing a person would say.
+  const bump = (key, name) => {
+    const had = counts.get(key);
+    if (had) had.n++; else counts.set(key, {key, name, n: 1});
+  };
+  for (const {map, points} of spawnsFor(type, dataId)) {
+    if (map.id) { for (const _ of points) bump("map:" + map.id, map.name); continue; }
+    for (const [x, z] of points) {
+      const zone = zoneAt(x, z);
+      bump(zone ? "zone:" + zone.key : "map:", zone ? zone.name : map.name);
+    }
+  }
+  const total = [...counts.values()].reduce((a, p) => a + p.n, 0);
+  return {total, places: [...counts.values()].map(p => ({...p, share: p.n / total}))
+                                             .sort((a, b) => b.n - a.n)};
+}
+
+/** Every place key a thing has been seen in, strays included - what a filter tests. */
+const placeKeys = (type, dataId) => new Set(placesOf(type, dataId).places.map(p => p.key));
+
+/** The same, for a loot-table source - which is a creature or a gathering node. */
+function placesOfSource(src) {
+  if (!src) return {total: 0, places: []};
+  if (!src.node) return placesOf(SPAWN_ENEMY, src.id);
+  const id = OBJECT_ID_BY_NAME.get(src.name);
+  return id === undefined ? {total: 0, places: []} : placesOf(SPAWN_OBJECT, id);
+}
+
+/** "Whispervale" or "Amberwood · Duskmire": where it lives, with the strays left out. */
+function placesLabel(found) {
+  const main = found.places.filter(p => p.share >= ZONE_MINOR_SHARE);
+  return (main.length ? main : found.places).map(p => p.name).join(" \u00b7 ");
+}
+
+/** Every place with its share, for the title attribute - the strays included. */
+const placesTitle = found => found.places
+  .map(p => `${p.name}: ${p.n} spot${p.n === 1 ? "" : "s"} (${Math.round(p.share * 100)}%)`)
+  .join("\n");
+
 /* The captures are whole areas and the spawns of one creature occupy a corner of that, so
    the panel shows a window onto the image rather than the whole thing. Kept to one shape so
    every monster's map reads the same, and never smaller than this, so a lone spawn point
@@ -1758,6 +1837,17 @@ function sourceHero(src) {
                  ...chaseChips(monster));
     if (monster.aggressive) facts.appendChild(el("span", "tag", "aggressive"));
   }
+  /* Where it lives, which for most readers is the first thing they wanted and the one
+     thing a level and a health bar cannot tell them. Outside the chip's `if (monster)`
+     because a creature nothing is known about still stands somewhere. */
+  {
+    const found = placesOfSource(src);
+    if (found.total) {
+      const chip = statChip("Area", placesLabel(found));
+      chip.title = placesTitle(found);
+      facts.appendChild(chip);
+    }
+  }
   box.appendChild(facts);
   return box;
 }
@@ -1841,13 +1931,19 @@ function itemSheet(itemId) {
   return () => {
     const it = asOf("items", lootItem(itemId));
     const vendors = vendorsOf(itemId);
-    const rows = applySort(sourcesOf(itemId).map(e => ({
-      e, src: e.src, name: e.src.name, lvl: e.src.lvl,
-      chance: effChance(e), qty: e.maxQ,
-    })), st.sort);
+    const rows = applySort(sourcesOf(itemId).map(e => {
+      // Where you would actually go for it. The sheet answered "what drops this" and left
+      // the reader to open every source in turn to find out whether any of them were
+      // anywhere near each other.
+      const found = placesOfSource(e.src);
+      return {e, src: e.src, name: e.src.name, lvl: e.src.lvl,
+              chance: effChance(e), qty: e.maxQ,
+              found, where: placesLabel(found)};
+    }), st.sort);
 
     const cols = [
       {key: "name", label: "Source", left: true},
+      {key: "where", label: "Where", left: true},
       {key: "lvl", label: "Level"},
       {key: "qty", label: "Qty"},
       {key: "chance", label: "Chance"},
@@ -1859,6 +1955,9 @@ function itemSheet(itemId) {
                           r.src.boss ? "mname boss" : "mname", 52);
       if (r.src.node) td.firstChild.appendChild(el("span", "tag", "gathering"));
       tr.appendChild(td);
+      const where = el("td", "l muted", r.where || "·");
+      if (r.where) where.title = placesTitle(r.found);
+      tr.appendChild(where);
       tr.appendChild(el("td", "muted", r.src.node ? "·" : r.lvl));
       tr.appendChild(el("td", "muted", qtyLabel(r.e) || "·"));
       tr.appendChild(chanceCell(r.e));
@@ -2901,6 +3000,14 @@ function gatherSheet(objectId) {
     const facts = el("div", "herofacts");
     const total = areas.reduce((n, a) => n + a.points.length, 0);
     facts.appendChild(statChip("Spots seen", String(total)));
+    {
+      const found = placesOf(SPAWN_OBJECT, objectId);
+      if (found.total) {
+        const chip = statChip("Area", placesLabel(found));
+        chip.title = placesTitle(found);
+        facts.appendChild(chip);
+      }
+    }
 
     // What it takes to work it, and what it gives back. The skill line comes from the
     // catalogue; everything under it was measured, so it carries its sample size.
