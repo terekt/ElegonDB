@@ -2,6 +2,25 @@
 
 const D = window.ELEGON || {items: [], monsters: [], stats: [], slots: [], subs: [], cats: []};
 
+/* Where the site's own files live, as an absolute URL.
+
+   Every art path below - icons, map captures, spell art - used to be written relative to the
+   PAGE, which is right for the pages at the root and wrong for the ones in questlab/, where
+   "maps/overworld.jpg" asks the server for questlab/maps/overworld.jpg. Nobody noticed,
+   because the thing that fails is a background image: the quest maps in the lab simply drew
+   their markers on nothing and looked like a design choice.
+
+   Taken from app.js's own URL rather than from a test on the path, so it is right at any
+   depth and needs no list of which folders are nested. */
+const ASSET_ROOT = (() => {
+  try {
+    const src = (document.currentScript || {}).src;
+    if (src) return new URL(".", src).href;
+  } catch (e) { /* a context with no currentScript; page-relative is the old behaviour */ }
+  return "";
+})();
+
+
 /* ---- scaling -------------------------------------------------------------
    Mirrors the client exactly (ItemTooltipFormatter.ApplyItemPower):
    quality is applied and ROUNDED first, then instability is applied to that
@@ -179,7 +198,7 @@ function icon(kind, id, has, size) {
   const mon = kind === "monsters";
   if (has) {
     const i = el("img", "ico" + (mon ? " mon" : ""));
-    i.src = `icons/${kind}/${id}.png`;
+    i.src = `${ASSET_ROOT}icons/${kind}/${id}.png`;
     i.loading = "lazy";
     i.decoding = "async";
     i.alt = "";
@@ -252,7 +271,7 @@ function nameCell(kind, id, hasIcon, label, labelCls, size, frameQuality, tier) 
    keeps a browser from pairing a freshly exported image with a cached stylesheet that
    expects the old proportions — which shows up as icons clipping through the frame. */
 const ASSET_V = "16";
-const slotFrameUrl = q => `icons/ui/slot_q${q || 1}.png?v=${ASSET_V}`;
+const slotFrameUrl = q => `${ASSET_ROOT}icons/ui/slot_q${q || 1}.png?v=${ASSET_V}`;
 
 /* Are the in-engine slot captures present? Probed once and shared by every page; until the
    UI export has been run they are absent and icons stay unframed rather than showing an
@@ -295,7 +314,7 @@ function framedIcon(id, hasIcon, quality, px, tier) {
    the slot capture; a creature or a person had a flat dark square with a CSS corner radius,
    which is the one place the site still looked like a web page rather than like the game. */
 let FRAME_BOX = false;
-const FRAME_BOX_BG = `icons/ui/spr_dark_fantasy_frame_box_medium_23_background_1_2.png?v=${ASSET_V}`;
+const FRAME_BOX_BG = `${ASSET_ROOT}icons/ui/spr_dark_fantasy_frame_box_medium_23_background_1_2.png?v=${ASSET_V}`;
 (function probeFrameBox() {
   const probe = new Image();
   probe.onload = () => { FRAME_BOX = true; document.dispatchEvent(new Event("framebox")); };
@@ -940,9 +959,9 @@ const hasRelief = map => !!map && !map.plan && map.img === "overworld.jpg";
 
 /** Paint a map into `box`, hillshade included where there is one. */
 function paintMapBg(box, map, size, pos) {
-  const base = `url("maps/${map.img}")`;
+  const base = `url("${ASSET_ROOT}maps/${map.img}")`;
   const lit = hasRelief(map);
-  box.style.backgroundImage = lit ? `url("maps/${MAP_RELIEF}"), ${base}` : base;
+  box.style.backgroundImage = lit ? `url("${ASSET_ROOT}maps/${MAP_RELIEF}"), ${base}` : base;
   /* One value per LAYER, and the second one matters: a bare "soft-light" applies to every
      layer including the bottom one, which then blends with the element's own
      background-color - and both of these boxes set that to var(--bg), the page ground.
@@ -2385,11 +2404,25 @@ function questPlacesMerged(quests) {
       for (const m of g.marks) {
         /* Several quests routinely point at the same creatures, so one dot is one place -
            but it has to remember every quest that wanted it, or filtering to one quest
-           would hide the wolves it shares with the next. */
+           would hide the wolves it shares with the next.
+
+           And every REASON, not only every quest: one wolf can be three errands at once,
+           two pelts for two people and a kill count for a third. Deduplicated on the pair,
+           because a quest that names the same item twice is one errand. */
         const key = `${g.map.id}|${m.kind}|${m.name}|${m.x}|${m.z}`;
+        const wantKey = m.want ? `${q.id}|${m.want.item || m.want.verb}` : null;
         const had = seen.get(key);
-        if (had) { had.quests.add(q.id); continue; }
-        const mark = {...m, quests: new Set([q.id])};
+        if (had) {
+          had.quests.add(q.id);
+          if (wantKey && !had.wantKeys.has(wantKey)) {
+            had.wantKeys.add(wantKey);
+            had.wants.push({quest: q.id, ...m.want});
+          }
+          continue;
+        }
+        const mark = {...m, quests: new Set([q.id]),
+                      wants: m.want ? [{quest: q.id, ...m.want}] : [],
+                      wantKeys: new Set(wantKey ? [wantKey] : [])};
         seen.set(key, mark);
         dest.marks.push(mark);
       }
@@ -2588,10 +2621,14 @@ for (const [fromMap, list] of Object.entries(D.portals || {}))
 /** Every place a quest points at, grouped by map, the one you start from first. */
 function questPlaces(q) {
   const byMap = new Map();
-  const add = (map, kind, name, x, z) => {
+  /* `want` is what this place is FOR: how many the objective asks for, the item if it is one
+     you have to loot, and that item's chance off this particular source. A mark used to say
+     only "a quest sends you here", which is enough to draw a dot and not enough to answer the
+     question a reader actually has in front of a wolf - is it worth killing, and how many. */
+  const add = (map, kind, name, x, z, want) => {
     if (!map) return;
     const g = byMap.get(map.id) || {map, marks: []};
-    g.marks.push({kind, name, x, z});
+    g.marks.push(want ? {kind, name, x, z, want} : {kind, name, x, z});
     byMap.set(map.id, g);
   };
   const mapById = id => (D.maps || []).find(m => m.id === id);
@@ -2604,30 +2641,51 @@ function questPlaces(q) {
   // Only when it is somebody else: a "?" over the head you just took it from says nothing.
   if (q.to && q.to !== q.from) person(q.to, "turnin");
 
-  const spread = (type, id, kind, name) => {
+  const spread = (type, id, kind, name, want) => {
     for (const {map, points} of spawnsFor(type, id))
-      for (const [x, z] of points) add(map, kind, name, x, z);
+      for (const [x, z] of points) add(map, kind, name, x, z, want);
   };
 
-  for (const o of q.obj || []) {
+  const objectives = q.obj || [];
+  for (let oi = 0; oi < objectives.length; oi++) {
+    const o = objectives[oi];
+    // The objective's INDEX travels with the want, so a live quest log - which reports
+    // progress as one [have, need] pair per index - can be lined up against the place on
+    // the map that would advance it.
+    const need = o.need || 1;
     if (o.type === OBJ_SLAY)
       for (const id of o.targets || [])
-        spread(SPAWN_ENEMY, id, "kill", (MONSTER_BY_ID_Q.get(id) || {}).name || "Enemy " + id);
+        spread(SPAWN_ENEMY, id, "kill", (MONSTER_BY_ID_Q.get(id) || {}).name || "Enemy " + id,
+               {need, oi, verb: "Kill"});
     else if (o.type === OBJ_STARTER)
       // No targets: the box is a fixed world object, so it is named rather than looked up.
       spread(SPAWN_OBJECT, STARTER_BOX_OBJECT, "gather",
-             (OBJECT_BY_ID.get(STARTER_BOX_OBJECT) || {}).name || "Weapon box");
+             (OBJECT_BY_ID.get(STARTER_BOX_OBJECT) || {}).name || "Weapon box",
+             {need, oi, verb: "Open"});
     else if (o.type === OBJ_MINE)
       for (const id of o.targets || [])
-        spread(SPAWN_OBJECT, id, "gather", (OBJECT_BY_ID.get(id) || {}).name || "Object " + id);
+        spread(SPAWN_OBJECT, id, "gather", (OBJECT_BY_ID.get(id) || {}).name || "Object " + id,
+               {need, oi, verb: "Gather"});
     else if (o.type === OBJ_COLLECT)
       // An item, so follow it back to its sources - a pelt comes off a wolf, a wood pile
       // out of the ground, and the two want different colours on the map.
       for (const id of o.targets || []) {
+        const item = lootItem(id);
+        /* The rate off THIS source, not the item's best one. A pelt that is 45% off the
+           wolves in front of you and 8% off something two zones away is two different
+           errands, and a single number on the item would tell you neither. Keyed the way
+           the two branches below can each ask for it. */
+        const rate = new Map();
         for (const e of sourcesOf(id))
-          if (!e.src.node) spread(SPAWN_ENEMY, e.src.id, "kill", e.src.name);
+          rate.set(e.src.node ? "node:" + e.src.name : "kill:" + e.src.id, effChance(e));
+        const want = extra => ({need, oi, verb: "Loot", item: item.name, itemId: id, ...extra});
+        for (const e of sourcesOf(id))
+          if (!e.src.node)
+            spread(SPAWN_ENEMY, e.src.id, "kill", e.src.name,
+                   want({chance: rate.get("kill:" + e.src.id)}));
         for (const node of GATHER_BY_ITEM.get(id) || [])
-          spread(SPAWN_OBJECT, node.id, "gather", node.name);
+          spread(SPAWN_OBJECT, node.id, "gather", node.name,
+                 want({chance: rate.get("node:" + node.name)}));
       }
   }
   /* Anything inside a breach is unreachable on foot, so the door goes on the map you are
@@ -2738,11 +2796,14 @@ function questMap(group, opts) {
   const dots = placed.filter(({m}) => DOT_KINDS.has(m.kind)).map(({m, p}) => ({
     fx: (p[0] - x) / w, fy: (p[1] - y) / h, kind: m.kind, name: m.name,
     quests: m.quests ? [...m.quests].map(String) : [],
+    // The mark itself, for a caller that wants to say more about a dot than its name.
+    mark: m,
   }));
 
   const canvas = el("canvas", "qmkdots");
   box.appendChild(canvas);
   let focusId = null;
+  let hovered = null;              // the drawn disc under the pointer, for picking
 
   function drawDots() {
     const bw = box.clientWidth, bh = box.clientHeight;
@@ -2787,9 +2848,21 @@ function questMap(group, opts) {
       if (dist < bestD) { bestD = dist; best = d; }
     }
     const reach = (DOT_STYLE.kill.r + 2) ** 2;
-    canvas.title = (best && bestD <= reach)
-      ? `${best.name} — ${QUEST_MARK[best.kind].label}` : "";
+    const hit = best && bestD <= reach ? best : null;
+    canvas.title = hit ? (opts && opts.describe ? opts.describe(hit.mark)
+                                                : `${hit.name} — ${QUEST_MARK[hit.kind].label}`)
+                       : "";
+    canvas.style.cursor = hit && opts && opts.onPick ? "pointer" : "";
+    hovered = hit;
   });
+
+  /* Picking a drawn disc. The canvas is one element, so the hit test the tooltip already
+     does is the one the click uses - there is no second notion of which dot is under the
+     pointer to fall out of step with the first. */
+  if (opts && opts.onPick) {
+    canvas.addEventListener("click", () => { if (hovered) opts.onPick(hovered.mark); });
+    canvas.addEventListener("pointerleave", () => { hovered = null; });
+  }
 
   // The people and the portals, which are few and are worth their elements.
   for (const {m, p} of placed) {
@@ -2797,9 +2870,14 @@ function questMap(group, opts) {
     const dot = el("span", "qmk qmk-" + m.kind, QUEST_MARK[m.kind].glyph || "");
     dot.style.left = (((p[0] - x) / w) * 100).toFixed(3) + "%";
     dot.style.top = (((p[1] - y) / h) * 100).toFixed(3) + "%";
-    dot.title = `${m.name} — ${QUEST_MARK[m.kind].label}`;
+    dot.title = opts && opts.describe ? opts.describe(m)
+                                      : `${m.name} — ${QUEST_MARK[m.kind].label}`;
     if (m.quests) dot.dataset.q = [...m.quests].join(" ");
     dot.dataset.target = m.name;
+    if (opts && opts.onPick) {
+      dot.style.cursor = "pointer";
+      dot.onclick = () => opts.onPick(m);
+    }
     box.appendChild(dot);
   }
 
@@ -3865,7 +3943,7 @@ const TALENT = (() => {
       if (state === ST.RIVAL) btn.classList.add("lockedout");
       if (spell && spell.icon) {
         const img = el("img");
-        img.src = `icons/spells/${spell.id}.png`;
+        img.src = `${ASSET_ROOT}icons/spells/${spell.id}.png`;
         img.loading = "lazy"; img.alt = "";
         btn.appendChild(img);
       } else {
@@ -4634,7 +4712,7 @@ function coinNode(copper) {
     if (n <= 0) continue;
     const span = el("span", "itipcoin");
     const img = el("img", "itipcoinart");
-    img.src = `icons/ui/coin-${metal}.png?v=${ASSET_V}`;
+    img.src = `${ASSET_ROOT}icons/ui/coin-${metal}.png?v=${ASSET_V}`;
     img.alt = "";
     img.loading = "lazy";
     span.append(img, el("b", null, String(n)));
