@@ -2008,11 +2008,13 @@ button:disabled:hover{border-color:var(--line);color:var(--ink)}
   display:flex;align-items:center;justify-content:center}
 /* The objectives: small, semi-opaque, and allowed to overlap into a cloud — a hundred wolf
    spawns should read as "this whole valley", not as a hundred separate answers. */
-.qmk-kill,.qmk-gather{width:9px;height:9px;border-radius:50%;
+.qmk-kill,.qmk-loot,.qmk-gather{width:9px;height:9px;border-radius:50%;
   border:1px solid rgba(0,0,0,.55)}
 .qmk-kill{background:#c0392b}
+/* The farm, as opposed to the countdown - see QUEST_MARK.loot. */
+.qmk-loot{background:#8e44ad}
 .qmk-gather{background:#3f9c5a}
-.compact .qmk-kill,.compact .qmk-gather{width:7px;height:7px}
+.compact .qmk-kill,.compact .qmk-loot,.compact .qmk-gather{width:7px;height:7px}
 /* The people: full opacity, drawn last, and shaped so they are found instantly among them. */
 .qmk-giver,.qmk-turnin{width:19px;height:19px;border-radius:4px 4px 8px 8px;
   background:linear-gradient(#ffd257,#e0a01e);border:1.5px solid rgba(0,0,0,.6);

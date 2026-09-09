@@ -548,21 +548,68 @@ function lootItem(id) {
  * every kill row carries the server's own count of what that kill produced, and the recorded
  * rows matched it on 2,675 of 2,695. So the site halved what it displayed.
  *
- * That measurement is no longer about this game. Every one of those kills was recorded
- * between 9 and 15 August; v3492098 landed on the 22nd and replaced rift loot outright -
- * the gear moved to a per-map reward table and each rift enemy kept a single 2.5% row for a
- * caster weapon. The rates that were halved are among the 407 rows build_site now holds back
- * as retired. Applying a factor measured on a system the game has removed, in caves it has
- * since rebuilt, is the same mistake as quoting those retired rates.
+ * That measurement stopped being about this game on 22 August, when v3492098 replaced rift
+ * loot outright - the gear moved to a per-map reward table and each rift enemy kept a single
+ * 2.5% row for a caster weapon. So it was switched off, and then re-measured on what
+ * replaced it.
  *
- * So dropFactor is 1 and the listed number is what you see. It can be settled again whenever
- * it matters: turn LogKills on, kill things on the current build, and compare. The factor
- * and the measurement that produced it are kept in build_site rather than deleted, so
- * re-applying is a one-line change and not a re-derivation.
+ * IT IS STILL THERE. Across 5,085 kills recorded since that patch, each priced against the
+ * loot table of the build it actually happened on, the tables listed 11,835 drops and 5,554
+ * landed - 0.469, 95% interval 0.457 to 0.481, and flat again: by table size it runs 0.451,
+ * 0.471, 0.448, 0.463, 0.501, 0.511, 0.417, and by creature 0.480 for ordinary ones against
+ * 0.435 for bosses. Nor is it this logger missing rows. Every kill row carries the server's
+ * own count of what that kill produced, and the recorded loot matches it to within 1%.
+ *
+ * Re-measured again since, and it is one half. On the overworld, with guaranteed rows held
+ * out because they are not subject to it, 10,365 listed drops produced 5,262: 0.508, 95%
+ * interval 0.494 to 0.522.
+ *
+ * Flat every way it is cut - once the guaranteed rows are held out of each slice too. They
+ * all sit on rift bosses, and leaving them in was enough on its own to push "boss" to 0.570
+ * against 0.507 for everything else, and to put every rift map above the overworld. Held
+ * out: equipment 0.504, materials 0.504, quest items 0.503, consumables 0.525; a row listed
+ * 1-4% 0.514, 20-49% 0.508, 50-99% 0.507; bosses 0.501 against ordinary creatures 0.507;
+ * every map between 0.492 and 0.519; 0.494 in the rift-rework era and 0.512 since. That is
+ * one multiplier applied once in the server's roll, not a rule that treats good loot
+ * differently from junk.
+ *
+ * So the site halves what the tables list, and says so wherever it does: the tooltip carries
+ * "0.9% measured, 2% listed" rather than quietly replacing one with the other. Gathering
+ * nodes are left alone - the factor was measured on kills and says nothing about a seam.
  */
 const DROP_RATE = {factor: D.dropFactor === undefined ? 1 : D.dropFactor};
 
-const dropFactorFor = e => (e.src && e.src.node) ? 1 : DROP_RATE.factor;
+/**
+ * Two things the factor does not apply to.
+ *
+ * A GATHERING NODE, because the factor was measured on kills and says nothing about a seam.
+ *
+ * A GUARANTEED ROW, because the game honours those exactly. Since the per-creature rework of
+ * v3512046 it is 238 for 238, where halving predicts about 119: Gravemaw Resin on all 153
+ * Gravemaw kills, Icefang Shard on all 20 Hailmaw kills, Frozen Heartstone 19 of 19,
+ * Rimebound Silk 17 of 17, and so on down to the rows seen once. It was not always so. The
+ * only misses anywhere in the record are three of Nythera's cloak BEFORE that rework, when
+ * guaranteed rows were halved like everything else - the older measurement above caught it,
+ * at 0.483 - and the site publishes the current build.
+ *
+ * The control is what makes it a rule rather than a coincidence: the same fourteen
+ * creatures' sub-100% rows, scored on the same corpses, run at 0.507. Creature, map,
+ * boss-ness and party are all held constant; the 100% listing is the only thing that
+ * differs. And it is worth the extra clause because halving a guaranteed drop is the one
+ * error a reader disproves on their first kill.
+ *
+ * WHERE THE EVIDENCE IS THIN, since the rule as written is broader than what was measured.
+ * 235 of the 238 are boss MATERIAL rows dropping a stack of 2-5, and Gravemaw and Hailmaw
+ * carry most of that between them - Scorchmaw, Pyraxis and Embermaw are each published at a
+ * flat 100% on a single observation. The fourteenth row is Nythera's Blood Silk Cloak: the
+ * only guaranteed row that is equipment, the only one that drops a single item, seen three
+ * times since the rework, and the only one that has ever missed. Nothing here restricts the
+ * rule to bosses either, so a future build putting a 100% row on ordinary trash would be
+ * published at face value on no evidence at all. Re-check with tools/droprates.py if that
+ * happens; the aggregate is not in doubt, its edges are.
+ */
+const dropFactorFor = e =>
+  (e.src && e.src.node) || e.chance >= 100 ? 1 : DROP_RATE.factor;
 
 /* Rolls are independent tests, not a shared pool: two rolls at 50% is 75% overall, not
    100%. Everything the site shows and sorts on is this combined figure, so a two-roll
@@ -1549,9 +1596,13 @@ function abilityPanel(src) {
 /** How this source's chances behave, said once, on the tab that shows them. */
 function lootNote(src) {
   const drops = dropsOf(src);
-  // Listed at 100% and still only landing half the time is the clearest case of the gap
-  // between the table and the game, so it is said here rather than left to a tooltip.
-  const guaranteed = drops.filter(e => e.chance >= 100).length;
+  // Split by what the FACTOR does to each row, not by how the row is listed. These two
+  // groups get opposite sentences, so counting them with one predicate and then branching
+  // on the global factor - which is what this did - put "100%" in the chance column and
+  // "listed as certain and still drops about half the time" directly underneath it, on all
+  // fourteen boss sheets that have a guaranteed row.
+  const halved = drops.filter(e => dropFactorFor(e) !== 1);
+  const exempt = drops.filter(e => dropFactorFor(e) === 1 && e.chance >= 100);
   const parts = [src.node
     ? "Harvested from the world rather than killed, so chances are per harvest."
     : "Chances are per kill, and every entry is rolled independently."];
@@ -1560,15 +1611,18 @@ function lootNote(src) {
   if (src.node && DROP_RATE.factor !== 1) {
     parts.push("Shown as the game's table lists them: the measured drop rate applied to "
              + "the rest of the site comes from kills, and gathering was not part of it.");
-  } else if (DROP_RATE.factor !== 1) {
+  } else if (halved.length) {
     parts.push("These are the rates measured in play, which come out at "
              + `${Math.round(DROP_RATE.factor * 100)}% of what the game's table lists.`);
-    if (guaranteed) parts.push(guaranteed > 1
-      ? `${guaranteed} of them are listed as certain and still drop about half the time.`
-      : "One is listed as certain and still drops about half the time.");
-  } else if (guaranteed) {
-    parts.push(guaranteed > 1 ? `${guaranteed} of them are listed as certain.`
-                              : "One of them is listed as certain.");
+    // The exception, and worth stating on the same breath as the rule it breaks: a reader
+    // who has just been told the table is worth half needs to know which row is not.
+    if (exempt.length) parts.push(exempt.length > 1
+      ? `${exempt.length} are listed as certain and drop every time, so those are shown in `
+        + "full."
+      : "One is listed as certain and drops every time, so it is shown in full.");
+  } else if (exempt.length) {
+    parts.push(exempt.length > 1 ? `${exempt.length} of them are listed as certain.`
+                                 : "One of them is listed as certain.");
   }
   return parts.join(" ");
 }
@@ -2642,8 +2696,13 @@ function questPlaces(q) {
   if (q.to && q.to !== q.from) person(q.to, "turnin");
 
   const spread = (type, id, kind, name, want) => {
+    /* The want carries the TARGET as well as the item, because the two are different
+       questions and only one of them was being answered. "Kill x10" is not an instruction -
+       it is the tail of one - and the creature's name was sitting right here, one argument
+       away, being used for the map label and thrown away for the text. */
+    const w = want ? {target: name, ...want} : null;
     for (const {map, points} of spawnsFor(type, id))
-      for (const [x, z] of points) add(map, kind, name, x, z, want);
+      for (const [x, z] of points) add(map, kind, name, x, z, w);
   };
 
   const objectives = q.obj || [];
@@ -2717,7 +2776,14 @@ const QUEST_MARK = {
   giver:  {glyph: "!", label: "Quest giver"},
   turnin: {glyph: "?", label: "Turn in"},
   portal: {glyph: "",  label: "Enter here"},
-  kill:   {glyph: "",  label: "Kill or loot"},
+  kill:   {glyph: "",  label: "Kill"},
+  /* Two errands wearing one colour until now. "Kill eight wolves" is a countdown you can see
+     the end of; "kill wolves until six pelts drop" is a farm whose length is a dice roll, and
+     which of the two a dot means is the first thing a reader wants off this map. Nothing in
+     questPlaces produces this kind - a caller that knows which objectives are still open
+     promotes a kill mark into it, because a creature can be both at once and only the live
+     progress can say whether the looting half is still owed. */
+  loot:   {glyph: "",  label: "Loot from kills"},
   gather: {glyph: "",  label: "Gather"},
 };
 
@@ -2772,9 +2838,10 @@ function questMap(group, opts) {
      a turn-in and a portal carry gradients, a glyph and a shadow, there are never more than
      a handful, and they are the marks the eye is looking for. Fidelity where it is seen,
      one node where it is not.                                                            */
-  const DOT_KINDS = new Set(["kill", "gather"]);
+  const DOT_KINDS = new Set(["kill", "loot", "gather"]);
   const DOT_STYLE = {
     kill:   {fill: "#c0392b", r: compact ? 3.5 : 4.5},
+    loot:   {fill: "#8e44ad", r: compact ? 3.5 : 4.5},
     gather: {fill: "#3f9c5a", r: compact ? 3.5 : 4.5},
   };
   /* The CSS dims what is not lit with opacity .16 and saturate(.35); a canvas has to do
@@ -2788,7 +2855,7 @@ function questMap(group, opts) {
          + `${m(.213 - .213 * s, .715 - .715 * s, .072 + .928 * s)})`;
   };
 
-  const order = {kill: 0, gather: 1, portal: 2, turnin: 3, giver: 4};
+  const order = {kill: 0, loot: 1, gather: 2, portal: 3, turnin: 4, giver: 5};
   const placed = marks.map((m, i) => ({m, p: pixels[i]}))
                       .sort((a, b) => order[a.m.kind] - order[b.m.kind]);
 
@@ -2905,7 +2972,7 @@ function questMap(group, opts) {
   if (!compact) {
     const legend = el("div", "qmaplegend");
     const seen = new Set(marks.map(m => m.kind));
-    for (const k of ["giver", "turnin", "portal", "kill", "gather"]) {
+    for (const k of ["giver", "turnin", "portal", "kill", "loot", "gather"]) {
       if (!seen.has(k)) continue;
       const n = marks.filter(m => m.kind === k).length;
       const item = el("span", "qmleg");
