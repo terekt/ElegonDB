@@ -2026,6 +2026,16 @@ function itemSheet(itemId) {
               found, where: placesLabel(found)};
     }), st.sort);
 
+    // Every other kind of source, asked here so the drop table's empty note can tell "look
+    // above" from "there is nothing".
+    const fromQuests = QUEST_REWARDS.get(itemId) || [];
+    const fromPickups = QUEST_PICKUPS.get(itemId) || [];
+    const fromRifts = riftsDropping(itemId);
+    const kit = STARTER.get(itemId) || [];
+    const besidesVendors = fromQuests.length || fromPickups.length || fromRifts.length
+                        || kit.length;
+    const elsewhere = vendors.length || besidesVendors;
+
     const cols = [
       {key: "name", label: "Source", left: true},
       {key: "where", label: "Where", left: true},
@@ -2051,10 +2061,15 @@ function itemSheet(itemId) {
       return clickableRow(tr,
         go ? "Where " + r.name + " stands" : "Everything " + r.name + " drops",
         () => pushSheet(go || monsterSheet(r.src)));
-    }, vendors.length
+    /* Worded as what the site read, not as a fact about the game. The Breach Catalyst is
+       the proof of why: no table lists it, yet the game hands one over for closing your
+       first breach - server logic the site cannot see. */
+    }, vendors.length && !besidesVendors
         ? "Nothing drops it — the merchant above is the only source."
-        : "No loot table lists this item — it comes from somewhere else, such as a vendor, "
-          + "a quest reward or crafting.");
+        : elsewhere
+          ? "No loot table lists this item — it comes from the sources above."
+          : "None of the game tables this site reads hands this item out: no creature, "
+            + "merchant, quest, rift or starting kit lists it.");
 
     const wrap = el("div");
 
@@ -2072,10 +2087,28 @@ function itemSheet(itemId) {
       wrap.appendChild(list);
     }
 
-    const fromQuests = QUEST_REWARDS.get(itemId) || [];
+    /* A pick-one reward says so on the chip. It is the difference between "do this quest" and
+       "do this quest and choose this", and a character who chose something else has spent
+       that source for good - the game never offers a finished quest again. */
     if (fromQuests.length)
       wrap.appendChild(questChips(fromQuests, "Given by " + (fromQuests.length === 1
-        ? "a quest" : fromQuests.length + " quests")));
+        ? "a quest" : fromQuests.length + " quests"), {
+          note: q => q.anyReward && q.rewards.length > 1 ? `pick 1 of ${q.rewards.length}` : "",
+          title: q => q.anyReward && q.rewards.length > 1
+            ? `A choice: you pick one of its ${q.rewards.length} rewards when you hand it in, `
+              + `and a finished quest is never offered again.`
+            : "",
+        }));
+
+    /* A courier's parcel: the giver hands it over as you accept, and it is carried to the
+       quest's other end. The only source these items have. */
+    if (fromPickups.length)
+      wrap.appendChild(questChips(fromPickups, "Handed to you by " + (fromPickups.length === 1
+        ? "a quest" : fromPickups.length + " quests"), {
+          note: () => "on accepting",
+          title: q => `${q.fromName || "The quest giver"} hands it to you as you accept "${q.name}", `
+            + `to carry to ${q.toName || "the quest's other end"}.`,
+        }));
 
     /* What wants it. Not a source — it says what the item is FOR — so it does not belong in
        the items list's From column, but for a material it is the whole reason to keep one. */
@@ -2089,7 +2122,6 @@ function itemSheet(itemId) {
        chance beside each, and this is neither - the reward table names the item and carries
        no probability at all, so the line says where and stops. For Ashenroot it is the only
        source there is: its seven creatures have three loot_table_entries between them. */
-    const fromRifts = riftsDropping(itemId);
     if (fromRifts.length) {
       const line = el("p", "riftsource");
       line.append(el("span", "riftsourcelabel", "Drops in"));
@@ -2099,6 +2131,19 @@ function itemSheet(itemId) {
           ? `A boss material in ${r.name}. The game lists one per boss and gives no chance.`
           : `In ${r.name}'s reward pool. The game's table names the item and not how often `
             + `it comes, so the rate is not known.`;
+        line.appendChild(chip);
+      }
+      wrap.appendChild(line);
+    }
+
+    /* The starting kit. Like the rift line, a place and not a rate: every new character of
+       the class is given it once, in the first quest, and that is the whole of it. */
+    if (kit.length) {
+      const line = el("p", "riftsource");
+      line.append(el("span", "riftsourcelabel", "Starting gear"));
+      for (const s of kit) {
+        const chip = el("span", "chip startchip", starterLabel(s));
+        chip.title = starterTitle(s);
         line.appendChild(chip);
       }
       wrap.appendChild(line);
@@ -2300,6 +2345,78 @@ for (const q of D.quests || [])
     if (list) list.push(q); else QUEST_REWARDS.set(id, [q]);
   }
 
+/** The parcel a courier quest hands you as you accept it, by item: Quest.PickupItemName,
+    resolved to an id in build_quests. It is the item's only source, and the same quest then
+    asks you to carry it to someone - so it shows under "Asked for by" as well. */
+const QUEST_PICKUPS = new Map();
+for (const q of D.quests || [])
+  if (q.pickup) {
+    const list = QUEST_PICKUPS.get(q.pickup);
+    if (list) list.push(q); else QUEST_PICKUPS.set(q.pickup, [q]);
+  }
+
+/** What a new character is handed in the first quest, by item: [{cls, how}], cls 0 being
+    every class. From the server's starter tables - see build_starter in build_site.py. */
+const STARTER = new Map();
+for (const s of (D.starter || {}).items || []) {
+  const list = STARTER.get(s.item);
+  if (list) list.push(s); else STARTER.set(s.item, [s]);
+}
+
+/** "Every class's starting kit", "Mage starting weapon". */
+function starterLabel(s) {
+  const who = s.cls ? ((D.classes || {})[s.cls] || {}).name || "Class " + s.cls : "";
+  if (s.how === "weapon") return (who ? who + " " : "") + "starting weapon";
+  return who ? who + " starting kit" : "Every class's starting kit";
+}
+
+/** The sentence a starter chip or badge explains itself with. */
+function starterTitle(s) {
+  const who = s.cls ? "A new " + (((D.classes || {})[s.cls] || {}).name || "character")
+                    : "Every new character";
+  const asOf = (D.starter || {}).asOf;
+  return `${who} takes it from the weapon box in the tent during the first quest, `
+    + `"Answering the Call". It is handed out once, at the start.`
+    + (asOf ? ` (The game's starter tables as read in build ${asOf}.)` : "");
+}
+
+/**
+ * Every way the site knows of to come by an item, as short phrases, surest first.
+ *
+ * For the places that have room for one line - the compendium's missing cards - and need it
+ * to be the best one: a merchant, a quest, a starting kit or a rift's reward pool before a
+ * creature, and a creature nobody has ever seen standing anywhere last of all. That last one
+ * is still said rather than dropped: "Cave Matriarch, no spawn recorded" is the truth about
+ * the Matriarch Legguards, and "no source" would not be.
+ */
+function obtainRoutes(itemId) {
+  const out = [], later = [];
+  for (const v of vendorsOf(itemId)) out.push({kind: "buy", text: "sold by " + v.shop.name});
+  for (const q of QUEST_REWARDS.get(itemId) || [])
+    out.push({kind: "quest", quest: q,
+              text: "quest · " + q.name + (q.anyReward && q.rewards.length > 1
+                ? ` (pick 1 of ${q.rewards.length})` : "")});
+  for (const q of QUEST_PICKUPS.get(itemId) || [])
+    out.push({kind: "quest", quest: q, text: "quest · " + q.name + " (handed to you on accepting)"});
+  for (const s of STARTER.get(itemId) || [])
+    out.push({kind: "starter", text: "starting gear · " + starterLabel(s)});
+  for (const r of riftsDropping(itemId))
+    out.push({kind: "rift", text: "rift · " + r.name + (r.boss ? " (boss material)" : "")});
+  for (const e of sourcesOf(itemId)) {
+    // The source rides along so a page can still apply its own filters - the compendium's
+    // "Skip bosses" among them.
+    if (e.src.node) {
+      out.push({kind: "gather", src: e.src, text: "gathered from " + e.src.name});
+      continue;
+    }
+    if (allSpawnsFor(SPAWN_ENEMY, e.src.id).length)
+      out.push({kind: "drop", src: e.src, text: "dropped by " + e.src.name});
+    else later.push({kind: "drop", src: e.src, unseen: true,
+                     text: e.src.name + " · no spawn recorded"});
+  }
+  return out.concat(later);
+}
+
 /** Quests that ask for a given item, so a material can say what wants it. */
 const QUEST_WANTS = new Map();
 for (const q of D.quests || [])
@@ -2419,7 +2536,8 @@ const QUEST_PROPS = [...OBJECT_BY_ID].filter(([, o]) => !o.node && o.items.lengt
  * The prop an "interact" objective means.
  *
  * Nothing in the data says so outright: the objective carries no target ids, Quest's
- * PickupItemName is empty on all 39, and QuestObjective has no world-object field. What can
+ * PickupItemName names only the parcels courier quests hand you (QUEST_PICKUPS), never a
+ * prop, and QuestObjective has no world-object field. What can
  * be checked is that there is exactly one object in the game that is not a gathering node —
  * the Weapon Box, no loot table, one single spawn in the whole world — and that it stands
  * 10 units from the giver of the one quest that asks you to interact with something.
@@ -2560,13 +2678,19 @@ function questWorkPanel(entries, areas) {
   return wrap;
 }
 
-/** A labelled row of quest chips, used by the NPC and item sheets alike. */
-function questChips(quests, heading) {
+/** A labelled row of quest chips, used by the NPC and item sheets alike. `opts.note` and
+    `opts.title` add a word and a tooltip per quest - the item sheet's "pick 1 of 3". */
+function questChips(quests, heading, opts) {
+  const {note, title} = opts || {};
   const box = el("div");
   box.appendChild(el("h4", "ssection", heading));
   const list = el("div", "objtargets");
   for (const q of quests) {
-    const chip = el("span", "chip", q.name + (q.lvl ? " · level " + q.lvl : ""));
+    const extra = note ? note(q) : "";
+    const chip = el("span", "chip", q.name + (q.lvl ? " · level " + q.lvl : "")
+                                    + (extra ? " · " + extra : ""));
+    const tip = title ? title(q) : "";
+    if (tip) chip.title = tip;
     chip.onclick = () => pushSheet(questSheet(q.id));
     list.appendChild(chip);
   }

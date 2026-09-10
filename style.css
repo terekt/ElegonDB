@@ -1284,6 +1284,9 @@ dialog.sheet{width:min(940px,94vw)}
 .srcdrop{color:var(--fine);border-color:color-mix(in oklab,var(--fine) 45%,transparent)}
 .srcbuy{color:var(--gold);border-color:color-mix(in oklab,var(--gold) 45%,transparent)}
 .srcquest{color:var(--good);border-color:color-mix(in oklab,var(--good) 45%,transparent)}
+/* The starting kit: a real source, but a once-only one, so it reads quieter than the rest. */
+.srcstart{color:color-mix(in oklab,var(--ink) 80%,transparent);
+  border-color:color-mix(in oklab,var(--ink) 30%,transparent)}
 /* Dimmed and dashed: a real answer, but the one that means nobody has found a way yet. */
 .srcnone{color:var(--faint);border-style:dashed}
 
@@ -2343,6 +2346,8 @@ select.riftpick{font-family:var(--game-font);font-size:15px;letter-spacing:.2px}
 .riftsourcelabel{color:var(--faint);font-size:10.5px;letter-spacing:.6px;text-transform:uppercase}
 .riftchip{cursor:help;font-size:12px;padding:3px 10px}
 .riftchip.boss{border-color:var(--gold);color:var(--gold)}
+/* The same line for a starting kit: a place, not a rate, so it borrows the rift line's shape. */
+.startchip{cursor:help;font-size:12px;padding:3px 10px}
 
 /* Where a piece of gear comes from, named on the row that offers it. */
 .rifttag{border-color:color-mix(in oklab,var(--gold) 45%,transparent);

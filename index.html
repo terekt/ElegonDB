@@ -6,8 +6,8 @@
 <meta http-equiv="Cache-Control" content="no-cache">
 <title>Elegon DB — Items</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2032%2032%27%3E%3Cdefs%3E%3ClinearGradient%20id%3D%27t%27%20x1%3D%270%27%20y1%3D%270%27%20x2%3D%27.45%27%20y2%3D%271%27%3E%3Cstop%20offset%3D%270%27%20stop-color%3D%27%23ffe455%27%2F%3E%3Cstop%20offset%3D%271%27%20stop-color%3D%27%23e9a200%27%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D%2732%27%20height%3D%2732%27%20rx%3D%277%27%20fill%3D%27url%28%23t%29%27%2F%3E%3Cg%20fill%3D%27%23110c09%27%20font-family%3D%27Alice%2CGeorgia%2Cserif%27%3E%3Ctext%20x%3D%276.5%27%20y%3D%2723%27%20font-size%3D%2717%27%3EE%3C%2Ftext%3E%3Ctext%20x%3D%2717.5%27%20y%3D%2723%27%20font-size%3D%279%27%20opacity%3D%27.72%27%3Edb%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fsvg%3E">
-<link rel="stylesheet" href="style.css?v=bdcce317">
-<link rel="stylesheet" href="elegon-redesign.css?v=bdcce317">
+<link rel="stylesheet" href="style.css?v=53cae005">
+<link rel="stylesheet" href="elegon-redesign.css?v=53cae005">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -87,8 +87,8 @@
   <p class="note" id="note"></p>
 </div>
 
-<script src="data.js?v=bdcce317"></script>
-<script src="app.js?v=bdcce317"></script>
+<script src="data.js?v=53cae005"></script>
+<script src="app.js?v=53cae005"></script>
 <script>
 const S = {q:"", slot:"", type:"", sub:"", hasStat:"", source:"", cls:"", quality:1, tier:0,
            sort:{key:"vitality", desc:true}};
@@ -147,8 +147,8 @@ const subWrap = document.getElementById("subWrap");
 fill(subSel, weaponTypes, "Any weapon");
 fill(document.getElementById("hasStat"), LIST_STATS.map(cap), "Any stat");
 
-/* Where an item comes from: a monster, a quest, a merchant, or nothing known. Nothing else
-   belongs in this list. Two things were tried here and removed — being asked for by a quest,
+/* Where an item comes from: a monster, a quest, a merchant, a starting kit, or nothing known.
+   Nothing else belongs in this list. Two things were tried here and removed — being asked for by a quest,
    which says what an item is FOR rather than where it comes from and now lives on the item's
    own sheet under "Asked for by"; and the rift's own drops, which is a place rather than a
    kind of source. Monsters in the rift are still monsters. */
@@ -159,7 +159,10 @@ const SOURCE_FILTERS = [
   ...(DROP.ready ? [{v:"drop", label:"Monster"}] : []),
   // Only offered once the shop export has actually found a merchant.
   ...(SOLD_BY.size ? [{v:"buy", label:"Sold by a merchant"}] : []),
-  ...(QUEST_REWARDS.size ? [{v:"quest", label:"Quest reward"}] : []),
+  // A reward, or a courier's parcel handed over as the quest is accepted.
+  ...(QUEST_REWARDS.size || QUEST_PICKUPS.size ? [{v:"quest", label:"Quest"}] : []),
+  // The kit a new character takes from the tent's weapon box - D.starter.
+  ...(STARTER.size ? [{v:"starter", label:"Starting gear"}] : []),
   // One entry per rift. The game's reward table is per map, so "which rift drops this" is
   // a question it can answer exactly - unlike how often, which it does not record at all.
   ...Object.keys(D.riftDrops || {})
@@ -266,18 +269,21 @@ const colsFor = () => {
 function matchesSource(i) {
   if (!S.source) return true;
   if (S.source === "buy") return SOLD_BY.has(i.id);
-  if (S.source === "quest") return QUEST_REWARDS.has(i.id);
+  if (S.source === "quest") return QUEST_REWARDS.has(i.id) || QUEST_PICKUPS.has(i.id);
+  if (S.source === "starter") return STARTER.has(i.id);
   if (S.source.startsWith("rift:")) {
     const want = S.source.slice(5);
     return riftsDropping(i.id).some(r => r.id === want);
   }
   if (S.source === "drop") return DROP_INFO.has(i.id);
   // Unknown means no route at all, not merely "no loot table" — which used to lump in
-  // everything a merchant or a quest hands over.
-  return !DROP_INFO.has(i.id) && !SOLD_BY.has(i.id) && !QUEST_REWARDS.has(i.id);
+  // everything a merchant or a quest hands over. The same test as the Unknown badge in
+  // sourceCell, so a row wearing a rift or starting-kit badge is never matched as Unknown.
+  return !DROP_INFO.has(i.id) && !SOLD_BY.has(i.id) && !QUEST_REWARDS.has(i.id)
+      && !QUEST_PICKUPS.has(i.id) && !STARTER.has(i.id) && !riftsDropping(i.id).length;
 }
 
-/* Where an item comes from: a monster, a quest, a merchant, or nothing known. Drop chance
+/* Where an item comes from: a monster, a quest, a merchant, a starting kit, or nothing known. Drop chance
    alone left a fifth of the catalogue reading as unobtainable when it is simply bought or
    handed over. Badges rather than one word, because several can be true at once. */
 function sourceCell(i) {
@@ -285,6 +291,7 @@ function sourceCell(i) {
   const box = el("span", "srcflags");
   const vendors = vendorsOf(i.id);
   const rewards = QUEST_REWARDS.get(i.id) || [];
+  const pickups = QUEST_PICKUPS.get(i.id) || [];
   const info = DROP_INFO.get(i.id);
 
   if (info) {
@@ -308,9 +315,12 @@ function sourceCell(i) {
       : `In ${r.name}'s reward pool. The game names the item and not how often it comes.`;
     box.appendChild(tag);
   }
-  if (rewards.length) {
+  if (rewards.length || pickups.length) {
     const tag = el("span", "srcflag srcquest", "Quest");
-    tag.title = "Given by " + rewards.map(q => q.name).join(", ");
+    tag.title = [
+      rewards.length ? "Given by " + rewards.map(q => q.name).join(", ") : "",
+      pickups.length ? "Handed to you as you accept " + pickups.map(q => q.name).join(", ") : "",
+    ].filter(Boolean).join(". ");
     box.appendChild(tag);
   }
   if (vendors.length) {
@@ -321,6 +331,13 @@ function sourceCell(i) {
       : `${vendors.length} merchants sell it, from ${fmtNum(cheapest.price)} copper`;
     box.appendChild(tag);
   }
+  /* The kit a new character is handed. One badge whatever the class - the tooltip names it. */
+  const kit = STARTER.get(i.id) || [];
+  if (kit.length) {
+    const tag = el("span", "srcflag srcstart", "Starting");
+    tag.title = kit.map(starterLabel).join(", ") + ". " + starterTitle(kit[0]);
+    box.appendChild(tag);
+  }
   /* "Unknown" is a claim, and it is only ours to make when we have looked everywhere. With
      no drop table in the build we have not: an item that drops from a monster and nothing
      else would be labelled unobtainable, which is worse than saying nothing. So the claim
@@ -329,7 +346,8 @@ function sourceCell(i) {
     // Said outright rather than left as a dash: "we have not found one" is an answer, and
     // an empty cell reads as a gap in the page instead of a fact about the item.
     const tag = el("span", "srcflag srcnone", "Unknown");
-    tag.title = i.name + " is not dropped, sold or given by a quest.";
+    tag.title = i.name + " is not dropped, sold, given by a quest or a rift, or part of a "
+              + "starting kit.";
     box.appendChild(tag);
   }
   td.appendChild(box);
@@ -385,9 +403,9 @@ function draw() {
       const o = {...i, info: DROP_INFO.get(i.id) || null};
       o.drop = o.info ? effChance(o.info.best) : 0;
       // Sorting "From" groups by route rather than alphabetically: monster, then quest,
-      // then merchant, and the ones with nowhere to get them last.
-      o.source = (o.info ? 4 : 0) + (QUEST_REWARDS.has(i.id) ? 2 : 0)
-               + (SOLD_BY.has(i.id) ? 1 : 0);
+      // then merchant, then starting kit, and the ones with nowhere to get them last.
+      o.source = (o.info ? 8 : 0) + (QUEST_REWARDS.has(i.id) || QUEST_PICKUPS.has(i.id) ? 4 : 0)
+               + (SOLD_BY.has(i.id) ? 2 : 0) + (STARTER.has(i.id) ? 1 : 0);
       for (const s of LIST_STATS) o[s] = scaled(i, s, S.quality, S.tier);
       return o;
     });
