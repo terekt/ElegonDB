@@ -1656,13 +1656,19 @@ function statChip(label, value, cls) {
  * health — and the portrait used to sit below the tabs, as though it belonged to one of them.
  */
 /* ---- what a kill is worth, at your level ----------------------------------
-   The whole rule, from the client's own CompendiumPanel.TryGetLocalXpReward. The reward
-   moves 10% per level between you and the creature, pays nothing once you are ten levels
-   above it, and is floored — when the creature is ABOVE you — at a twentieth of what your
-   own level costs, so something far too big for you is still worth a fixed something.
+   The whole rule, from the client's own CompendiumPanel.TryGetLocalXpReward.
 
-   Confirmed against a play session: fourteen kills of a level 8 creature between levels 1
-   and 10, every one exactly what this predicts.                                          */
+   The reward moves 10% per level between you and the creature, and pays nothing once you are
+   ten levels above it. What it moves FROM depends on which of you is higher. At or below your
+   level it is the creature's own base XP. Above you it is not the creature's at all, but what
+   a same-level creature typically pays a character of your level - a twentieth of what your
+   level costs - so everything above you pays the same for the same gap, whatever it is listed
+   for. More than ten levels above, it is that typical figure, flat.
+
+   The part above you changed in v3520357. Before it, the creature's own XP scaled by the gap
+   was what you got, with the typical figure only a floor underneath. Fourteen kills of a
+   level 8 creature between levels 1 and 10 confirmed that old rule exactly; nothing recorded
+   on the new build has confirmed yet that the server moved with the client.              */
 
 const LEVEL_XP = D.levelXp || {};
 const MAX_LEVEL = Math.max(1, ...Object.keys(LEVEL_XP).map(Number));
@@ -1696,16 +1702,22 @@ function xpAt(monster, level = LEVEL.value) {
 
   const d = monster.lvl - level;
   if (d < (D.xpIgnoreBelow === undefined ? -10 : D.xpIgnoreBelow)) return 0;
-  // The floor only applies upwards: nothing beneath you is worth a minimum.
-  const floor = d > 0 ? Math.ceil((LEVEL_XP[level] || 1) / (D.xpFloorDiv || 20)) : 0;
-  if (d > 10) return floor;
+  // What a same-level creature typically pays at this level (CalculateTypicalSameLevelXp).
+  // Only ever used when the creature is above you.
+  const typical = d > 0 ? Math.max(1, Math.ceil((LEVEL_XP[level] || 1) / (D.xpFloorDiv || 20))) : 0;
+  if (d > 10) return typical;
 
   // Single precision, the same as the client: 1f + d * 0.1f is not 1 + d/10, and at exactly
   // ten levels below it lands a hair under zero rather than on it — which is what makes that
   // case pay nothing. Rounding half away from zero is Math.round for a positive number.
   const mult = f32(1 + f32(d * f32(D.xpStep === undefined ? 0.1 : D.xpStep)));
   if (mult <= 0) return 0;
-  return Math.max(Math.round(f32(base * mult)), floor);
+  // Above you the creature's own XP does not count (v3520357): the typical figure is what
+  // scales. The client turns it into a single-precision float BEFORE multiplying, and that
+  // matters here as it never did for base XP - a twentieth of a high level's cost runs past
+  // what a float holds exactly, so skipping the f32 would drift by a few points.
+  const from = d > 0 ? typical : base;
+  return Math.round(f32(f32(from) * mult));
 }
 
 /** Big numbers, short. A level's worth of XP runs to eleven digits by level 80. */
