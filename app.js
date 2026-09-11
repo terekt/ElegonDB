@@ -1667,8 +1667,10 @@ function statChip(label, value, cls) {
 
    The part above you changed in v3520357. Before it, the creature's own XP scaled by the gap
    was what you got, with the typical figure only a floor underneath. Fourteen kills of a
-   level 8 creature between levels 1 and 10 confirmed that old rule exactly; nothing recorded
-   on the new build has confirmed yet that the server moved with the client.              */
+   level 8 creature between levels 1 and 10 confirmed that old rule exactly. The server moved
+   with the client: three kills on 10 September, a level 13 Knight on a level 19 Gloamfang
+   Wolf (540 XP), paid 139 each - the typical 87 for level 13 times 1.6 - where the old rule
+   gives 864.                                                                                */
 
 const LEVEL_XP = D.levelXp || {};
 const MAX_LEVEL = Math.max(1, ...Object.keys(LEVEL_XP).map(Number));
