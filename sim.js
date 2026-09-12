@@ -98,11 +98,11 @@ function directReach(dlv, targets) {
 }
 
 /* Where the hit lands relative to the end of the cast. A spell carries its own
-   impact delay where it has one; otherwise the handler applies a fixed delay
-   per delivery kind, and a projectile adds flight time on top. */
+   impact delay where it has one; otherwise only an arc has a fixed one - the
+   melee and ranged fallbacks had left the client by v3515177 - and a projectile
+   adds flight time on top. */
 function landDelay(s, timing, range) {
-  const fixed = s.impact || ({1: timing.meleeImpact, 2: timing.arcImpact,
-                              4: timing.rangedImpact})[s.dlv] || 0;
+  const fixed = s.impact || (s.dlv === DLV_ARC ? timing.arcImpact : 0) || 0;
   if (s.dlv === 3 && s.maxR) {
     const speed = s.projSpeed || timing.projectileSpeed;
     if (speed) return fixed + Math.min(range == null ? s.maxR : range, s.maxR) / speed;

@@ -1876,12 +1876,13 @@ function levelPicker({slider = false} = {}) {
 /**
  * How fast it is, and how far it will follow — the two halves of "can I get away".
  *
- * The catalogue's own move_speed is not the answer and used to be shown as though it were.
- * Nothing in the client reads that column, every creature in the game carries the same
- * value, and the number the client actually moves a chasing creature at is fixed: 7.875,
- * exactly 1.5x the player's 5.25. So a chase is always faster than running away, and what
- * ends it is the leash — max_distance_from_spawn, which does differ from creature to
- * creature. That is what these two chips say instead.
+ * The catalogue's own move_speed is not the answer and used to be shown as though it were:
+ * nothing in the client reads that column, and nearly every creature carries the same value.
+ * The chase speed is 7.875, exactly 1.5x the player's 5.25 — but that is the last figure the
+ * client itself carried (Mob.ServerChaseMoveSpeed, deleted after build 3495004, when chases
+ * moved wholly onto the server). Nothing has re-measured it since, so the chip says which
+ * build it dates from rather than passing it off as current. What ends a chase is the
+ * leash — max_distance_from_spawn, which does differ from creature to creature.
  */
 function chaseChips(monster) {
   const out = [];
@@ -1895,7 +1896,9 @@ function chaseChips(monster) {
   if (mine && chase && monster.aggressive) {
     const chip = statChip("Chase", `${Math.round((chase / mine) * 100)}% of your speed`, "bad");
     chip.title = `It closes at ${chase} against your ${mine} — you cannot outrun it, `
-               + "only outlast it";
+               + "only outlast it"
+               + (D.chaseSpeedAsOf ? ` (the game's own figure as of build ${D.chaseSpeedAsOf}; `
+                                     + "not re-measured since)" : "");
     out.push(chip);
   }
   if (monster.leash) {
@@ -2388,8 +2391,9 @@ function starterTitle(s) {
  * For the places that have room for one line - the compendium's missing cards - and need it
  * to be the best one: a merchant, a quest, a starting kit or a rift's reward pool before a
  * creature, and a creature nobody has ever seen standing anywhere last of all. That last one
- * is still said rather than dropped: "Cave Matriarch, no spawn recorded" is the truth about
- * the Matriarch Legguards, and "no source" would not be.
+ * is still said rather than dropped: "<creature>, no spawn recorded" is the truth about such
+ * an item, and "no source" would not be. (The Matriarch Legguards read that way until
+ * v3521783 put the Cave Matriarch in the world.)
  */
 function obtainRoutes(itemId) {
   const out = [], later = [];
@@ -4085,9 +4089,10 @@ const TALENT = (() => {
   function rankScaling(spell) {
     if (!spell) return "";
     const pct = Math.round(POWER_PER_RANK * 100);
-    // Power for anything that deals a number or ticks; DURATION for a stun and the two buffs.
-    const power = spell.base > 0 || [2, 3, 8].includes(spell.fx);
-    const duration = [1, 4, 5].includes(spell.fx);
+    // TalentClientLogic.DescribeRankScaling. Power for anything that deals a number, ticks or
+    // shields (13, since v3522023); duration for a stun, the two buffs, a slow and a disorient.
+    const power = spell.base > 0 || [2, 3, 8, 13].includes(spell.fx);
+    const duration = [1, 4, 5, 11, 12].includes(spell.fx);
     if (power && duration)
       return `Each rank increases this spell's power and effect duration by ${pct}%.`;
     if (duration) return `Each rank increases this spell's effect duration by ${pct}%.`;

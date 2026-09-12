@@ -6,8 +6,8 @@
 <meta http-equiv="Cache-Control" content="no-cache">
 <title>Elegon DB — Character planner</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2032%2032%27%3E%3Cdefs%3E%3ClinearGradient%20id%3D%27t%27%20x1%3D%270%27%20y1%3D%270%27%20x2%3D%27.45%27%20y2%3D%271%27%3E%3Cstop%20offset%3D%270%27%20stop-color%3D%27%23ffe455%27%2F%3E%3Cstop%20offset%3D%271%27%20stop-color%3D%27%23e9a200%27%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D%2732%27%20height%3D%2732%27%20rx%3D%277%27%20fill%3D%27url%28%23t%29%27%2F%3E%3Cg%20fill%3D%27%23110c09%27%20font-family%3D%27Alice%2CGeorgia%2Cserif%27%3E%3Ctext%20x%3D%276.5%27%20y%3D%2723%27%20font-size%3D%2717%27%3EE%3C%2Ftext%3E%3Ctext%20x%3D%2717.5%27%20y%3D%2723%27%20font-size%3D%279%27%20opacity%3D%27.72%27%3Edb%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fsvg%3E">
-<link rel="stylesheet" href="style.css?v=b2eac4d8">
-<link rel="stylesheet" href="elegon-redesign.css?v=b2eac4d8">
+<link rel="stylesheet" href="style.css?v=dd20321b">
+<link rel="stylesheet" href="elegon-redesign.css?v=dd20321b">
 <script>
 /* Resolve the theme before first paint: a stored choice if there is one, otherwise
    whatever the operating system asks for. Kept inline and tiny on purpose — loading it
@@ -247,9 +247,9 @@
   </div>
 </dialog>
 
-<script src="data.js?v=b2eac4d8"></script>
+<script src="data.js?v=dd20321b"></script>
 <!-- Written by the mod when you log in; absent until then. -->
-<script src="app.js?v=b2eac4d8"></script>
+<script src="app.js?v=dd20321b"></script>
 <script>
 /* The game's slot set and order, from InGameUi.EnumerateCharacterPanelSlots:
    main weapon, off hand, head, neck, shoulder, back, chest, waist, leg, foot, hands. */
@@ -540,14 +540,14 @@ const DELIVERY = D.delivery || {};
 const TIMING = D.spellTiming || {};
 
 /* When the damage actually lands, which is not when the cast bar ends.
-   A spell's own impact_delay_s and projectile_speed are in the catalogue; where it carries
-   neither, SpellHandler applies a fixed delay per delivery kind - 0.38s for a melee hit,
-   0.20s for an arc, 0.10s for the instant-ranged flash. A projectile adds distance/speed on
-   top, so the same Fireball lands later the further away the target is. */
+   A spell's own impact_delay_s and projectile_speed are in the catalogue. Where it carries
+   no delay, an arc still lands 0.20s after release (SpellHandler.ArcSpellImpactSeconds) and
+   anything else lands at once: the 0.38s melee and 0.10s ranged fallbacks this used to add
+   were gone from the client by v3515177. A projectile adds distance/speed on top, so the
+   same Fireball lands later the further away the target is. */
 /** The fixed delay between a cast finishing and the damage arriving, in seconds. */
 function landDelay(s) {
-  const fixed = s.impact || ({1: TIMING.meleeImpact, 2: TIMING.arcImpact,
-                              4: TIMING.rangedImpact})[s.dlv] || 0;
+  const fixed = s.impact || (s.dlv === 2 ? TIMING.arcImpact : 0) || 0;
   if (s.dlv === 3 && s.maxR) {
     const speed = s.projSpeed || TIMING.projectileSpeed;
     if (speed) return fixed + s.maxR / speed;
@@ -557,8 +557,7 @@ function landDelay(s) {
 
 function timeToLand(s, totals) {
   const cast = (s.instant || !s.cast) ? 0 : castTimeOf(s.cast, totals.alacrity);
-  const fixed = s.impact || ({1: TIMING.meleeImpact, 2: TIMING.arcImpact,
-                              4: TIMING.rangedImpact})[s.dlv] || 0;
+  const fixed = s.impact || (s.dlv === 2 ? TIMING.arcImpact : 0) || 0;
   const speed = s.projSpeed || TIMING.projectileSpeed;
   if (s.dlv === 3 && speed && s.maxR) {
     const flight = s.maxR / speed;
@@ -1004,12 +1003,17 @@ function weaponArt() {
 
 /* Active effect types, from SpellTooltipFormatter.FormatActiveEffectText.
    1 stun · 2 damage over time · 3 heal over time · 4 damage reduction ·
-   5 cast speed and spell damage. Types 4 and 5 are percentages and are NOT scaled -
-   every observed sample came back at its base value. Types 2 and 3 scale like direct
-   damage and healing: on level, on Strength or Grace, and on talent rank. */
+   5 cast speed, spell damage and healing · 8 heals the most wounded party member over time ·
+   10 damage dealt · 11 slow (a freeze at 100%) · 12 disorient · 13 absorb shield.
+   v3522023 added 11-13 for the Mage's frost and the Cleric's shields. Types 4 and 5 are
+   percentages and are NOT scaled - every observed sample came back at its base value.
+   Types 2 and 3 scale like direct damage and healing: on level, on Strength or Grace, and on
+   talent rank. */
 const FX_DOT = 2, FX_HOT = 3, FX_REDUCE = 4, FX_POWER = 5, FX_STUN = 1;
+const FX_PARTY_HOT = 8, FX_DAMAGE_UP = 10, FX_SLOW = 11, FX_DISORIENT = 12, FX_ABSORB = 13;
 
-/* One proc per class, keyed by its id so either end of the chain can find it. */
+/* Every proc, keyed by its id so either end of a chain can find it. Since v3522023 the Mage and
+   the Cleric have two each. */
 const PROC_BY_ID = new Map((D.procs || []).map(p => [p.id, p]));
 
 /* Over-time effects use the same +20%-per-rank talent factor and the same 0.01-per-point
@@ -1023,15 +1027,17 @@ const talentMulEffect = talentMul;
 const EFFECT_PER_LEVEL = GAME.EFFECT_PER_LEVEL;
 const levelMulEffect = () => GAME.effectLevelMul(level);
 
-/* An effect type the client has no wording for (only Living Scripture, type 8). It has an
-   amount and a tick, so it behaves like a periodic effect; the buff flag decides whether it
-   is treated as healing or damage. Marked as inferred wherever it is shown. */
-/* A rank buys DURATION rather than power for a stun, a damage reduction and a cast-speed
-   buff - TalentClientLogic.DescribeRankScaling is explicit that those three get +20% a rank
+/* Living Scripture's type 8 heals the most wounded nearby party member every tick, so it is
+   a heal over time here. A type the client still has no wording for falls back on its own
+   numbers: an amount and a tick make it periodic, and the buff flag decides whether it heals
+   or hurts. That case is marked as inferred wherever it is shown. */
+/* A rank buys DURATION rather than power for a stun, a damage reduction, a cast-speed buff,
+   and since v3522023 a slow and a disorient - TalentClientLogic.DescribeRankScaling is
+   explicit that those get +20% a rank
    on the window and nothing on the amount, which is the reverse of everything that deals a
    number or ticks. Everywhere a duration is SHOWN has to ask for it through this, or the
    panel says 8s while the game gives 14.4. */
-const DURATION_SCALES = new Set([1, 4, 5]);          // stun, damage reduction, cast speed
+const DURATION_SCALES = new Set([1, 4, 5, 11, 12]);  // stun, reduction, cast speed, slow, disorient
 const effectDur = s => DURATION_SCALES.has(s.fx)
   ? s.fxDur * talentMul(rankFor(s))
   : s.fxDur;
@@ -1040,13 +1046,31 @@ const durLabel = s => {
   return (Math.round(d * 10) / 10) + "s";
 };
 
-const isPeriodic = s => s.fx === FX_DOT || s.fx === FX_HOT
+const isPeriodic = s => s.fx === FX_DOT || s.fx === FX_HOT || s.fx === FX_PARTY_HOT
                      || (s.fxAmt > 0 && s.fxTick > 0 && !KNOWN_FX.has(s.fx));
-const KNOWN_FX = new Set([FX_STUN, FX_DOT, FX_HOT, FX_REDUCE, FX_POWER]);
-const healsOverTime = s => s.fx === FX_HOT || (!KNOWN_FX.has(s.fx) && s.fxBuff);
+const KNOWN_FX = new Set([FX_STUN, FX_DOT, FX_HOT, FX_REDUCE, FX_POWER, FX_PARTY_HOT,
+                          FX_DAMAGE_UP, FX_SLOW, FX_DISORIENT, FX_ABSORB]);
+const healsOverTime = s => s.fx === FX_HOT || s.fx === FX_PARTY_HOT
+                        || (!KNOWN_FX.has(s.fx) && s.fxBuff);
 
 /** The scaled per-tick amount, or the raw fraction for percentage effects. */
+/* A shield grows like a direct heal, not like a tick. The server's own values for v3522023
+   (data/spell_values_log.csv) put Ice Barrier's 100 at 8486 for a level-80 Mage with 1940
+   Strength, and Aegis of Light's 90 at 25710 for a level-80 Cleric with 6767 Grace. Both are
+   base x (1 + 0.04 x (level - 1)) x (1 + 1% a point), to the unit; the 0.024 effect curve
+   misses both by nearly a third. Three things the two samples cannot settle are inferred:
+   Grace for a shield cast on a friend and Strength for your own (a by-class rule fits them
+   as well), the +20% a rank DescribeRankScaling states (both samples are rank 0), and no
+   buff or weapon multiplier (both fit exactly without one). */
+const absorbOnFriend = s => s.dlv === 8 || s.dlv === 15;
+const absorbStat = (s, totals) => absorbOnFriend(s) ? totals.grace : totals.strength;
+function absorbAmount(s, totals) {
+  return Math.round(s.fxAmt * levelMul() * (1 + 0.01 * absorbStat(s, totals))
+                    * talentMul(rankFor(s)));
+}
+
 function effectAmount(s, totals) {
+  if (s.fx === FX_ABSORB) return absorbAmount(s, totals);
   if (!isPeriodic(s)) return s.fxAmt;
   const stat = healsOverTime(s) ? totals.grace : totals.strength;
   return Math.round(s.fxAmt * levelMulEffect() * (1 + 0.01 * stat)
@@ -1062,7 +1086,19 @@ function effectText(s, amount) {
     case FX_DOT:    return `${fmtNum(amount)} damage every ${s.fxTick}s ${dur}`;
     case FX_HOT:    return `${fmtNum(amount)} healing every ${s.fxTick}s ${dur}`;
     case FX_REDUCE: return `Reduces damage taken by ${pct(amount)} ${dur}`;
-    case FX_POWER:  return `Cast speed and spell damage +${pct(amount)} ${dur}`;
+    // The timed form names healing since v3522023; the always-on form still does not.
+    case FX_POWER:  return s.fxForever
+                      ? `Cast speed and spell damage +${pct(amount)} ${dur}`
+                      : `Cast speed, spell damage and healing +${pct(amount)} ${dur}`;
+    case FX_PARTY_HOT:
+      return `${fmtNum(amount)} healing to the most wounded nearby party member every `
+        + `${s.fxTick}s ${dur}`;
+    case FX_DAMAGE_UP: return `Damage dealt +${pct(amount)} ${dur}`;
+    case FX_SLOW:   return amount >= 0.999 ? `Freezes in place ${dur}`
+                                           : `Slows movement by ${pct(amount)} ${dur}`;
+    case FX_DISORIENT: return `Disorients ${dur}; any direct hit breaks it`;
+    // Sized by absorbAmount: level and Strength or Grace, as the server's own values have it.
+    case FX_ABSORB: return `Absorbs up to ${fmtNum(amount)} damage ${dur}`;
     default:
       // The client prints only "Effect lasts Ns" here, so the amount is ours, not its.
       return isPeriodic(s)
@@ -1076,11 +1112,13 @@ function effectText(s, amount) {
    the panel showed only the unbuffed numbers - so a Stonewall Knight and a naked one read
    identically against the rift.
 
-     type 4  damage reduction        Guard, Encase, Stonewall, Spellward, Lightward
-     type 5  cast speed AND spell damage    Warcry, Catalyze, Communion
+     type 4  damage reduction        Guard, Encase, Stonewall, Spellward, Lightward, Intercession
+     type 5  cast speed AND spell damage    Warcry, Catalyze, Communion, Evocation
+             (the timed form's tooltip adds healing since v3522023)
 
-   Only the selected class's own buffs are offered: these are all self-cast, so a build can
-   never have another class's.
+   Only the selected class's own buffs are offered, because a build can never have another
+   class's. All are self-cast but Intercession, a friendly-target spell - and with no player
+   targeted the client aims those at you (ResolveFriendlyTargetCharacterId), so it counts.
 
    Stacking is the client's rule, not a guess. GetActiveCastSpeedBonus walks every live
    type-5 effect and takes Mathf.Max of them against the Alacrity bonus - it does not add or
@@ -1287,24 +1325,32 @@ function drawSpells(totals) {
     if (overTime) num.appendChild(el("div", "rl", `${fmtNum(overTime)} over ${s.fxDur}s`));
     if (s.fx === FX_REDUCE || s.fx === FX_POWER)
       num.appendChild(el("div", "rl", "+" + (+(fxAmt * 100).toFixed(1)) + "%"));
+    if (s.fx === FX_ABSORB) num.appendChild(el("div", "rheal", fmtNum(fxAmt) + " shield"));
     if (!num.children.length) num.appendChild(el("div", "rl", "—"));
     row.appendChild(num);
 
-    /* Every class opens with a free spell that generates energy, and casting it has a
-       chance to light the class's one proc - which makes the next cast of its 40-energy
-       spell free. Both ends are named on the two rows that take part, because a mechanic
-       that only shows up as a number in someone else's simulator is not documented. */
-    const proc = (PROC_BY_ID.get(s.procTrigger) || PROC_BY_ID.get(s.procConsumer));
-    if (proc) {
-      const trig = !!s.procTrigger;
-      const line = el("div", "rproc",
-        trig ? `${+proc.chance}% to light ${proc.name}`
-             : `Free under ${proc.name}`);
-      line.title = trig
-        ? `${proc.name}: each ${s.name} has a ${+proc.chance}% chance to light it, and it `
-          + `lasts ${+proc.dur}s. ${proc.desc}`
-        : `${proc.desc} ${proc.name} lasts ${+proc.dur}s and is lit by casting the spell `
-          + `above it at ${+proc.chance}% a cast.`;
+    /* A proc is lit by casting one spell and spent by casting another. Both ends are named on
+       the rows that take part, because a mechanic that only shows up as a number in someone
+       else's simulator is not documented. A row takes a line per end, as the client's
+       BuildProcLine does: since v3522023 Mend sits on two chains, lighting Serendipity and
+       spending Divine Favour. */
+    const lit = PROC_BY_ID.get(s.procTrigger);
+    if (lit) {
+      const line = el("div", "rproc", `${+lit.chance}% to light ${lit.name}`);
+      line.title = `${lit.name}: each ${s.name} has a ${+lit.chance}% chance to light it, and it `
+        + `lasts ${+lit.dur}s. ${lit.desc}`;
+      mid.appendChild(line);
+    }
+    const spent = s.procConsumer !== s.procTrigger && PROC_BY_ID.get(s.procConsumer);
+    if (spent) {
+      // The trigger is named rather than pointed at: Frostbolt is no prerequisite of Molten
+      // Lance, so a build can hold the consumer without the only spell that lights it.
+      const src = (D.spells || []).find(x => x.procTrigger === spent.id);
+      const taken = src && src.lvl <= level && (!src.talent || rankFor(src) >= 1);
+      const line = el("div", "rproc", `Free under ${spent.name}`);
+      line.title = `${spent.desc} ${spent.name} lasts ${+spent.dur}s and is lit by casting `
+        + (src ? src.name : "its trigger") + ` at ${+spent.chance}% a cast`
+        + (src && !taken ? `, which this build has not taken, so it never lights.` : ".");
       mid.appendChild(line);
     }
 
@@ -1361,8 +1407,10 @@ function spellTip(s, totals, dmg, heal, lm, tm, fxAmt, overTime) {
   if (!dmg && !heal && overTime)
     lead.appendChild(tipStat(`over ${s.fxDur}s`, fmtNum(overTime),
                              healsOverTime(s) ? "heal" : "dmg"));
+  if (s.fx === FX_ABSORB) lead.appendChild(tipStat("shield", fmtNum(fxAmt), "heal"));
   if (s.fx === FX_REDUCE || s.fx === FX_POWER)
-    lead.appendChild(tipStat(s.fx === FX_REDUCE ? "less damage taken" : "cast speed and damage",
+    lead.appendChild(tipStat(s.fx === FX_REDUCE ? "less damage taken"
+                               : s.fxForever ? "cast speed and damage" : "cast speed, damage and healing",
                              "+" + (+(fxAmt * 100).toFixed(1)) + "%", "buff"));
   if (lead.children.length) wrap.appendChild(lead);
 
@@ -1382,7 +1430,10 @@ function spellTip(s, totals, dmg, heal, lm, tm, fxAmt, overTime) {
   const land = landDelay(s);
   if (land) cost.appendChild(tipStat("then lands", "+" + land.toFixed(2) + "s"));
   if (s.cd) cost.appendChild(tipStat("cooldown", fmtCd(s.cd)));
-  if (s.maxR) cost.appendChild(tipStat("range", (s.minR ? s.minR + "–" : "") + s.maxR));
+  // A nova's range is a radius around you, not a reach to a target (FormatRangeValue).
+  if (s.maxR) cost.appendChild(tipStat("range", (s.dlv === 14 || s.dlv === 15)
+    ? s.maxR + " around you"
+    : (s.minR ? s.minR + "–" : "") + s.maxR));
   if (s.cost) cost.appendChild(tipStat("costs", String(s.cost)));
   if (s.gen) cost.appendChild(tipStat("generates", String(s.gen)));
   wrap.appendChild(cost);
@@ -1393,6 +1444,11 @@ function spellTip(s, totals, dmg, heal, lm, tm, fxAmt, overTime) {
     + `${(1 + 0.01 * totals.strength).toFixed(2)} (Strength) × ${tm.toFixed(1)} (rank)`);
   if (heal) notes.push(`${s.base} × ${lm.toFixed(2)} (level) × `
     + `${(1 + 0.01 * totals.grace).toFixed(2)} (Grace) × ${tm.toFixed(1)} (rank)`);
+  if (s.fx === FX_ABSORB) notes.push(`${s.fxAmt} × ${lm.toFixed(2)} (level) × `
+    + `${(1 + 0.01 * absorbStat(s, totals)).toFixed(2)} `
+    + `(${absorbOnFriend(s) ? "Grace" : "Strength"}) × ${tm.toFixed(1)} (rank) — the game's `
+    + `own shield values fix the level and stat terms; which stat, the rank step and leaving `
+    + `out buffs and weapon are inferred`);
   if (cast) notes.push(`${s.cast}s base, −${((1 - cast / s.cast) * 100).toFixed(0)}% `
     + `from ${totals.alacrity} Alacrity`);
   if (s.dlv === 3 && s.maxR)
