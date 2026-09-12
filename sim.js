@@ -24,8 +24,11 @@
 }(typeof self !== "undefined" ? self : this, function () {
 "use strict";
 
-/* Effect types, as SpellTooltipFormatter names them. */
+/* Effect types, as ActiveEffectTypes names them. 8 heals the most wounded party member a pulse
+   at a time (Living Scripture); 10 only ever lands on a creature; 11-13 arrived with v3522023 -
+   a slow that is a freeze at 100%, a disorient that any direct hit breaks, and a shield. */
 const FX_STUN = 1, FX_DOT = 2, FX_HOT = 3, FX_REDUCE = 4, FX_POWER = 5;
+const FX_PARTY_HOT = 8, FX_DAMAGE_UP = 10, FX_SLOW = 11, FX_DISORIENT = 12, FX_ABSORB = 13;
 
 /* How often a creature casts an ability, in seconds.
  *
@@ -38,7 +41,8 @@ const FX_STUN = 1, FX_DOT = 2, FX_HOT = 3, FX_REDUCE = 4, FX_POWER = 5;
  * per-creature total; splitting the cycle without splitting the damage would be false
  * precision. */
 const ENEMY_CAST_EVERY = 12;
-const KNOWN_FX = new Set([FX_STUN, FX_DOT, FX_HOT, FX_REDUCE, FX_POWER]);
+const KNOWN_FX = new Set([FX_STUN, FX_DOT, FX_HOT, FX_REDUCE, FX_POWER, FX_PARTY_HOT,
+                          FX_DAMAGE_UP, FX_SLOW, FX_DISORIENT, FX_ABSORB]);
 const GCD_BASE = 1.5;
 const EPS = 1e-9;
 
@@ -73,22 +77,47 @@ const effectLevelMul = level => 1 + 0.024 * (level - 1);
 const talentMul = rank => 1 + 0.2 * Math.max(0, rank - 1);
 const gcdFor = (tempo, level) => GCD_BASE / (1 + ratingBonus(tempo, level));
 
-/* A spell whose amount arrives in instalments. Type 8 is Living Scripture,
-   which the client has no wording for but which carries an amount and a tick,
-   so it is treated as periodic and flagged as inferred wherever it is shown. */
-const isPeriodic = s => s.fx === FX_DOT || s.fx === FX_HOT
+/* A spell whose amount arrives in instalments. Type 8 is Living Scripture, whose every pulse
+   heals the most wounded party member - SpellTooltipFormatter has worded it since the
+   creature-abilities patch. A type the client has no wording for that still carries an amount
+   and a tick is treated as periodic too, and flagged as inferred wherever it is shown. */
+const isPeriodic = s => s.fx === FX_DOT || s.fx === FX_HOT || s.fx === FX_PARTY_HOT
                      || (s.fxAmt > 0 && s.fxTick > 0 && !KNOWN_FX.has(s.fx));
-const healsOverTime = s => s.fx === FX_HOT || (!KNOWN_FX.has(s.fx) && s.fxBuff);
+const healsOverTime = s => s.fx === FX_HOT || s.fx === FX_PARTY_HOT
+                        || (!KNOWN_FX.has(s.fx) && s.fxBuff);
 
 /* ---- who a spell reaches -------------------------------------------------
    The catalogue says how a spell is delivered, and that is what decides how it
    behaves against more than one enemy. A melee arc and a ground area cover
    everything standing in them; a chain hits its target and ricochets to three
-   more at 65% each, which the two chain spells say in so many words; everything
+   more at 65% each, which the two chain spells say in so many words; a nova
+   (v3522023) is cast on nobody and reaches everything within its range around
+   you - every nearby enemy for an enemy nova, you and everyone in range for a
+   party nova, so in healing mode the count is the people it reaches; everything
    else is one target however many are in front of you.                       */
 const DLV_ARC = 2, DLV_GROUND = 5, DLV_CHAIN = 11;
-const REACHES_ALL = new Set([DLV_ARC, DLV_GROUND]);
+const DLV_ENEMY_NOVA = 14;
+const DLV_PARTY_NOVA = 15;
+const REACHES_ALL = new Set([DLV_ARC, DLV_GROUND, DLV_ENEMY_NOVA, DLV_PARTY_NOVA]);
 const CHAIN_EXTRA = 3, CHAIN_FRACTION = 0.65;
+
+/* ---- damage a spell's own text says it does only sometimes ----------------
+   The catalogue has no column for any of this and the client no code - the
+   server applies it - so it is read off the descriptions, and each entry quotes
+   the words it stands on. The test suite checks those words are still there,
+   so a patch that rewrites one fails loudly rather than leaving a stale x3.
+
+     slowed   the target carries a slow or a freeze (effect 11): "chilled" and
+              "frozen" are the tooltip's two words for the one effect
+     burning  the target carries this spell's own periodic - "your Ignite"
+     execute  the target is below a share of its health. There is no health pool
+              in the model, so health is taken to fall evenly over the fight and
+              the window is its last 35%                                     */
+const CONDITIONAL = {
+  49: {when: "slowed", mul: 3, quote: "chilled or frozen enemies for triple damage"},
+  30: {when: "burning", by: 12, mul: 1.5, quote: "50% more damage to a target burning"},
+  36: {when: "execute", below: 0.35, mul: 1.6, quote: "60% more damage to a target below 35%"},
+};
 
 /** How many times a spell's direct value lands, given a pack of this size. */
 function directReach(dlv, targets) {
@@ -125,6 +154,8 @@ const OMIT = {
   tooHigh:   "not learned at this level",
   exclusive: "the other half of an either/or choice",
   untaken:   "no talent points in it",
+  shield:    "a shield — the game counts what it soaks as neither healing nor damage",
+  unmodelled:"not modelled in this rotation yet",
 };
 
 /** Every spell this class could bring to the given rotation, and what it does. */
@@ -164,22 +195,30 @@ function candidates(D, opts) {
       const stops = s.fx === FX_REDUCE || s.fx === FX_STUN || s.interrupt;
       const mends = periodic && hots && s.dlv === 0;
       const hurts = (direct && !s.heals) || (periodic && !hots);
+      /* A shield and a disorient would keep you alive too, but nothing in the fight below
+         soaks a hit or walks a creature off - and the page offers survival only to the
+         Knight, who has neither. Said, rather than priced at nothing. */
       if (!stops && !mends && !hurts && !amp)
-        why = s.dlv === 7 || s.dlv === 9 ? OMIT.mobility : OMIT.utility;
+        why = s.dlv === 7 || s.dlv === 9 ? OMIT.mobility
+            : s.fx === FX_ABSORB || s.fx === FX_DISORIENT ? OMIT.unmodelled : OMIT.utility;
       if (why) dropped.push({s, why}); else kept.push(s);
       continue;
     }
+    const controls = s.fx === FX_STUN || s.fx === FX_DISORIENT;
     if (s.fx === FX_REDUCE) why = OMIT.defensive;
+    /* A shield soaks what would have landed. The combat log reports that as a hit for 0,
+       never as healing (ChatUI: "is absorbed by your shield"), so it moves neither number. */
+    else if (s.fx === FX_ABSORB) why = healMode ? OMIT.shield : OMIT.defensive;
     else if (amp) why = null;                                  // buffs always count
     else if (healMode) {
       if (!givesHeal && !hots) why = direct || (periodic && !hots) ? OMIT.damage : null;
       if (!givesHeal && !hots && !why) why = s.dlv === 7 || s.dlv === 9 ? OMIT.mobility
-                                          : s.fx === FX_STUN ? OMIT.control : OMIT.utility;
+                                          : controls ? OMIT.control : OMIT.utility;
     } else {
       const damages = (direct && !s.heals) || (periodic && !hots);
       if (!damages) why = s.heals || hots ? OMIT.healing
                         : s.dlv === 7 || s.dlv === 9 ? OMIT.mobility
-                        : s.fx === FX_STUN ? OMIT.control : OMIT.utility;
+                        : controls ? OMIT.control : OMIT.utility;
     }
     if (why) dropped.push({s, why});
     else kept.push(s);
@@ -187,19 +226,40 @@ function candidates(D, opts) {
   return {kept, dropped};
 }
 
-/* Flamestorm and Arcane Tempest are the same slot in the talent tree, so a
-   build has one or the other and the two have to be solved separately. */
-/* Flamestorm or Arcane Tempest for the Mage; Encase or Stonewall for the
-   Knight. The second pair only ever shows up in the survival rotation, because
-   neither spell is a candidate when the thing being measured is damage. */
+/* The talent tree's choice groups. A node that shares its ChoiceGroup with another is locked
+   out the moment that other has a rank (TalentClientLogic.GetSelectedRival), so a build holds
+   at most one spell of each group and the rest have to be solved apart. Read from the tree the
+   catalogue carries. The two pairs this used to hard-code lead the list, because the page lays
+   the FIRST group side by side and has a written note for each of them (the Mage's Flamestorm
+   or Arcane Tempest, the Knight tank's Encase or Stonewall); the rest follow in tree order and
+   the search settles them itself. The pairs also stand in for a class whose tree was never
+   captured. */
 const EXCLUSIVE_PAIRS = [[15, 28], [11, 22]];
-function exclusiveChoices(spells) {
+function exclusiveChoices(spells, talents, cls) {
   const ids = new Set(spells.map(s => s.id));
-  const out = [];
-  for (const pair of EXCLUSIVE_PAIRS) {
-    const live = pair.filter(id => ids.has(id));
-    if (live.length > 1) out.push(live);
-  }
+  const groups = new Map();
+  for (const n of talents || [])
+    if (n.choice && n.spell && (cls == null || String(n.cls) === String(cls))) {
+      if (!groups.has(n.choice)) groups.set(n.choice, []);
+      groups.get(n.choice).push(n.spell);
+    }
+  const all = groups.size ? [...groups.values()] : EXCLUSIVE_PAIRS.slice();
+  const rank = g => {
+    const i = EXCLUSIVE_PAIRS.findIndex(p => p.length === g.length && p.every(id => g.includes(id)));
+    return i < 0 ? EXCLUSIVE_PAIRS.length : i;
+  };
+  all.sort((x, y) => rank(x) - rank(y));                      // stable: tree order otherwise
+  return all.map(g => g.filter(id => ids.has(id))).filter(g => g.length > 1);
+}
+
+/** The same groups as a lookup: spell id -> the ids it locks out. */
+function rivalsOf(groups) {
+  const out = new Map();
+  for (const g of groups)
+    for (const id of g) {
+      if (!out.has(id)) out.set(id, new Set());
+      for (const other of g) if (other !== id) out.get(id).add(other);
+    }
   return out;
 }
 
@@ -220,6 +280,10 @@ function makeAction(s, C) {
     id: s.id, name: s.name, spell: s, rank,
     cost: s.cost || 0, gen: s.gen || 0, cd: s.cd || 0,
     castBase: (s.instant || !s.cast) ? 0 : s.cast,
+    /* IsInstant is a flag of its own, not a cast time of zero, and what it buys is freedom
+       from the global cooldown: SpellHandler.UsesGlobalCooldown is !IsInstant, not Recall,
+       and not proc-empowered. Slash has no cast time and still takes the GCD; Warcry does not. */
+    offGcd: !!s.instant,
     land: landDelay(s, C.timing, C.range),
     isBuff: s.fx === FX_POWER,
     buffAmt: s.fx === FX_POWER ? s.fxAmt : 0,
@@ -240,6 +304,11 @@ function makeAction(s, C) {
     mit: s.fx === FX_REDUCE ? s.fxAmt : 0,
     mitDur: s.fx === FX_REDUCE ? s.fxDur * tm : 0,
     stun: s.fx === FX_STUN ? s.fxDur * tm : 0,
+    /* How long a slow or a freeze holds its target; a rank lengthens it, as it does a stun
+       (DescribeRankScaling). Worth nothing by itself here - nothing in the model moves, and
+       a frozen creature "can still strike anything within reach" - but Ice Lance reads it. */
+    chill: s.fx === FX_SLOW ? s.fxDur * tm : 0,
+    cond: CONDITIONAL[s.id] || null,
     /* An interrupt stops the NEXT ability a creature would cast. It deals nothing and
        applies nothing, so every other scoring path values it at zero; its whole worth is the
        damage that then never arrives, which only the survival loop can see. */
@@ -296,38 +365,41 @@ function makeAction(s, C) {
 }
 
 /** The whole build, resolved: stats, level, rank, and the actions available. */
-/* ---- the class proc ------------------------------------------------------
- * Every class opens with a free spell that feeds the bar - Slash, Fireball, Smite - and
- * each cast of it has a 20% chance to light the class's proc for 12s. While it is lit the
- * next cast of the class's 40-energy spell - Flurry, Gleam, Mend - is free.
+/* ---- the class procs -----------------------------------------------------
+ * Casting one spell has a chance to light a proc; while it is lit, the next cast of another
+ * spell is EMPOWERED. Since v3522023 a class can have two - the Mage's Arcane Surge (Fireball
+ * lights it, Gleam spends it) and Thermal Shock (Frostbolt, Molten Lance), the Cleric's Divine
+ * Favour (Smite, Mend) and Serendipity (Mend, Radiance) - and one spell can sit on both
+ * chains: Mend spends one and lights the other.
  *
- * The description in the client says "instant and costs no energy", but all three of those
- * spells already have a cast time of zero, and the proc's power_bonus_percent is 0. So in
- * this build the proc is worth exactly one thing: 40 energy, often enough to matter.
+ * What an empowered cast is, the client says outright and for every proc alike
+ * (ProcClientLogic.IsCastEmpowered, and what reads it):
+ *     no cast time       GetEffectiveCastTime is 0 - Molten Lance and Radiance lose 2.5s
+ *     no energy check    waived, and every description says it "costs no energy"
+ *     no global cooldown  UsesGlobalCooldown is false for it
+ *     its own cooldown still starts
+ * and GAINING a proc clears its consumer's cooldown (InGameUi.ResetProcConsumerCooldown). That
+ * matters for the two consumers that have one, Crushing Blow and Molten Lance - exactly the
+ * two whose text says "Resets ... cooldown".
  *
- * A 20% chance in a solver that has no dice. The rotation is scored by comparing whole
- * fights, so a random proc would make two runs of the same priority list disagree and the
- * hill-climb would be chasing noise. Instead the proc is carried as the PROBABILITY that
- * it is lit, and the consumer pays its cost times the chance it is not:
- *
- *     a trigger cast   p <- p + (1 - p) x chance        (it cannot stack)
- *     a consumer cast  pay cost x (1 - p), then p <- 0
- *
- * which is the exact expected energy over many fights, and is what a build actually
- * averages over a five-minute pull. The one approximation is expiry: each trigger pushes
- * the lapse out to its own cast + duration, rather than every unit of probability ageing
- * separately. With the filler cast every few seconds and a 12s window that gap almost never
- * opens, and when it does the model is generous by the tail of it.
+ * A chance in a solver that has no dice: each trigger cast banks its chance, and the proc
+ * lights when a whole one has accrued - every fifth Slash at 20%. That is the exact rate a
+ * coin would average with none of the variance, which is not wanted here: the solver scores
+ * whole fights against each other a single stat point apart, and a run-to-run wobble of a few
+ * procs would drown the difference it is being asked to measure.
  */
-function procFor(D, cls, actions) {
-  const p = (D.procs || []).find(x => String(x.cls) === String(cls));
-  if (!p) return null;
-  // The spell it pays for, named here so the panel can say what it covered. If that spell
-  // is not on the bar the proc has nothing to spend itself on and is worth nothing.
-  const consumer = actions.find(a => a.consumes === p.id);
-  if (!consumer) return null;
-  return {id: p.id, name: p.name, consumer: consumer.name,
-          chance: (p.chance || 0) / 100, dur: p.dur || 0};
+function procsFor(D, cls, actions) {
+  const out = [];
+  for (const p of D.procs || []) {
+    if (String(p.cls) !== String(cls)) continue;
+    // The spell it pays for, named so the panel can say what it covered. If that spell is not
+    // on the bar the proc has nothing to spend itself on and is worth nothing.
+    const consumer = actions.find(a => a.consumes === p.id && !a.procOnly);
+    if (!consumer) continue;
+    out.push({id: p.id, name: p.name, consumer: consumer.name, consumerId: consumer.id,
+              chance: (p.chance || 0) / 100, dur: p.dur || 0});
+  }
+  return out;
 }
 
 
@@ -417,13 +489,15 @@ function model(D, cfg) {
      nothing, and the ordinary one that costs full price. The solver then answers the
      question a player actually has - is this spell worth casting at all, or only when the
      proc pays for it? - by placing them independently, or dropping either. They share an
-     id on purpose: one cooldown, one row in the breakdown, one spell. */
-  const procDef = (D.procs || []).find(x => String(x.cls) === String(C.cls));
-  if (procDef) {
-    const consumer = actions.find(a => a.consumes === procDef.id);
+     id on purpose: one cooldown, one row in the breakdown, one spell. The free line has no
+     cast time either, because an empowered cast is instant. */
+  const procs = procsFor(D, C.cls, actions);
+  for (const p of procs) {
+    const consumer = actions.find(a => a.id === p.consumerId && !a.procOnly);
     if (consumer && consumer.cost > 0)
       actions.push(Object.assign({}, consumer,
-                                 {procOnly: true, cost: 0, key: consumer.id + ":proc"}));
+                                 {procOnly: true, cost: 0, castBase: 0,
+                                  key: consumer.id + ":proc"}));
   }
 
   /* The filler: no cost, no cooldown, and it feeds the bar. Every class has
@@ -450,9 +524,9 @@ function model(D, cfg) {
     : 0;
   const autoRange = auto ? auto.maxR : 0;
 
-  /* What is hitting you, and how hard once instability has scaled it. The
-     player's own 3s cycle is the only attack interval the catalogue has, and
-     every creature measured swings on it.
+  /* What is hitting you, and how hard once instability has scaled it. Every
+     creature measured swings on a 3s cycle (D.attackInterval) - not the player's
+     own, which is 2.75s (D.swingInterval).
 
      More than one can be on you, so this resolves to a list of individuals —
      three of a kind are three separate clocks, not one creature hitting three
@@ -497,6 +571,7 @@ function model(D, cfg) {
   const raw = foes.reduce((t, f) => t + f.raw, 0);
   const health = maxHealth(((D.classes || {})[C.cls] || {}).health_base || 162,
                            C.level, C.vitality);
+  const exclusive = exclusiveChoices(kept, D.talents, C.cls);
 
   return {
     cfg: C, actions, dropped, generator: gen, targets: C.targets,
@@ -518,11 +593,13 @@ function model(D, cfg) {
     gcd: gcdFor(C.tempo, C.level),
     alacrityBonus: ratingBonus(C.alacrity, C.level),
     tempoBonus: ratingBonus(C.tempo, C.level),
-    autoDmg, autoInterval: D.attackInterval || 3, autoRange, inMelee,
-    /* Energy the swing itself brings in. Zero for every class that still has a generator
-       spell; 30 for the Knight since v3515177, which has none. Without this the solver sees
-       a class that can never pay for anything and prices it at auto attacks alone - measured
-       at the time: 37,014 dps to 6,696, an 82% collapse that was entirely ours. */
+    // Your own swing: 2.75s measured (D.swingInterval), not the creatures' 3s.
+    autoDmg, autoInterval: D.swingInterval || D.attackInterval || 3, autoRange, inMelee,
+    /* Energy the swing itself brings in, when a class's text says so (D.autoEnergy). Zero for
+       every class today: v3517993 gave the Knight back Slash as a generator, after v3515177 had
+       left it none and paid it 30 a swing. Without this the solver would see a class that can
+       never pay for anything and price it at auto attacks alone - measured at the time: 37,014
+       dps to 6,696, an 82% collapse that was entirely ours. */
     autoGen: (D.autoEnergy || {})[String(C.cls)] || 0,
     /* Applied where damage is credited rather than folded into a.direct, so the breakdown
        and the priority solver both see the same number a player would. Healing mode gets 1:
@@ -544,12 +621,19 @@ function model(D, cfg) {
        every tick, even after that buff has expired. Measured in game rather than read from
        the catalogue, which carries no flag for it - so the right play is to re-apply a dot
        the instant a buff goes up. Always on: it is what the game does, not a preference. */
-    /* The one proc this class has. Chance as a fraction, because everything else in
-       here is a fraction and a stray percent is the kind of bug that reads as plausible. */
-    proc: procFor(D, C.cls, actions),
+    /* Every proc this class has whose consumer is on the bar. Chance as a fraction, because
+       everything else in here is a fraction and a stray percent is the kind of bug that
+       reads as plausible. `proc` is the first, for anything written when there was one. */
+    procs, proc: procs[0] || null,
+    /* Whether an instant or a proc-empowered cast skips the global cooldown, as the client
+       has it (UsesGlobalCooldown). On unless a caller turns it off to see what it is worth. */
+    offGcd: cfg.offGcd !== false,
     snapshot: cfg.snapshot !== false,
     round: cfg.round !== false,
-    exclusive: exclusiveChoices(kept),
+    exclusive,
+    /* The same choice groups as a lookup, so the search can refuse a list no talent tree
+       could produce. */
+    rivals: rivalsOf(exclusive),
   };
 }
 
@@ -570,8 +654,8 @@ function simulate(M, order, opts) {
   let ampAmt = 0, ampUntil = -1;
   let total = 0, wasted = 0, idle = 0, actions = 0;
 
-  /* The class proc. It is LIT or it is not - a real boolean, so the rotation can hold a
-     cast back for it, which is the whole point of the thing.
+  /* The class procs, each LIT or not - a real boolean, so the rotation can hold a cast back
+     for one, which is the whole point of the thing.
   
      Fired on a schedule rather than on a coin: each trigger cast banks its chance, and the
      proc lights when a whole one has accrued - every fifth Slash at 20%. That is the exact
@@ -579,8 +663,37 @@ function simulate(M, order, opts) {
      here: the solver scores whole fights against each other and compares builds a single
      stat point apart, so a run-to-run wobble of a few procs would drown the difference it
      is being asked to measure. */
-  let procLit = false, procUntil = -1, procCredit = 0;
-  let procSaved = 0, procFree = 0, procCasts = 0, procWasted = 0;
+  const procState = new Map((M.procs || []).map(p =>
+    [p.id, {p, lit: false, until: -1, credit: 0, saved: 0, free: 0, casts: 0, wasted: 0}]));
+  const litFor = a => {
+    const ps = a.consumes ? procState.get(a.consumes) : null;
+    return !!(ps && ps.lit);
+  };
+
+  /* Two clocks where there used to be one. A cast bar blocks everything; the global cooldown
+     blocks only what takes it, so an instant or an empowered cast goes the moment the bar is
+     clear - woven into the cooldown, the way the client queues it. The server honours it: in
+     the logs Pommel Strike landed well inside the cooldown in 8 of 15 close pairs against 11 of
+     1,936 for two on-GCD casts, and proc-empowered Crushing Blows in 10 of 30.
+
+     What a priority list loses by it: an instant could once be held back by ranking it low,
+     because it cost a GCD. Now it fires the moment it is ready, and a list cannot say "hold
+     this". For a tank's defensives that is on-cooldown play - on a test fight the Knight tank
+     lets through about 2% more, for nearly twice the damage - and an off-GCD buff (Communion,
+     Catalyze, Warcry) can go out before there is energy to spend under it, which costs a short
+     fight a little: a level-20 Cleric over 30s loses under 1% on its best list. */
+  let gcdUntil = 0;
+  const onGcd = a => !(M.offGcd && (a.offGcd || litFor(a)));
+  /* An off-GCD heal over time held back only by your health can go the moment a hit lands, so
+     while the cooldown runs the list is read again then (tank fights only - nothing else hits). */
+  const healWaiting = () => gcdUntil > t + EPS && priority.some(a =>
+    a.tracksHeal && !onGcd(a) && (cdReady.get(a.id) || 0) <= t + EPS);
+  // A zero-time cast is taken once per instant, so nothing free and cooldown-less can loop.
+  let instantAt = -1;
+  const castAtInstant = new Set();
+
+  /* The chill Ice Lance shatters, per target: from when it lands to when it thaws. */
+  const slowed = [];
 
   /* The incoming half of the fight, when there is one. */
   const tank = !!M.survival && M.enemy.raw > 0;
@@ -643,6 +756,20 @@ function simulate(M, order, opts) {
     if (keepLog) log.push({t: at, id, name: label, kind, amount});
     return true;
   };
+  /* What a CONDITIONAL entry is worth at the moment its hit lands. The player aims the spell
+     at whichever target meets the condition, so any one that does counts. */
+  const condMul = (c, at) => {
+    if (c.when === "slowed")
+      return slowed.some(l => l && l.some(s => s.from <= at + EPS && s.until > at + EPS))
+        ? c.mul : 1;
+    if (c.when === "burning") {
+      for (const d of live.values())
+        if (d.id === c.by && d.from <= at + EPS && d.until > at + EPS) return c.mul;
+      return 1;
+    }
+    if (c.when === "execute") return at >= (1 - c.below) * dur - EPS ? c.mul : 1;
+    return 1;
+  };
 
   while (true) {
     /* Next thing to happen. Three clocks and at most a handful of periodics,
@@ -685,6 +812,7 @@ function simulate(M, order, opts) {
         log.push({t, kind: "swing", amount: dealt, hp, id: -2,
                   name: f.name ? f.name + "'s swing" : "Enemy swing"});
       fo.next = t + f.interval;
+      if (healWaiting()) nextAction = Math.min(nextAction, t);
       continue;
     }
     if (kind === "cast") {
@@ -716,6 +844,7 @@ function simulate(M, order, opts) {
                     name: f.name ? f.name + "'s ability" : "Enemy ability"});
       }
       fo.nextCast = t + f.castEvery;
+      if (healWaiting()) nextAction = Math.min(nextAction, t);
       continue;
     }
     if (kind === "healer") {
@@ -769,17 +898,22 @@ function simulate(M, order, opts) {
     }
 
     // A proc nobody spent. It lapses, and that is a waste worth counting.
-    if (procLit && t > procUntil + EPS) { procLit = false; procWasted += 1; }
+    for (const ps of procState.values())
+      if (ps.lit && t > ps.until + EPS) { ps.lit = false; ps.wasted += 1; }
 
     /* An action. Walk the list and take the first thing that is allowed. */
+    const gcdRunning = gcdUntil > t + EPS;
     let pick = null, onTarget = 0;
     for (const a of priority) {
       if ((cdReady.get(a.id) || 0) > t + EPS) continue;
+      if (gcdRunning && onGcd(a)) continue;
+      if (t === instantAt && castAtInstant.has(a.key)) continue;
       // The proc-only entry is the free cast and nothing else: without the proc up it is
       // simply not on the bar, which is what lets it sit above spells it could not
-      // otherwise outrank.
-      if (a.procOnly && !procLit) continue;
-      if (a.cost > resource + EPS) continue;
+      // otherwise outrank. A lit proc waives the energy check for either line.
+      const lit = litFor(a);
+      if (a.procOnly && !lit) continue;
+      if (a.cost > resource + EPS && !lit) continue;
       if (a.isBuff && ampUntil > t + EPS) continue;               // never clip your own buff
       if (tank) {
         /* Never stack a reduction on itself, never stun what is already held,
@@ -822,42 +956,87 @@ function simulate(M, order, opts) {
       }
       pick = a; break;
     }
-    if (!pick && M.generator && !priority.includes(M.generator)) pick = M.generator;
+    if (!pick && !gcdRunning && M.generator && !priority.includes(M.generator))
+      pick = M.generator;
+    if (!pick && gcdRunning) {
+      /* Nothing off the global cooldown is ready, so wait for whichever comes first: the
+         cooldown ending, one of those spells coming off its own, or - in a tank fight - the
+         gate that holds one opening on its own clock: a stun when its target stops being held,
+         a guard when its refresh window or every guard as strong runs out, a heal over time
+         when its last one ends. (A heal waiting on your health is re-read when a hit lands.) */
+      let wake = gcdUntil;
+      for (const a of priority) {
+        if (onGcd(a)) continue;
+        const ready = cdReady.get(a.id) || 0;
+        if (ready > t + EPS) { if (ready < wake) wake = ready; continue; }
+        if (!tank) continue;
+        let open = Infinity;
+        if (a.stun) open = a.hitsAll ? stunUntilOf() : (foes[0] || {held: -1}).held;
+        if (a.tracksMit) {
+          const gd = guards.get(a.id);
+          if (gd && gd.until - a.refresh > t + EPS) open = gd.until - a.refresh;
+          else {
+            let lapse = -Infinity;
+            for (const g of guards.values())
+              if (g.amt >= a.mit - EPS && g.until > t + EPS) lapse = Math.max(lapse, g.until);
+            if (lapse > -Infinity) open = lapse;
+          }
+        }
+        if (a.tracksHeal) {
+          const md = mends.get(a.id);
+          if (md && md.until > t + EPS) open = md.until;
+        }
+        if (open > t + EPS && open < wake) wake = open;
+      }
+      nextAction = wake;
+      continue;
+    }
     if (!pick) {                       // cannot happen with a generator on the bar
       idle += 0.1; nextAction = t + 0.1; continue;
     }
 
-    const cast = castTimeOf(pick, t);
+    /* A lit proc empowers the next cast of its spell - however that cast was reached. The
+       proc-only entry is the deliberate way to take it; an ordinary cast of the same spell
+       while the proc happens to be up is empowered too, because the game does not ask why
+       you cast it. Settled before the cast time, since an empowered cast has none. */
+    const spentPs = pick.consumes ? procState.get(pick.consumes) : null;
+    const empowered = !!(spentPs && spentPs.lit);
+    const usesGcd = onGcd(pick);
+    const cast = empowered ? 0 : castTimeOf(pick, t);
     const castEnd = t + cast;
     const amp = ampAt(castEnd);
     const landAt = castEnd + pick.land;
 
     const energyBefore = resource;
-    /* A lit proc makes the next cast of its spell free - however that cast was reached.
-       The proc-only entry is the deliberate way to take it; an ordinary cast of the same
-       spell while the proc happens to be up is free too, because the game does not ask
-       why you cast it. */
     let cost = pick.cost;
-    if (M.proc && pick.consumes === M.proc.id) {
-      procCasts += 1;
-      if (procLit) {
+    if (spentPs) {
+      spentPs.casts += 1;
+      if (empowered) {
         cost = 0;
-        procFree += 1;
-        procSaved += pick.fullCost;    // what the spell costs, not what this entry lists
-        procLit = false;
+        spentPs.free += 1;
+        spentPs.saved += pick.fullCost;  // what the spell costs, not what this entry lists
+        spentPs.lit = false;
       }
     }
     resource -= cost;
 
-    if (M.proc && pick.lights === M.proc.id) {
-      procCredit += M.proc.chance;
-      if (procCredit >= 1 - EPS) {
-        procCredit -= 1;
+    const gained = pick.lights ? procState.get(pick.lights) : null;
+    if (gained) {
+      gained.credit += gained.p.chance;
+      if (gained.credit >= 1 - EPS) {
+        gained.credit -= 1;
         // It cannot stack. Lighting one that is already lit replaces it and the old one
         // is gone unspent, which is the cost of sitting on a proc.
-        if (procLit) procWasted += 1;
-        procLit = true;
-        procUntil = castEnd + M.proc.dur;
+        if (gained.lit) gained.wasted += 1;
+        gained.lit = true;
+        gained.until = castEnd + gained.p.dur;
+        /* Gaining it clears its consumer's cooldown - InGameUi.ResetProcConsumerCooldown does
+           this for every proc; Battle Rhythm and Thermal Shock say so in words because theirs
+           are the two consumers with a cooldown to clear. */
+        cdReady.delete(gained.p.consumerId);
+        if (keepLog && castEnd <= dur + EPS)
+          log.push({t: castEnd, kind: "proc", id: gained.p.id, name: gained.p.name,
+                    resets: gained.p.consumerId, amount: 0});
       }
     }
 
@@ -895,16 +1074,29 @@ function simulate(M, order, opts) {
     if (pick.direct) {
       /* Each landing rounds on its own, the way the game reports them, so a
          chain's 65% ricochets are not a rounded total split four ways. */
-      let dealt = val(pick.direct, amp);
+      const base = pick.direct * (pick.cond ? condMul(pick.cond, landAt) : 1);
+      let dealt = val(base, amp);
       if (pick.hitsAll) dealt *= N;
       else if (pick.chains)
-        dealt += val(pick.direct * CHAIN_FRACTION, amp) * Math.min(CHAIN_EXTRA, N - 1);
+        dealt += val(base * CHAIN_FRACTION, amp) * Math.min(CHAIN_EXTRA, N - 1);
       credit(pick.id, dealt * M.critFactor * M.landFactor, landAt, "hit", pick.name);
+    }
+    if (pick.chill) {
+      /* A slow lands with the hit that carries it, on everything that hit reaches. Kept as a
+         list of windows per target: it is written when the carrier is CAST, and a Frostbolt
+         still in flight must not wipe out the chill that is on the target now. A window already
+         over by this cast is dropped - every later hit lands after its own cast. */
+      const reached = pick.hitsAll ? N : 1;
+      for (let k = 0; k < reached; k++) {
+        const kk = pick.hitsAll ? k : onTarget;
+        const list = (slowed[kk] = (slowed[kk] || []).filter(s => s.until > t - EPS));
+        list.push({from: landAt, until: landAt + pick.chill});
+      }
     }
     if (pick.tracksPeriodic) {
       const key = pick.hitsAll ? String(pick.id) : pick.id + ":" + onTarget;
       live.set(key, {
-        key, id: pick.id, name: pick.name, base: pick.tick, amp,
+        key, id: pick.id, name: pick.name, base: pick.tick, amp, from: landAt,
         mul: pick.hitsAll ? N : 1,
         interval: pick.tickInterval, left: pick.ticks,
         nextTick: landAt + pick.tickInterval, until: landAt + pick.tickDur,
@@ -913,21 +1105,37 @@ function simulate(M, order, opts) {
     const p = per.get(pick.id); if (p) p.casts += 1;
     perEntry.set(pick.key, (perEntry.get(pick.key) || 0) + 1);
     actions += 1;
-    const occupies = Math.max(cast, M.gcd);
+    /* What the cast holds: its bar, and the global cooldown if it takes one - which starts
+       with the bar, so a cast longer than the cooldown is the whole of it. */
+    if (usesGcd) gcdUntil = t + M.gcd;
+    /* A cast that takes the global cooldown pushes back a swing due inside it, to one cooldown
+       after the cast (SpellHandler.DelayNextAutoAttackIfNeeded). The logs bear it out swing by
+       swing - 206 of 267 predicted pushes landed within 0.1s of where this puts them, and a
+       Knight casting every GCD swings every 3 x GCD at Tempo 107 and 161, every 2 x GCD at
+       Tempo 0. A swing due at the very moment the cast goes still goes. */
+    if (M.autoOn && usesGcd && nextAuto > castEnd + EPS && nextAuto - castEnd <= M.gcd + EPS)
+      nextAuto = castEnd + M.gcd;
+    const occupies = Math.max(cast, usesGcd ? M.gcd : 0);
+    if (castEnd <= t + EPS) {
+      if (instantAt !== t) { instantAt = t; castAtInstant.clear(); }
+      castAtInstant.add(pick.key);
+    }
     if (keepLog) log.push({
       t, id: pick.id, key: pick.key, name: pick.name, kind: "cast",
-      cast, occupies, end: t + occupies, landAt,
+      cast, occupies, end: t + occupies, landAt, onGcd: usesGcd,
       energyBefore, resource, amp,
       cost, listedCost: pick.fullCost, gen: pick.gen,
       // Against the spell's real price: the proc-only entry lists 0, so comparing with
       // its own cost would say no cast was ever free.
       procFree: cost === 0 && pick.fullCost > 0,
+      procName: empowered ? spentPs.p.name : "",
       buffUntil: pick.isBuff ? ampUntil : 0,
       buffAmt: pick.isBuff ? pick.buffAmt : 0,
       periodicUntil: pick.tracksPeriodic ? landAt + pick.tickDur : 0,
     });
 
-    nextAction = t + occupies;
+    // The next decision is when the bar clears; the cooldown gates what may be taken then.
+    nextAction = castEnd;
   }
 
   const breakdown = [...per.entries()]
@@ -955,17 +1163,19 @@ function simulate(M, order, opts) {
      compare two builds that both survive. */
   const perSecond = net / dur;
   const survivalSeconds = perSecond > 0 ? M.health / perSecond : Infinity;
+  const procReport = [...procState.values()].map(ps => ({
+    id: ps.p.id, name: ps.p.name, consumer: ps.p.consumer,
+    saved: ps.saved, casts: ps.casts, free: ps.free, wasted: ps.wasted,
+    share: ps.casts ? ps.free / ps.casts : 0}));
 
   return {
     total, dps: total / dur, duration: dur, actions, wasted, idle,
     breakdown, log, endResource: resource,
     castsByEntry: Object.fromEntries(perEntry),
-    /* What the class proc was worth: energy it paid for, and how much of the consumer's
-       casting it covered. Expected values, so both are fractional. */
-    proc: M.proc ? {name: M.proc.name, consumer: M.proc.consumer,
-                    saved: procSaved, casts: procCasts, free: procFree,
-                    wasted: procWasted,
-                    share: procCasts ? procFree / procCasts : 0} : null,
+    /* What each proc was worth: energy it paid for, and how much of its consumer's casting it
+       covered. Whole counts - a proc lights on a schedule, not a coin. `proc` is the first,
+       for anything written when a class had one. */
+    procs: procReport, proc: procReport[0] || null,
     apm: actions / (dur / 60),
     // the incoming half
     taken, healed, overheal, net, held, swings, stunned, potential,
@@ -1016,7 +1226,8 @@ const betterThan = (a, b) =>
 function seedOrder(M) {
   const g = M.gcd;
   const worth = a => {
-    const time = Math.max(a.castBase / (1 + M.alacrityBonus), g);
+    const time = Math.max(a.castBase / (1 + M.alacrityBonus),
+                          M.offGcd && a.offGcd ? 0.1 : g);
     const reach = M.targets > 1 ? a.reach : 1;
     const overTime = a.ticks * a.tick * (a.hitsAll ? M.targets : 1);
     const raw = a.direct * reach + overTime;
@@ -1037,7 +1248,19 @@ function seedOrder(M) {
 }
 
 function climb(M, start, score) {
-  let best = start.filter(a => !a.off), bestScore = score(best);
+  /* A list no talent tree could produce is not an answer. The first of each choice group to
+     appear keeps its place, the rest are dropped, and none is ever brought back beside its
+     rival - so every group is settled by the search itself, not only the one the page
+     compares side by side. */
+  const rivalOnBar = (list, a) => {
+    const r = M.rivals && M.rivals.get(a.id);
+    return !!r && list.some(b => r.has(b.id));
+  };
+  const legal = list => list.reduce((out, a) => {
+    if (!rivalOnBar(out, a)) out.push(a);
+    return out;
+  }, []);
+  let best = legal(start.filter(a => !a.off)), bestScore = score(best);
   const wins = sc => betterThan(sc, bestScore);
   let moved = true, guard = 0;
   while (moved && guard++ < 40) {
@@ -1064,7 +1287,7 @@ function climb(M, start, score) {
     if (moved) continue;
     /* And bring back anything currently off the bar, at its best position. */
     for (const a of M.actions) {
-      if (best.includes(a)) continue;
+      if (best.includes(a) || rivalOnBar(best, a)) continue;
       for (let j = 0; j <= best.length; j++) {
         const next = best.slice(); next.splice(j, 0, a);
         const sc = score(next);
@@ -1107,10 +1330,13 @@ function solve(M, opts) {
      swap places under a random restart. */
   let best = null;
   if (opts.seed && opts.seed.length) {
-    const byId = new Map(M.actions.map(a => [a.id, a]));
+    /* By entry, not by spell: a proc consumer's free line shares its spell id, and matching
+       by id swapped the paid line for it. A seed without keys falls back to the id's own
+       entry, which is the paid one. */
+    const byKey = new Map(M.actions.map(a => [a.key, a]));
     const warm = [];
     for (const w of opts.seed) {
-      const a = byId.get(w.id);
+      const a = byKey.get(w.key || String(w.id));
       if (!a) continue;
       a.refresh = w.refresh || 0;
       warm.push(a);
@@ -1181,11 +1407,23 @@ function solve(M, opts) {
      list: an instruction to spend 40 energy on something the fight never once did. */
   const trial = simulate(M, order, {log: true});
   const cast = new Set(trial.log.filter(e => e.kind === "cast").map(e => e.key));
-  const never = order.filter(a => !cast.has(a.key) && !a.locked);
+  /* The filler is locked on because the loop needs something it can always cast - but once
+     another free, cooldown-less, ungated action sits above it, that one IS the filler and the
+     locked line is never reached: Frostbolt above Fireball, now that Thermal Shock makes it
+     the better feeder. Left in, it would read as an instruction the fight never follows. */
+  const alwaysReady = b => !b.cost && !b.cd && !b.procOnly && !b.isBuff
+                           && !b.tracksPeriodic && !b.tracksMit && !b.stun && !b.tracksHeal;
+  const shadowed = a => a === M.generator
+    && order.slice(0, order.indexOf(a)).some(b => b !== a && alwaysReady(b));
+  const never = order.filter(a => !cast.has(a.key) && (!a.locked || shadowed(a)));
   if (never.length) {
-    const pruned = order.filter(a => cast.has(a.key) || a.locked);
+    const pruned = order.filter(a => cast.has(a.key) || (a.locked && !shadowed(a)));
     if (!betterThan(objective(M, trial), objective(M, simulate(M, pruned)))) order = pruned;
   }
+  /* The line that plays the filler's part: the first always-ready one on the list, which is
+     not always the generator - Frostbolt, for a Mage whose Fireball the prune just removed.
+     The page greys it and the list calls it the filler. */
+  M.filler = order.find(alwaysReady) || (order.includes(M.generator) ? M.generator : null);
 
   const result = simulate(M, order, {log: true});
 
@@ -1200,7 +1438,11 @@ function solve(M, opts) {
        list, so the buff has to be taken out of the MODEL and not merely out of
        the order — otherwise it re-adds itself and every buff appears to be
        worth exactly nothing. */
-    const M2 = Object.assign({}, M, {actions: M.actions.filter(x => x !== a)});
+    /* Its choice-group rivals leave with it, or the re-solve brings the other half back and the
+       gain reads as a margin over the rival instead of what the fight loses without it. */
+    const rv = (M.rivals && M.rivals.get(a.id)) || new Set();
+    const M2 = Object.assign({}, M,
+                             {actions: M.actions.filter(x => x.id !== a.id && !rv.has(x.id))});
     const without = climb(M2, order.filter(x => x !== a),
                           o => objective(M2, simulate(M2, o)));
     buffGain[a.id] = M.survival
@@ -1229,10 +1471,19 @@ function solve(M, opts) {
   }
 
   /* Anything the search left off the bar, and anything that never fired. */
+  /* Why, in words that are true of THIS spell: one refused because its rival holds the choice
+     was never weighed at all, and one that takes no global cooldown cannot cost one. */
+  const rivalHeld = a => {
+    const r = M.rivals && M.rivals.get(a.id);
+    return !!r && order.some(b => r.has(b.id));
+  };
   const benched = M.actions.filter(a => !order.includes(a)).map(a => ({
     action: a,
     why: never.includes(a)
       ? (a.cost ? `never affordable — the bar never reached ${a.cost}` : "never reached")
+      : rivalHeld(a) ? OMIT.exclusive
+      : a.procOnly && order.some(b => b.id === a.id) ? "the paid line already takes every free cast"
+      : (M.offGcd && a.offGcd) || a.procOnly ? "the bar does better without it"
       : "costs more in global cooldowns than it returns",
   }));
 
@@ -1250,10 +1501,11 @@ function solve(M, opts) {
    is where the difference would show if there were one.                      */
 function replay(D, cfg, order) {
   const M = model(D, cfg);
-  const byId = new Map(M.actions.map(a => [a.id, a]));
+  // By entry key, for the same reason as the warm start in solve.
+  const byKey = new Map(M.actions.map(a => [a.key, a]));
   const same = [];
   for (const a of order) {
-    const b = byId.get(a.id);
+    const b = byKey.get(a.key || String(a.id));
     if (!b) continue;
     b.refresh = a.refresh;
     same.push(b);
@@ -1300,11 +1552,13 @@ function statWeights(D, cfg, step) {
 function conditionText(a, M) {
   const secs = n => (n % 1 ? n.toFixed(1) : String(n)) + "s";
 
-  if (a.procOnly)
-    return `Only while ${M.proc ? M.proc.name : "the proc"} is up — it costs nothing then, `
-         + "so take it the moment it lights";
+  if (a.procOnly) {
+    const pr = (M.procs || []).find(p => p.id === a.consumes);
+    return `Only while ${pr ? pr.name : "the proc"} is up — it is instant and costs nothing `
+         + "then, so take it the moment it lights";
+  }
 
-  if (a === M.generator && !a.cd && !a.cost)
+  if (a === (M.filler || M.generator) && !a.cd && !a.cost)
     return "Filler — cast this whenever nothing above is ready";
 
   const costs = a.cost ? ` — needs ${a.cost} energy` : "";
@@ -1332,7 +1586,8 @@ function conditionText(a, M) {
   const needs = a.cost ? ` if you have ${a.cost} energy` : "";
   const many = (M.targets || 1) > 1;
   if (a.tracksPeriodic) {
-    const where = a.hitsAll ? "the pack" : many ? "an enemy" : "the target";
+    const where = a.hitsAll ? (a.hot ? "the party" : "the pack")
+                : many ? "an enemy" : "the target";
     return (a.refresh > 0
       ? `Recast when ${secs(a.refresh)} or less is left on ${where}`
       : `Recast the moment it drops off ${where}`)
@@ -1350,6 +1605,9 @@ function actionFacts(a, M) {
   const cast = a.castBase ? a.castBase / (1 + M.alacrityBonus) : 0;
   out.push({k: "time", v: cast ? cast.toFixed(2) + "s cast" : "instant",
             dim: !cast});
+  // The client's own "instant": no global cooldown, so it costs no time on the bar at all.
+  if (M.offGcd !== false && a.offGcd)
+    out.push({k: "time", v: "off the global cooldown", dim: true});
   if (a.cd) out.push({k: "cd", v: a.cd >= 120 ? Math.round(a.cd / 60) + "m cooldown"
                                               : a.cd + "s cooldown"});
   if (a.cost) out.push({k: "cost", v: "-" + a.cost + " energy"});
@@ -1357,7 +1615,7 @@ function actionFacts(a, M) {
   if (a.tracksPeriodic)
     out.push({k: "over", v: `${a.ticks} ticks over ${a.tickDur}s`});
   if ((M.targets || 1) > 1 && (a.hitsAll || a.chains))
-    out.push({k: "reach", v: a.hitsAll ? "hits all " + M.targets
+    out.push({k: "reach", v: a.hitsAll ? (a.heals || a.hot ? "heals all " : "hits all ") + M.targets
                                        : `chains to ${Math.min(CHAIN_EXTRA, M.targets - 1)} more`});
   if (a.isBuff)
     out.push({k: "over", v: `+${Math.round(a.buffAmt * 100)}% for ${a.buffDur}s`});
@@ -1372,13 +1630,14 @@ function actionFacts(a, M) {
 
 return {
   FX_STUN, FX_DOT, FX_HOT, FX_REDUCE, FX_POWER, GCD_BASE, OMIT,
+  FX_PARTY_HOT, FX_DAMAGE_UP, FX_SLOW, FX_DISORIENT, FX_ABSORB, CONDITIONAL,
   ratingBonus, levelMul, effectLevelMul, talentMul, gcdFor,
   isPeriodic, healsOverTime, landDelay,
-  candidates, exclusiveChoices, makeAction, model, simulate, replay,
+  candidates, exclusiveChoices, rivalsOf, procsFor, makeAction, model, simulate, replay,
   mitigation, maxHealth, takenFraction, enemyDamageMult, objective, betterThan,
   DEFENSE_PER_POINT,
   seedOrder, solve, statWeights, conditionText, actionFacts,
-  directReach, REACHES_ALL, DLV_CHAIN, CHAIN_EXTRA, CHAIN_FRACTION,
+  directReach, REACHES_ALL, DLV_CHAIN, DLV_ENEMY_NOVA, DLV_PARTY_NOVA, CHAIN_EXTRA, CHAIN_FRACTION,
   CRIT_CHANCE, CRIT_MIN, CRIT_MAX, CRIT_FACTOR, missRateFor,
 };
 }));
